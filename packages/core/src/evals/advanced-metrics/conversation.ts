@@ -8,11 +8,13 @@ import {
   binaryVerdictSchema,
   factsSchema,
   higherOutcome,
+  type IncludeReasonMode,
   jsonPrompt,
   maybeReason,
   metricConfig,
   numericMetric,
   validatePositiveInteger,
+  willPassHigher,
 } from "./shared";
 
 type ConversationSource = EvalTurn[] | Message[];
@@ -23,7 +25,7 @@ type ConversationEvalOptions<Input, Output, Expected = unknown> = {
   model: CompletionModel;
   threshold?: number | undefined;
   strictMode?: boolean | undefined;
-  includeReason?: boolean | undefined;
+  includeReason?: IncludeReasonMode | undefined;
   retries?: number | undefined;
   concurrency?: number | undefined;
   turns?: ValueSelector<Input, Output, Expected, ConversationSource> | undefined;
@@ -77,6 +79,7 @@ export function turnRelevancy<
       const reasonResult = await maybeReason({
         model: options.model,
         includeReason: config.includeReason,
+        passed: willPassHigher(score, config.threshold, config.strictMode),
         retries: config.retries,
         metric: "turn relevancy",
         abortSignal: args.signal,
@@ -171,6 +174,7 @@ export function knowledgeRetention<
       const reasonResult = await maybeReason({
         model: options.model,
         includeReason: config.includeReason,
+        passed: willPassHigher(score, config.threshold, config.strictMode),
         retries: config.retries,
         metric: "knowledge retention",
         abortSignal: args.signal,

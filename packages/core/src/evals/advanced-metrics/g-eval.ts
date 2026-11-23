@@ -14,7 +14,9 @@ import {
   numericMetric,
   resolveInput,
   resolveStringList,
+  shouldIncludeReason,
   toJsonValue,
+  willPassHigher,
 } from "./shared";
 
 export type GEvalParameter =
@@ -278,11 +280,14 @@ export function gEval<Input, Output, Expected = unknown, const Name extends stri
           ? UsageValue.empty()
           : preparation.usage;
       const usage = addUsage(setupUsage, scoreResult.usage);
+      const passed = willPassHigher(score, config.threshold, config.strictMode);
       const outcome = higherOutcome({
         score,
         threshold: config.threshold,
         strictMode: config.strictMode,
-        comment: config.includeReason ? scoreResult.data.reason : undefined,
+        comment: shouldIncludeReason(config.includeReason, passed)
+          ? scoreResult.data.reason
+          : undefined,
         details: {
           evaluationSteps: stepsResult.steps,
           evaluationParams: options.evaluationParams,

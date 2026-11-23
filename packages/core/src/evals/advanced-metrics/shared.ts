@@ -2,10 +2,18 @@ import { z } from "zod";
 import type { CompletionModel, JsonObject, JsonValue, Usage } from "../../completion";
 import { isJsonValue, Usage as UsageValue } from "../../completion";
 import { throwIfAborted } from "../../internal/abort";
-import { formatValue } from "../format";
+import { formatValue, readModelIdentity } from "../format";
 import { evaluationMetadata, runJudge } from "../judge";
 import { EvalOutcome, type EvalOutcome as EvalOutcomeType } from "../outcome";
-import type { EvalMetric, EvalMetricArgs, SelectorOrValue, ValueSelector } from "../types";
+import type {
+  EvalMetric,
+  EvalMetricArgs,
+  EvalModelIdentity,
+  SelectorOrValue,
+  ValueSelector,
+} from "../types";
+
+export type IncludeReasonMode = boolean | "on-fail";
 
 export type Verdict = {
   verdict: "yes" | "no" | "idk";
@@ -49,7 +57,7 @@ export type LlmEvalOptions<Input, Output, Expected = unknown> = {
   model: CompletionModel;
   threshold?: number | undefined;
   strictMode?: boolean | undefined;
-  includeReason?: boolean | undefined;
+  includeReason?: IncludeReasonMode | undefined;
   retries?: number | undefined;
   input?: ValueSelector<Input, Output, Expected, string> | undefined;
   actual?: ValueSelector<Input, Output, Expected, string> | undefined;
@@ -59,14 +67,20 @@ export type MetricConfig<Name extends string = string> = {
   name: Name;
   threshold: number;
   strictMode: boolean;
-  includeReason: boolean;
+  includeReason: IncludeReasonMode;
   retries: number;
   required: boolean;
+  model?: EvalModelIdentity | undefined;
 };
 
 export function numericMetric<Input, Output, Expected, const Name extends string>(
   name: Name,
-  config: { threshold: number; required: boolean; strictMode?: boolean | undefined },
+  config: {
+    threshold: number;
+    required: boolean;
+    strictMode?: boolean | undefined;
+    model?: EvalModelIdentity | undefined;
+  },
   direction: "higher_is_better" | "lower_is_better",
   evaluate: (args: EvalMetricArgs<Input, Output, Expected>) => Promise<EvalOutcomeType<number>>,
 ): EvalMetric<Input, Output, number, Expected, Name> {
@@ -76,7 +90,7 @@ export function numericMetric<Input, Output, Expected, const Name extends string
     threshold = direction === "higher_is_better" ? 1 : 0;
   }
 
-  return {
+  const metric: EvalMetric<Input, Output, number, Expected, Name> = {
     name,
     required: config.required,
     direction,
@@ -93,20 +107,27 @@ export function numericMetric<Input, Output, Expected, const Name extends string
       }
     },
   };
+
+  if (config.model !== undefined) {
+    metric.model = config.model;
+  }
+
+  return metric;
 }
 
 export function metricConfig<const Name extends string>(
   options: {
     name?: string | undefined;
+    model?: CompletionModel | undefined;
     threshold?: number | undefined;
     strictMode?: boolean | undefined;
-    includeReason?: boolean | undefined;
+    includeReason?: IncludeReasonMode | undefined;
     retries?: number | undefined;
     required?: boolean | undefined;
   },
   defaultName: string,
 ): MetricConfig<Name> {
-  return {
+  const config: MetricConfig<Name> = {
     name: (options.name ?? defaultName) as Name,
     threshold: validateThreshold(options.threshold ?? 0.5),
     strictMode: options.strictMode ?? false,
@@ -114,6 +135,32 @@ export function metricConfig<const Name extends string>(
     retries: validateRetries(options.retries ?? 0),
     required: options.required ?? true,
   };
+
+  const model = readModelIdentity(options.model);
+
+  if (model !== undefined) {
+    config.model = model;
+  }
+
+  return config;
+}
+
+export function shouldIncludeReason(mode: IncludeReasonMode, passed: boolean): boolean {
+  if (mode === "on-fail") return !passed;
+
+  return mode;
+}
+
+export function willPassHigher(score: number, threshold: number, strictMode: boolean): boolean {
+  if (strictMode) return score === 1;
+
+  return score >= threshold;
+}
+
+export function willPassLower(score: number, threshold: number, strictMode: boolean): boolean {
+  if (strictMode) return score === 0;
+
+  return score <= threshold;
 }
 
 export function higherOutcome(args: {
@@ -180,7 +227,8 @@ export function lowerOutcome(args: {
 
 export async function maybeReason(args: {
   model: CompletionModel;
-  includeReason: boolean;
+  includeReason: IncludeReasonMode;
+  passed?: boolean | undefined;
   retries: number;
   metric: string;
   score: number;
@@ -189,7 +237,9 @@ export async function maybeReason(args: {
 }): Promise<{ reason?: string | undefined; usage: Usage }> {
   throwIfAborted(args.abortSignal);
 
-  if (!args.includeReason) return { usage: UsageValue.empty() };
+  if (!shouldIncludeReason(args.includeReason, args.passed ?? false)) {
+    return { usage: UsageValue.empty() };
+  }
 
   const result = await runJudge({
     model: args.model,

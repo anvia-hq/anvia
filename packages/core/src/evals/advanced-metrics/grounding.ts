@@ -1,5 +1,6 @@
 import type { CompletionModel } from "../../completion";
 import { throwIfAborted } from "../../internal/abort";
+import { readModelIdentity } from "../format";
 import { addUsage, evaluationMetadata, runJudge } from "../judge";
 import { EvalOutcome } from "../outcome";
 import { resolveActualText, resolveExpected } from "../selectors";
@@ -16,6 +17,7 @@ import {
   binaryVerdictsSchema,
   factsSchema,
   higherOutcome,
+  type IncludeReasonMode,
   jsonPrompt,
   limitValues,
   type LlmEvalOptions,
@@ -25,11 +27,14 @@ import {
   numericMetric,
   resolveStringList,
   serializeVerdicts,
+  shouldIncludeReason,
   truthsExtractionInstructions,
   validateOptionalNonNegativeInteger,
   validateRetries,
   type Verdict,
   verdictsSchema,
+  willPassHigher,
+  willPassLower,
 } from "./shared";
 
 export type HallucinationOptions<Input, Output, Expected = unknown> = LlmEvalOptions<
@@ -90,6 +95,7 @@ export function hallucination<
       const reasonResult = await maybeReason({
         model: options.model,
         includeReason: config.includeReason,
+        passed: willPassLower(score, config.threshold, config.strictMode),
         retries: config.retries,
         metric: "hallucination",
         abortSignal: args.signal,
@@ -202,6 +208,7 @@ export function faithfulness<Input, Output, Expected = unknown, const Name exten
       const reasonResult = await maybeReason({
         model: options.model,
         includeReason: config.includeReason,
+        passed: willPassHigher(score, config.threshold, config.strictMode),
         retries: config.retries,
         metric: "faithfulness",
         abortSignal: args.signal,
@@ -236,7 +243,7 @@ export type AbstentionOptions<Input, Output, Expected = unknown> = {
   shouldAbstain: SelectorOrValue<Input, Output, Expected, boolean>;
   context?: SelectorOrValue<Input, Output, Expected, string[]> | undefined;
   actual?: ValueSelector<Input, Output, Expected, string> | undefined;
-  includeReason?: boolean | undefined;
+  includeReason?: IncludeReasonMode | undefined;
   retries?: number | undefined;
 };
 
@@ -244,7 +251,9 @@ export function abstention<Input, Output, Expected = unknown, const Name extends
   options: AbstentionOptions<Input, Output, Expected> & { name?: Name | undefined },
 ): EvalMetric<Input, Output, AbstentionCategory, Expected, Name> {
   const retries = validateRetries(options.retries ?? 0);
-  return {
+  const includeReason = options.includeReason ?? true;
+  const modelIdentity = readModelIdentity(options.model);
+  const metric: EvalMetric<Input, Output, AbstentionCategory, Expected, Name> = {
     name: (options.name ?? "abstention") as Name,
     required: options.required ?? true,
     dataType: "CATEGORICAL",
@@ -281,8 +290,9 @@ export function abstention<Input, Output, Expected = unknown, const Name extends
           judgment.data.behavior,
           judgment.data.grounded,
         );
+        const passed = category === "correct_abstention" || category === "correct_grounded_answer";
         const outcomeOptions = {
-          comment: options.includeReason === false ? undefined : judgment.data.reason,
+          comment: shouldIncludeReason(includeReason, passed) ? judgment.data.reason : undefined,
           metadata: evaluationMetadata(
             {
               behavior: judgment.data.behavior,
@@ -293,7 +303,7 @@ export function abstention<Input, Output, Expected = unknown, const Name extends
           ),
           usage: judgment.usage,
         };
-        return category === "correct_abstention" || category === "correct_grounded_answer"
+        return passed
           ? EvalOutcome.pass(category, outcomeOptions)
           : EvalOutcome.fail(category, outcomeOptions);
       } catch (error) {
@@ -301,6 +311,10 @@ export function abstention<Input, Output, Expected = unknown, const Name extends
       }
     },
   };
+
+  if (modelIdentity !== undefined) metric.model = modelIdentity;
+
+  return metric;
 }
 
 async function resolveAbstentionContext<Input, Output, Expected>(

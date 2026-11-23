@@ -1,5 +1,11 @@
 # @anvia/mcp
 
+## 1.2.8
+
+### Patch Changes
+
+- 59b308b: Update runtime dependencies to their latest compatible minor and patch releases.
+
 ## 1.2.7
 
 ### Patch Changes

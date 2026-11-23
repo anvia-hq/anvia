@@ -1,5 +1,11 @@
 # @anvia/memgraph
 
+## 1.1.10
+
+### Patch Changes
+
+- 59b308b: Update runtime dependencies to their latest compatible minor and patch releases.
+
 ## 1.1.9
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @anvia/react-ui
 
+## 1.3.3
+
+### Patch Changes
+
+- 59b308b: Update runtime dependencies to their latest compatible minor and patch releases.
+
 ## 1.3.2
 
 ### Patch Changes

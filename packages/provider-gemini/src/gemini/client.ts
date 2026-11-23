@@ -8,16 +8,18 @@ import {
 import type { EmbeddingModel } from "@anvia/core/embeddings";
 import type { ImageGenerationModel } from "@anvia/core/image-generation";
 import {
-  type ModelList,
-  type ModelListingClient,
-  ModelListingError,
-} from "@anvia/core/model-listing";
+  rejectManagedOptionsWithInjectedClient,
+  requireModelId,
+  validateOptionalPositiveSafeInteger,
+} from "@anvia/core/internal/provider";
+import type { ModelList, ModelListingClient } from "@anvia/core/model-listing";
 import type { TranscriptionModel } from "@anvia/core/transcription";
 import { GoogleGenAI, type GoogleGenAIOptions } from "@google/genai";
 import { GeminiCompletionModel } from "./completion";
 import { geminiControlsForModel, type GeminiControlsFor } from "./controls";
 import { GeminiEmbeddingModel, type GeminiEmbeddingModelOptions } from "./embedding";
 import { GeminiImageGenerationModel, GeminiImagenGenerationModel } from "./image-generation";
+import { listGeminiModels } from "./model-listing";
 import type {
   GeminiCompletionModelId,
   GeminiGenerateContentImageModelId,
@@ -25,7 +27,6 @@ import type {
   GeminiTranscriptionModelId,
 } from "./models";
 import { GEMINI_COMPLETION_MODEL_CONTEXT_LIMITS } from "./models";
-import { disableGeminiNativeRetries } from "./retry";
 import { GeminiTranscriptionModel } from "./transcription";
 
 type GeminiApiClientOptions = {
@@ -82,7 +83,7 @@ export class GeminiClient implements ModelListingClient {
 
   constructor(options: GeminiClientOptions) {
     if (options.client !== undefined) {
-      rejectManagedOptionsWithInjectedClient(options, ["apiKey", "vertexAi"]);
+      rejectManagedOptionsWithInjectedClient("GeminiClient", options, ["apiKey", "vertexAi"]);
       this.sdk = options.client;
       return;
     }
@@ -135,31 +136,7 @@ export class GeminiClient implements ModelListingClient {
   }
 
   async listModels(options: { abortSignal?: AbortSignal | undefined } = {}): Promise<ModelList> {
-    try {
-      const config = { pageSize: 1000 };
-
-      if (options.abortSignal !== undefined) {
-        Object.assign(config, { abortSignal: options.abortSignal });
-      }
-
-      const response = await this.sdk.models.list({
-        config: disableGeminiNativeRetries(config),
-      });
-      const data = (await collectModelsFromResponse(response))
-        .map(toListedModel)
-        .filter(isListedModel);
-      return { data };
-    } catch (error) {
-      throw toModelListingError("Gemini", error);
-    }
-  }
-}
-
-function rejectManagedOptionsWithInjectedClient(options: object, keys: readonly string[]): void {
-  const conflict = keys.find((key) => key in options);
-
-  if (conflict !== undefined) {
-    throw new TypeError(`GeminiClient cannot combine client with ${conflict}.`);
+    return listGeminiModels(this.sdk, options);
   }
 }
 
@@ -187,154 +164,10 @@ export function toGoogleGenAIOptions(options: GeminiClientOptions): GoogleGenAIO
   };
 }
 
-function requireOption(value: string | undefined, name: string, label: string): string {
-  if (value === undefined || value.trim().length === 0) {
+function requireOption(value: unknown, name: string, label: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error(`Missing ${label} ${name}. Pass ${name} when constructing GeminiClient.`);
   }
 
   return value;
-}
-
-function requireModelId<ModelId extends string>(modelId: ModelId): ModelId {
-  if (modelId.trim().length === 0) {
-    throw new TypeError("modelId must be a non-empty string");
-  }
-
-  return modelId;
-}
-
-function validateOptionalPositiveSafeInteger(value: number | undefined, name: string): void {
-  if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) {
-    throw new TypeError(`${name} must be a positive safe integer`);
-  }
-}
-
-async function collectModelsFromResponse(response: unknown): Promise<unknown[]> {
-  if (isAsyncIterable(response)) {
-    const models: unknown[] = [];
-    for await (const model of response) {
-      models.push(model);
-    }
-    return models;
-  }
-
-  if (Array.isArray(response)) {
-    return response;
-  }
-
-  if (isObject(response) && Array.isArray(response.models)) {
-    return response.models;
-  }
-
-  if (isObject(response) && Array.isArray(response.data)) {
-    return response.data;
-  }
-
-  return [];
-}
-
-function toListedModel(model: unknown): ModelList["data"][number] | undefined {
-  if (!isObject(model)) {
-    return undefined;
-  }
-
-  const id =
-    stringValue(model.baseModelId) ??
-    stringValue(model.base_model_id) ??
-    normalizeGeminiModelId(stringValue(model.name));
-
-  if (id === undefined) {
-    return undefined;
-  }
-
-  const listedModel: ModelList["data"][number] = {
-    id,
-  };
-
-  if (typeof model.displayName === "string") {
-    listedModel.name = model.displayName;
-  }
-
-  if (typeof model.display_name === "string") {
-    listedModel.name = model.display_name;
-  }
-
-  if (typeof model.description === "string") {
-    listedModel.description = model.description;
-  }
-
-  if (typeof model.type === "string") {
-    listedModel.type = model.type;
-  }
-
-  if (typeof model.inputTokenLimit === "number") {
-    listedModel.contextLength = model.inputTokenLimit;
-  }
-
-  if (typeof model.input_token_limit === "number") {
-    listedModel.contextLength = model.input_token_limit;
-  }
-
-  return listedModel;
-}
-
-function normalizeGeminiModelId(name: string | undefined): string | undefined {
-  const trimmed = name?.trim().replace(/^models\//, "");
-  return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
-}
-
-function stringValue(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? undefined : trimmed;
-}
-
-function isListedModel(
-  model: ModelList["data"][number] | undefined,
-): model is ModelList["data"][number] {
-  return model !== undefined;
-}
-
-function toModelListingError(provider: string, error: unknown): ModelListingError {
-  if (error instanceof ModelListingError) {
-    return error;
-  }
-
-  const statusCode = getStatusCode(error);
-  return new ModelListingError(`${provider} model listing failed: ${getErrorMessage(error)}`, {
-    provider,
-    statusCode,
-    cause: error,
-  });
-}
-
-function getStatusCode(error: unknown): number | undefined {
-  if (!isObject(error)) {
-    return undefined;
-  }
-
-  if (typeof error.status === "number") {
-    return error.status;
-  }
-
-  if (typeof error.statusCode === "number") {
-    return error.statusCode;
-  }
-
-  return undefined;
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
-  return isObject(value) && Symbol.asyncIterator in value;
 }

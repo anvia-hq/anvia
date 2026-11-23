@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { isPlainObject } from "@anvia/core/internal/provider";
 import type {
   ModelCallOptions,
   TranscriptionModel,
@@ -66,7 +67,7 @@ export class GeminiTranscriptionModel implements TranscriptionModel<unknown> {
 }
 
 export function textFromGenerateContentResponse(response: unknown): string {
-  const raw = response as Record<string, unknown>;
+  const raw = isPlainObject(response) ? response : {};
 
   if (typeof raw.text === "string") {
     return raw.text;
@@ -104,8 +105,4 @@ function mimeTypeFromFilename(filename: string): string {
   if (lower.endsWith(".opus")) return "audio/opus";
 
   return "audio/mpeg";
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

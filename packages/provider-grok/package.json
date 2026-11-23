@@ -1,6 +1,6 @@
 {
   "name": "@anvia/grok",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Grok provider adapter for Anvia.",
   "author": "anvia",
   "license": "MIT",

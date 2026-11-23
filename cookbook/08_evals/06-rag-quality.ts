@@ -1,10 +1,4 @@
-import {
-  answerRelevancy,
-  faithfulness,
-  gEval,
-  hallucination,
-  runEvalSuite,
-} from "@anvia/core/evals";
+import { createJudgeMetrics, printEvalResult, runEvalSuite } from "@anvia/core/evals";
 import { OpenAIClient } from "@anvia/openai";
 
 const openAIClient = new OpenAIClient({
@@ -12,6 +6,7 @@ const openAIClient = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 const judgeModel = openAIClient.completionModel({ modelId: "gpt-5.5", api: "responses" });
+const judge = createJudgeMetrics({ model: judgeModel, includeReason: "on-fail" });
 
 const result = await runEvalSuite({
   name: "refund-rag-quality",
@@ -26,12 +21,11 @@ const result = await runEvalSuite({
   ],
   target: async () => "Customers can request a refund within 30 days.",
   metrics: [
-    answerRelevancy({ model: judgeModel, threshold: 0.8 }),
-    faithfulness({ model: judgeModel, threshold: 0.8 }),
-    hallucination({ model: judgeModel, threshold: 0.1 }),
-    gEval({
+    judge.answerRelevancy({ threshold: 0.8 }),
+    judge.faithfulness({ threshold: 0.8 }),
+    judge.hallucination({ threshold: 0.1 }),
+    judge.gEval({
       name: "correctness",
-      model: judgeModel,
       evaluationParams: ["actualOutput", "expectedOutput"],
       evaluationSteps: [
         "Check whether the answer preserves the expected refund window.",
@@ -42,4 +36,4 @@ const result = await runEvalSuite({
   ],
 });
 
-console.dir(result, { depth: null });
+printEvalResult(result);

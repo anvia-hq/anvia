@@ -3,55 +3,60 @@
 ## Suite vs CLI
 
 ```ts
-import { agentEvalTarget, runEvalCli, runEvalSuite } from "@anvia/core/evals";
+import {
+  agentEvalTarget,
+  assertEvalPassed,
+  printEvalResult,
+  runEvalCli,
+  runEvalSuite,
+} from "@anvia/core/evals";
 
-// Library use: inspect results programmatically.
+// Library / Vitest use: inspect results or assert cleanly.
 const result = await runEvalSuite({ name: "support-agent-target", cases, target, metrics });
-console.log({
-  passed: result.metrics.passed,
-  failed: result.metrics.failed,
-  invalid: result.metrics.invalid,
-});
+printEvalResult(result);
+assertEvalPassed(result);
 
-// CLI/CI use: pretty table, asserted expectations, process exit code.
+// CLI/CI use: pretty summary, CLI flags (--case, --tag, --failed-only, --baseline, --save), exit code.
 await runEvalCli({
   name: "support-basic-metrics",
   cases,
   target,
   metrics,
   expectations,
+  argv: true,
   exitCode: true,
 });
 ```
 
-- `runEvalSuite` returns full per-case, per-metric results — use it in scripts
-  and notebooks. It also takes execution controls for larger suites:
-  `concurrency`, `caseTimeoutMs`, `failFast`, `caseIds`/`caseFilter`, `shard`,
-  `signal`, `onProgress`, plus reporters and `cost`/`targetUsage` capture.
-- `runEvalCli` prints tables (`printEvalResult` / `formatEvalResult` under the
-  hood), asserts `expectations`, and with `exitCode: true` fails CI on
-  regressions. Always set `exitCode: true` in CI. Output is tunable via
-  `format: "pretty" | "json" | "quiet"`, `redact`, output writers, and
-  `maxValueLength`.
-- `expectations.outcomes` pins known outcomes per case — including intentional
-  failures (negative controls), so a "fixed" negative control fails loudly
-  instead of silently flipping green. `expectations.totals` pins aggregate
-  counts per metric or for the whole run; `defineEvalExpectations`,
-  `assertEvalTotals`, `assertEvalOutcomes`, and `evalExitCode` are the
-  programmatic helpers behind the CLI.
+- `runEvalSuite` returns `passed`, `metricSummaries` (per-metric pass rate,
+  mean/min/max score, mean duration), and full per-case results. It accepts
+  `concurrency`, `caseTimeoutMs`, `failFast` (`EvalFailFastError` carries
+  `caseResult` and `partialResults`), `caseIds` / `tags` / `caseFilter`, `shard`,
+  `trials` (`pass@k` / `minPassRate`), `targetCache` (`createMemoryEvalCache` /
+  `createFileEvalCache`), `signal`, `onProgress`, reporters, and `cost`/`targetUsage`.
+- `runEvalCli` prints per-metric summaries and per-case details, optionally parses
+  CLI flags (`argv: true` supports `--format`, `--case`, `--tag`, `--concurrency`,
+  `--timeout`, `--trials`, `--shard`, `--fail-fast`, `--failed-only`, `--color`,
+  `--progress`, `--baseline`, `--save`), asserts `expectations`, and with
+  `exitCode: true` fails CI on regressions. Always set `exitCode: true` in CI.
+- `assertEvalPassed(result, expectations?)` throws a detailed `EvalAssertionError`
+  for test runners like Vitest.
+- Use `saveEvalResult` / `loadEvalResult` + `compareEvalResults` (or
+  `compareEvalTargets`) to catch regressions across prompt or model changes.
 
-## Targets
+## Targets & Datasets
 
 - Plain functions: `target: async (input) => answer(input)`.
-- Agents: wrap with `agentEvalTarget({ agent, request: ({ input }) => ({ prompt: input }) })`
-  and project `output.output` in metrics (see `references/metrics.md`).
+- Agents: wrap with `agentEvalTarget(agent)` for string prompts, or
+  `agentEvalTarget({ agent, request, interactions, output })` for custom inputs.
+- Load JSON/JSONL datasets with `loadEvalCases(path, { autoId, schema })`.
 - `defineEvalCases` / `defineEvalSuite` / `createEvalTypes` add type safety to
   large suites — adopt them when cases grow past a handful.
 
 ## Case design
 
-- Every case needs `id`, `input`, `expected`. Keep ids stable — `expectations`
-  and history key off them.
+- Every case needs `id`, `input`, `expected` (plus optional `tags` for slice runs).
+  Keep ids stable — `expectations` and baseline diffs key off them.
 - Include negative controls: inputs the target must get wrong (or must refuse),
   pinned as expected failures. Without them you cannot tell a strict metric
   from a broken target.

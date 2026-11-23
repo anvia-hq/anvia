@@ -1,4 +1,11 @@
-import { contains, defineEvalSuite, EvalOutcome, runEvalSuite } from "@anvia/core/evals";
+import {
+  contains,
+  createEvalTypes,
+  defineEvalSuite,
+  EvalOutcome,
+  printEvalResult,
+  runEvalSuite,
+} from "@anvia/core/evals";
 
 const cases = [
   {
@@ -17,7 +24,7 @@ const cases = [
   },
 ];
 
-const supportEvals = defineEvalSuite<string, string, string | undefined>();
+const supportEvals = createEvalTypes<string, string, string | undefined>();
 
 const suite = defineEvalSuite({
   name: "support-custom-metrics",
@@ -28,14 +35,11 @@ const suite = defineEvalSuite({
       expected: ({ case: testCase }) =>
         typeof testCase.expected === "string" ? testCase.expected : "",
     }),
-    supportEvals.defineMetric({
-      name: "no_support_handoff",
-      dataType: "BOOLEAN",
-      evaluate: ({ output }) =>
-        output.includes("contact support")
-          ? EvalOutcome.fail(false, { comment: "Answer fell back to support handoff." })
-          : EvalOutcome.pass(true),
-    }),
+    supportEvals.predicate(
+      "no_support_handoff",
+      ({ output }) => !output.includes("contact support"),
+      { comment: "Answer fell back to support handoff." },
+    ),
     supportEvals.defineMetric({
       name: "has_expectation",
       dataType: "BOOLEAN",
@@ -47,24 +51,7 @@ const suite = defineEvalSuite({
   ],
 });
 const result = await runEvalSuite(suite);
-
-console.table(
-  result.results.flatMap((caseResult) =>
-    caseResult.metrics.map((metric) => ({
-      case: caseResult.case.id,
-      metric: metric.metricName,
-      outcome: metric.outcome.outcome,
-      score: metric.outcome.score ?? "",
-      comment: metric.outcome.comment ?? ("reason" in metric.outcome ? metric.outcome.reason : ""),
-    })),
-  ),
-);
-
-console.log({
-  passed: result.metrics.passed,
-  failed: result.metrics.failed,
-  invalid: result.metrics.invalid,
-});
+printEvalResult(result);
 
 function answerSupportQuestion(question: string): string {
   if (question.includes("refund")) {

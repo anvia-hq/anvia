@@ -16,7 +16,9 @@ describe("browser package boundary", () => {
     });
 
     const inputs = Object.keys(result.metafile.inputs).map((input) => input.replaceAll("\\", "/"));
-    expect(inputs.some((input) => input.endsWith("core/src/agent/interactions.ts"))).toBe(true);
+    expect(inputs.some((input) => input.endsWith("core/src/agent/interactions/index.ts"))).toBe(
+      true,
+    );
     expect(
       inputs.filter(
         (input) =>

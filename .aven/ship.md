@@ -29,8 +29,8 @@ every `gh` command. CI is `.github/workflows/ci.yml`.
 4. Run the same checks CI runs, in this order, from the repository root:
    `pnpm check && pnpm build && pnpm typecheck && pnpm test`
    Also run `pnpm releases:validate` when the branch adds or edits files under
-   `.changeset/`, and `node --test scripts/oxlint-anvia.test.mjs` when it
-   touches `scripts/oxlint-anvia*`.
+   `.changeset/`, and `pnpm test:oxlint` when it
+   touches `tooling/oxlint/`.
    If a step fails because of your change, fix it and re-run from that step. If
    it fails on code you did not touch, stop and tell me what failed instead of
    working around it or weakening the check.

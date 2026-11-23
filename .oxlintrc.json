@@ -1,12 +1,14 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "unicorn", "oxc", "react"],
-  "jsPlugins": ["./scripts/oxlint-anvia.mjs"],
+  "jsPlugins": ["./tooling/oxlint/index.mjs"],
   "categories": {
     "correctness": "error"
   },
   "rules": {
     "anvia/no-conditional-object-spread": "error",
+    "anvia/padded-if": "error",
+    "eslint/no-nested-ternary": "error",
     "eslint/no-useless-constructor": "error",
     "react/immutability": "off",
     "react/preserve-manual-memoization": "off",

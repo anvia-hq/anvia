@@ -88,6 +88,7 @@ export function createFileEvalCache<Input = unknown, Output = unknown, Expected 
             return loaded;
           }
 
+          loadPromise = undefined;
           throw error;
         }
         loaded = {};
@@ -107,12 +108,13 @@ export function createFileEvalCache<Input = unknown, Output = unknown, Expected 
       const store = await ensureLoaded();
       store[key] = entry;
       const snapshot = JSON.stringify(store, null, 2);
-      writeChain = writeChain.then(async () => {
+      const write = writeChain.then(async () => {
         const [fs, path] = await Promise.all([import("node:fs/promises"), import("node:path")]);
         await fs.mkdir(path.dirname(filePath), { recursive: true });
         await fs.writeFile(filePath, `${snapshot}\n`, "utf8");
       });
-      await writeChain;
+      writeChain = write.catch(() => undefined);
+      await write;
     },
   };
 

@@ -1,4 +1,4 @@
-import type { JsonValue } from "./types";
+import type { JsonValue } from "./json-types";
 
 export function isJsonValue(value: unknown): value is JsonValue {
   return isJsonValueWithAncestors(value, new WeakSet<object>());

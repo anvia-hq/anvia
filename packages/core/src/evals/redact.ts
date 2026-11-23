@@ -45,6 +45,19 @@ export function redactEvalValue(
   return redactor === undefined ? value : redactor(value, context);
 }
 
+const PRESERVED_JSON_KEYS = new Set([
+  "id",
+  "name",
+  "metricName",
+  "outcome",
+  "targetStatus",
+  "direction",
+  "currency",
+  "startedAt",
+  "cachedAt",
+  "kind",
+]);
+
 export function serializeEvalResultJson(
   result: EvalSuiteResult<unknown, unknown, unknown>,
   options: EvalSerializeOptions = {},
@@ -52,14 +65,16 @@ export function serializeEvalResultJson(
   validateMaxValueLength(options.maxValueLength);
   return JSON.stringify(
     redactEvalResult(result, options.redact),
-    (_key, value: unknown) => {
+    (key, value: unknown) => {
       if (value instanceof Error) {
         return { name: value.name, message: value.message, stack: value.stack };
       }
 
       if (value instanceof RegExp) return String(value);
 
-      if (typeof value === "string") return truncateEvalString(value, options.maxValueLength);
+      if (typeof value === "string" && !PRESERVED_JSON_KEYS.has(key)) {
+        return truncateEvalString(value, options.maxValueLength);
+      }
 
       return value;
     },

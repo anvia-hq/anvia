@@ -359,6 +359,7 @@ export async function runEvalCli<
   }
 
   let baselineError: unknown;
+  let comparisonHasRegressions = false;
 
   if (baselinePath !== undefined) {
     try {
@@ -389,6 +390,7 @@ export async function runEvalCli<
         result as EvalSuiteResult<unknown, unknown, unknown>,
         effectiveCompareOptions,
       );
+      comparisonHasRegressions = comparison.hasRegressions;
 
       if (format !== "quiet" && format !== "json") {
         printEvalComparison(comparison, output);
@@ -410,10 +412,23 @@ export async function runEvalCli<
   }
 
   if (savePath !== undefined) {
-    await saveEvalResult(savePath, result as EvalSuiteResult<unknown, unknown, unknown>, {
-      redact,
-      maxValueLength,
-    });
+    let skipSamePathOverwrite = false;
+
+    if (baselinePath !== undefined && comparisonHasRegressions && failOnRegression !== false) {
+      const path = await import("node:path");
+      skipSamePathOverwrite = path.resolve(savePath) === path.resolve(baselinePath);
+    }
+
+    if (skipSamePathOverwrite) {
+      if (format !== "quiet") {
+        const write = output?.stderr ?? ((text: string) => process.stderr.write(text));
+        write(`Skipping overwrite of baseline ${savePath} because regressions were detected.\n`);
+      }
+    } else {
+      await saveEvalResult(savePath, result as EvalSuiteResult<unknown, unknown, unknown>, {
+        redact,
+      });
+    }
   }
 
   const currentExitCode =

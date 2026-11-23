@@ -14,19 +14,19 @@ export {
   toMistralChatParams,
 } from "./completion";
 export type { MistralEmbeddingModelOptions } from "./embedding";
-export type {
-  KnownMistralCompletionModelId,
-  KnownMistralEmbeddingModelId,
-  KnownMistralOcrModelId,
-  MistralCompletionModelId,
-  MistralEmbeddingModelId,
-  MistralOcrModelId,
-} from "./models";
 export {
+  type KnownMistralCompletionModelId,
+  type KnownMistralEmbeddingModelId,
+  type KnownMistralOcrModelId,
   MISTRAL_OCR_LATEST,
-  type MistralOcrPage,
-  type MistralOcrRequest,
-  type MistralOcrResponse,
-  type MistralOcrSource,
-  type MistralOcrUploadedFile,
+  type MistralCompletionModelId,
+  type MistralEmbeddingModelId,
+  type MistralOcrModelId,
+} from "./models";
+export type {
+  MistralOcrPage,
+  MistralOcrRequest,
+  MistralOcrResponse,
+  MistralOcrSource,
+  MistralOcrUploadedFile,
 } from "./ocr";

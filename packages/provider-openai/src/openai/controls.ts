@@ -24,7 +24,11 @@ export type OpenAIControlsFor<ModelId extends OpenAICompletionModelId> = ModelId
   ? ReasoningEffortControls<"high">
   : ModelId extends "gpt-5.2-pro" | "gpt-5.4-pro" | "gpt-5.5-pro"
     ? ReasoningEffortControls<"medium" | "high" | "xhigh">
-    : ModelId extends `gpt-6${string}`
+    : ModelId extends
+          | `gpt-6${string}`
+          | "gpt-daybreak-blue-latest"
+          | "gpt-daybreak-red-latest"
+          | "gpt-rosalind-research"
       ? ReasoningEffortControls<"low" | "medium" | "high" | "xhigh" | "max">
       : ModelId extends `gpt-5.6${string}`
         ? ReasoningEffortControls<"none" | "low" | "medium" | "high" | "xhigh" | "max">
@@ -74,7 +78,14 @@ export function openAIControlsForModel(modelId: string): OpenAIReasoningControls
   if (modelId === "gpt-5.2-pro" || modelId === "gpt-5.4-pro" || modelId === "gpt-5.5-pro") {
     return PRO_REASONING_CONTROLS;
   }
-  if (modelId.startsWith("gpt-6")) return GPT_6_REASONING_CONTROLS;
+  if (
+    modelId.startsWith("gpt-6") ||
+    modelId === "gpt-daybreak-blue-latest" ||
+    modelId === "gpt-daybreak-red-latest" ||
+    modelId === "gpt-rosalind-research"
+  ) {
+    return GPT_6_REASONING_CONTROLS;
+  }
   if (modelId.startsWith("gpt-5.6")) return GPT_5_6_REASONING_CONTROLS;
   if (modelId.startsWith("gpt-5.2") || modelId.startsWith("gpt-5.4")) {
     return LATE_GPT_5_DEFAULT_NONE_CONTROLS;

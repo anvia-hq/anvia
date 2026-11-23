@@ -25,6 +25,7 @@ import {
   emptyToUndefined,
   metadataAttributes,
   recordSpanError,
+  traceContextAttributes,
 } from "./helpers.js";
 import { startRootSpan } from "./root-span.js";
 import type { OtelPipelineObserverOptions } from "./types.js";
@@ -58,7 +59,8 @@ class OtelPipelineObserver implements PipelineObserver {
       args.trace?.traceId,
       args.trace?.parentObservationId,
     );
-    return new OtelPipelineRunObserver(this.tracer, root, this.options);
+    const traceContext = traceContextAttributes(args.trace, args.pipelineName ?? args.pipelineId);
+    return new OtelPipelineRunObserver(this.tracer, root, this.options, traceContext);
   }
 }
 
@@ -71,6 +73,7 @@ class OtelPipelineRunObserver implements PipelineRunObservation {
     private readonly tracer: Tracer,
     private readonly root: Span,
     private readonly options: OtelPipelineObserverOptions,
+    private readonly traceContext: Attributes,
   ) {
     const spanContext = root.spanContext();
     this.trace = { traceId: spanContext.traceId, observationId: spanContext.spanId };
@@ -84,7 +87,10 @@ class OtelPipelineRunObserver implements PipelineRunObservation {
       `${args.node.kind}.${args.node.id}`,
       {
         kind: SpanKind.INTERNAL,
-        attributes: pipelineStageStartAttributes(args, this.options),
+        attributes: {
+          ...this.traceContext,
+          ...pipelineStageStartAttributes(args, this.options),
+        },
       },
       parent,
     );
@@ -152,11 +158,7 @@ function pipelineRunStartAttributes(
     "anvia.pipeline.name": args.pipelineName,
     "anvia.pipeline.description": args.pipelineDescription,
     "anvia.pipeline.input": capturedJson(args.input, "input", options),
-    "anvia.trace.name": args.trace?.name ?? args.pipelineName ?? args.pipelineId,
-    "anvia.trace.user_id": args.trace?.userId,
-    "anvia.trace.session_id": args.trace?.sessionId,
-    "anvia.trace.tags": args.trace?.tags === undefined ? undefined : [...args.trace.tags],
-    "anvia.trace.version": args.trace?.version,
+    ...traceContextAttributes(args.trace, args.pipelineName ?? args.pipelineId),
     "anvia.prompt.name": args.trace?.promptRef?.name,
     "anvia.prompt.version": args.trace?.promptRef?.version,
     ...metadataAttributes("anvia.pipeline.metadata", args.pipelineMetadata, options),

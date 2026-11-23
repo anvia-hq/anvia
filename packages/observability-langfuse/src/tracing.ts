@@ -104,15 +104,31 @@ type LangfuseCapture = {
 
 type LangfuseParent = { readonly otelSpan: Span } | SpanContext;
 
+type LangfuseTraceContext = {
+  readonly name?: string | undefined;
+  readonly userId?: string | undefined;
+  readonly sessionId?: string | undefined;
+  readonly tags?: readonly string[] | undefined;
+};
+
 class LangfuseObservationFactory {
-  constructor(private readonly tracer: Tracer) {}
+  constructor(
+    private readonly tracer: Tracer,
+    private readonly traceContext?: LangfuseTraceContext,
+  ) {}
+
+  withTraceContext(traceContext: LangfuseTraceContext): LangfuseObservationFactory {
+    return new LangfuseObservationFactory(this.tracer, traceContext);
+  }
 
   agent(
     name: string,
     attributes: Parameters<LangfuseAgent["update"]>[0],
     parent?: LangfuseParent | undefined,
   ): LangfuseAgent {
-    return new LangfuseAgent({ otelSpan: this.startSpan(name, parent), attributes });
+    const observation = new LangfuseAgent({ otelSpan: this.startSpan(name, parent), attributes });
+    applyTraceContextAttributes(observation.otelSpan, this.traceContext);
+    return observation;
   }
 
   span(
@@ -120,7 +136,9 @@ class LangfuseObservationFactory {
     attributes: Parameters<LangfuseSpan["update"]>[0],
     parent: LangfuseParent,
   ): LangfuseSpan {
-    return new LangfuseSpan({ otelSpan: this.startSpan(name, parent), attributes });
+    const observation = new LangfuseSpan({ otelSpan: this.startSpan(name, parent), attributes });
+    applyTraceContextAttributes(observation.otelSpan, this.traceContext);
+    return observation;
   }
 
   generation(
@@ -128,7 +146,12 @@ class LangfuseObservationFactory {
     attributes: LangfuseGenerationAttributes,
     parent: LangfuseParent,
   ): LangfuseGeneration {
-    return new LangfuseGeneration({ otelSpan: this.startSpan(name, parent), attributes });
+    const observation = new LangfuseGeneration({
+      otelSpan: this.startSpan(name, parent),
+      attributes,
+    });
+    applyTraceContextAttributes(observation.otelSpan, this.traceContext);
+    return observation;
   }
 
   tool(
@@ -136,7 +159,9 @@ class LangfuseObservationFactory {
     attributes: Parameters<LangfuseTool["update"]>[0],
     parent: LangfuseParent,
   ): LangfuseTool {
-    return new LangfuseTool({ otelSpan: this.startSpan(name, parent), attributes });
+    const observation = new LangfuseTool({ otelSpan: this.startSpan(name, parent), attributes });
+    applyTraceContextAttributes(observation.otelSpan, this.traceContext);
+    return observation;
   }
 
   guardrail(
@@ -144,7 +169,12 @@ class LangfuseObservationFactory {
     attributes: Parameters<LangfuseGuardrail["update"]>[0],
     parent: LangfuseParent,
   ): LangfuseGuardrail {
-    return new LangfuseGuardrail({ otelSpan: this.startSpan(name, parent), attributes });
+    const observation = new LangfuseGuardrail({
+      otelSpan: this.startSpan(name, parent),
+      attributes,
+    });
+    applyTraceContextAttributes(observation.otelSpan, this.traceContext);
+    return observation;
   }
 
   event(
@@ -154,11 +184,13 @@ class LangfuseObservationFactory {
     timestamp?: Date | undefined,
   ): LangfuseEvent {
     const endTime = timestamp ?? new Date();
-    return new LangfuseEvent({
+    const observation = new LangfuseEvent({
       otelSpan: this.startSpan(name, parent, timestamp),
       attributes,
       timestamp: endTime,
     });
+    applyTraceContextAttributes(observation.otelSpan, this.traceContext);
+    return observation;
   }
 
   private startSpan(name: string, parent?: LangfuseParent, startTime?: Date): Span {
@@ -322,10 +354,16 @@ export class LangfuseClient {
             traceFlags: TraceFlags.SAMPLED,
           },
     );
+    const traceContext: LangfuseTraceContext = {
+      name: args.trace?.name ?? args.agentName,
+      userId: args.trace?.userId,
+      sessionId: args.trace?.sessionId,
+      tags: args.trace?.tags,
+    };
     applyTraceAttributes(root, args, capturedTraceMetadata);
     return new LangfuseRunObserver(
       root,
-      resource.observations,
+      resource.observations.withTraceContext(traceContext),
       { traceId: root.traceId, observationId: root.id },
       resolvePromptRef(args),
       capture,
@@ -606,28 +644,40 @@ function buildScoreBody(score: LangfuseScoreArgs): Record<string, unknown> {
   return body;
 }
 
+function applyTraceContextAttributes(
+  span: Span | undefined,
+  context: LangfuseTraceContext | undefined,
+): void {
+  if (span === undefined || context === undefined) return;
+
+  if (context.name !== undefined) {
+    span.setAttribute(LangfuseOtelSpanAttributes.TRACE_NAME, context.name);
+  }
+
+  if (context.userId !== undefined) {
+    span.setAttribute(LangfuseOtelSpanAttributes.TRACE_USER_ID, context.userId);
+  }
+
+  if (context.sessionId !== undefined) {
+    span.setAttribute(LangfuseOtelSpanAttributes.TRACE_SESSION_ID, context.sessionId);
+  }
+
+  if (context.tags !== undefined) {
+    span.setAttribute(LangfuseOtelSpanAttributes.TRACE_TAGS, [...context.tags]);
+  }
+}
+
 function applyTraceAttributes(
   root: LangfuseAgent,
   args: AgentRunStartArgs,
   capturedMetadata: unknown,
 ): void {
-  const traceName = args.trace?.name ?? args.agentName;
-
-  if (traceName !== undefined) {
-    root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_NAME, traceName);
-  }
-
-  if (args.trace?.userId !== undefined) {
-    root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_USER_ID, args.trace.userId);
-  }
-
-  if (args.trace?.sessionId !== undefined) {
-    root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_SESSION_ID, args.trace.sessionId);
-  }
-
-  if (args.trace?.tags !== undefined) {
-    root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_TAGS, [...args.trace.tags]);
-  }
+  applyTraceContextAttributes(root.otelSpan, {
+    name: args.trace?.name ?? args.agentName,
+    userId: args.trace?.userId,
+    sessionId: args.trace?.sessionId,
+    tags: args.trace?.tags,
+  });
 
   for (const [key, value] of Object.entries(
     isRecord(capturedMetadata) ? capturedMetadata : { value: capturedMetadata },

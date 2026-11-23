@@ -1559,6 +1559,96 @@ describe("OpenTelemetry run roots", () => {
     expect(run?.trace?.traceId).toBe(traceId);
     expect(tracer.spans[0]?.parentSpanId).toBeUndefined();
   });
+
+  it("propagates trace correlation context onto generation, tool, and child-agent spans", async () => {
+    const tracer = new FakeTracer();
+    const tracing = createOtelObserver({ tracer: tracer.tracer, captureMode: "full" });
+    const run = await tracing.startRun({
+      runId: "run-ctx",
+      agentName: "support",
+      prompt: userMessage("Investigate ticket"),
+      history: [],
+      maxTurns: 2,
+      trace: {
+        name: "ticket-triage",
+        userId: "user-42",
+        sessionId: "thread-99",
+        tags: ["support", "priority"],
+        version: "v2",
+      },
+    });
+    const generation = await run?.startGeneration?.(generationStartArgs());
+    await generation?.end({
+      turn: 1,
+      response: {
+        messageId: "msg-1",
+        choice: [AssistantContent.text("Checking")],
+        usage: usage(10, 5),
+        rawResponse: {},
+      },
+    });
+    const tool = await run?.startTool?.({
+      turn: 1,
+      toolName: "delegate",
+      args: '{"id":"TICKET-1"}',
+      toolCall: toolCall(),
+      internalCallId: "internal-1",
+      toolCallId: "call-1",
+    });
+    await tool?.streamEvent?.({
+      turn: 1,
+      toolName: "delegate",
+      args: '{"id":"TICKET-1"}',
+      toolCall: toolCall(),
+      internalCallId: "internal-1",
+      toolCallId: "call-1",
+      event: {
+        agentId: "researcher",
+        agentName: "Researcher",
+        event: {
+          type: "tool_call",
+          turn: 1,
+          toolCall: { toolName: "lookup_ticket", toolCallId: "sub-1", input: { id: "TICKET-1" } },
+        },
+      },
+    });
+    await tool?.end({
+      turn: 1,
+      toolName: "delegate",
+      args: '{"id":"TICKET-1"}',
+      toolCall: toolCall(),
+      result: "ok",
+      skipped: false,
+      internalCallId: "internal-1",
+      toolCallId: "call-1",
+    });
+    await run?.end({
+      runId: "run-ctx",
+      status: "completed",
+      output: "Done",
+      text: "Done",
+      usage: usage(10, 5),
+      messages: [],
+    });
+
+    const expectedContext = {
+      "anvia.trace.name": "ticket-triage",
+      "anvia.trace.user_id": "user-42",
+      "anvia.trace.session_id": "thread-99",
+      "anvia.trace.tags": ["support", "priority"],
+      "anvia.trace.version": "v2",
+    };
+    expect(tracer.spans.map((span) => span.name)).toEqual([
+      "agent.support",
+      "model.turn.1",
+      "tool.delegate",
+      "Researcher.run",
+      "Researcher.lookup_ticket",
+    ]);
+    for (const span of tracer.spans) {
+      expect(span.attributes).toMatchObject(expectedContext);
+    }
+  });
 });
 
 function generationStartArgs(): AgentGenerationStartArgs {

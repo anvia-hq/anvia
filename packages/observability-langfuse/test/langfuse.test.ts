@@ -978,6 +978,18 @@ describe("langfuse", () => {
       expect.objectContaining({ metadata: expect.objectContaining({ toolCallId: "call-1" }) }),
       { asType: "tool" },
     );
+    for (const child of [turn, generation, tool]) {
+      expect(child.otelSpan.setAttribute).toHaveBeenCalledWith(
+        "langfuse.trace.name",
+        "ticket-summary",
+      );
+      expect(child.otelSpan.setAttribute).toHaveBeenCalledWith("langfuse.trace.user_id", "user-1");
+      expect(child.otelSpan.setAttribute).toHaveBeenCalledWith(
+        "langfuse.trace.session_id",
+        "session-1",
+      );
+      expect(child.otelSpan.setAttribute).toHaveBeenCalledWith("langfuse.trace.tags", ["cookbook"]);
+    }
     expect(tool.update).toHaveBeenCalledWith(
       expect.objectContaining({
         output: '{"id":"TICKET-1"}',

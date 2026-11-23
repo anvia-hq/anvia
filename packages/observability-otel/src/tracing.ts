@@ -49,6 +49,7 @@ import {
   toolEndAttributes,
   toolErrorAttributes,
   toolStartAttributes,
+  traceContextAttributes,
   usageAttributesFromRecord,
 } from "./helpers.js";
 import { startRootSpan } from "./root-span.js";
@@ -86,7 +87,8 @@ class OtelAgentObserver implements AgentObserver {
       args.trace?.parentObservationId,
     );
 
-    return new OtelRunObserver(this.tracer, root, this.options);
+    const traceContext = traceContextAttributes(args.trace, args.agentName);
+    return new OtelRunObserver(this.tracer, root, this.options, traceContext);
   }
 }
 
@@ -98,6 +100,7 @@ class OtelRunObserver implements AgentRunObserver {
     private readonly tracer: Tracer,
     private readonly root: Span,
     private readonly options: OtelObserverOptions,
+    private readonly traceContext: Attributes,
   ) {
     const spanContext = root.spanContext();
     this.trace = {
@@ -112,7 +115,10 @@ class OtelRunObserver implements AgentRunObserver {
       `model.turn.${args.turn}`,
       {
         kind: SpanKind.CLIENT,
-        attributes: generationStartAttributes(args, this.options),
+        attributes: {
+          ...this.traceContext,
+          ...generationStartAttributes(args, this.options),
+        },
       },
       this.rootContext,
     );
@@ -124,11 +130,14 @@ class OtelRunObserver implements AgentRunObserver {
       `tool.${args.toolName}`,
       {
         kind: SpanKind.INTERNAL,
-        attributes: toolStartAttributes(args, this.options),
+        attributes: {
+          ...this.traceContext,
+          ...toolStartAttributes(args, this.options),
+        },
       },
       this.rootContext,
     );
-    return new OtelToolObserver(this.tracer, tool, this.options);
+    return new OtelToolObserver(this.tracer, tool, this.options, this.traceContext);
   }
 
   end(args: AgentRunEndArgs): void {
@@ -198,6 +207,7 @@ class OtelToolObserver implements AgentToolObserver {
     private readonly tracer: Tracer,
     private readonly tool: Span,
     private readonly options: OtelObserverOptions,
+    private readonly traceContext: Attributes,
   ) {
     this.toolContext = trace.setSpan(ROOT_CONTEXT, tool);
   }
@@ -300,17 +310,20 @@ class OtelToolObserver implements AgentToolObserver {
         `${agentLabel(agentId, agentName)}.${toolName}`,
         {
           kind: SpanKind.INTERNAL,
-          attributes: compactAttributes({
-            "anvia.child_agent.id": agentId,
-            "anvia.child_agent.name": agentName,
-            "anvia.child_agent.turn": childTurn,
-            "anvia.tool.name": toolName,
-            "anvia.tool.call_id": toolCallId,
-            "anvia.tool.args": capturedJson(toolCall.input, "input", this.options),
-            "anvia.parent_tool.name": args.toolName,
-            "anvia.parent_tool.internal_call_id": args.internalCallId,
-            "anvia.parent_tool.call_id": args.toolCallId,
-          }),
+          attributes: {
+            ...this.traceContext,
+            ...compactAttributes({
+              "anvia.child_agent.id": agentId,
+              "anvia.child_agent.name": agentName,
+              "anvia.child_agent.turn": childTurn,
+              "anvia.tool.name": toolName,
+              "anvia.tool.call_id": toolCallId,
+              "anvia.tool.args": capturedJson(toolCall.input, "input", this.options),
+              "anvia.parent_tool.name": args.toolName,
+              "anvia.parent_tool.internal_call_id": args.internalCallId,
+              "anvia.parent_tool.call_id": args.toolCallId,
+            }),
+          },
         },
         trace.setSpan(ROOT_CONTEXT, agent),
       );
@@ -449,13 +462,16 @@ class OtelToolObserver implements AgentToolObserver {
       `${agentLabel(agentId, agentName)}.run`,
       {
         kind: SpanKind.INTERNAL,
-        attributes: compactAttributes({
-          "anvia.child_agent.id": agentId,
-          "anvia.child_agent.name": agentName,
-          "anvia.parent_tool.name": args.toolName,
-          "anvia.parent_tool.internal_call_id": args.internalCallId,
-          "anvia.parent_tool.call_id": args.toolCallId,
-        }),
+        attributes: {
+          ...this.traceContext,
+          ...compactAttributes({
+            "anvia.child_agent.id": agentId,
+            "anvia.child_agent.name": agentName,
+            "anvia.parent_tool.name": args.toolName,
+            "anvia.parent_tool.internal_call_id": args.internalCallId,
+            "anvia.parent_tool.call_id": args.toolCallId,
+          }),
+        },
       },
       this.toolContext,
     );
@@ -479,14 +495,17 @@ class OtelToolObserver implements AgentToolObserver {
       `${agentLabel(agentId, agentName)}.model.turn.${turn}`,
       {
         kind: SpanKind.CLIENT,
-        attributes: compactAttributes({
-          "anvia.child_agent.id": agentId,
-          "anvia.child_agent.name": agentName,
-          "anvia.child_agent.turn": turn,
-          "anvia.parent_tool.name": args.toolName,
-          "anvia.parent_tool.internal_call_id": args.internalCallId,
-          "anvia.parent_tool.call_id": args.toolCallId,
-        }),
+        attributes: {
+          ...this.traceContext,
+          ...compactAttributes({
+            "anvia.child_agent.id": agentId,
+            "anvia.child_agent.name": agentName,
+            "anvia.child_agent.turn": turn,
+            "anvia.parent_tool.name": args.toolName,
+            "anvia.parent_tool.internal_call_id": args.internalCallId,
+            "anvia.parent_tool.call_id": args.toolCallId,
+          }),
+        },
       },
       trace.setSpan(ROOT_CONTEXT, agent),
     );

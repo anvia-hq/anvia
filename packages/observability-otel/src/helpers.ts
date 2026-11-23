@@ -18,6 +18,19 @@ export function rootSpanName(args: AgentRunStartArgs): string {
     : `agent.${args.agentName}`;
 }
 
+export function traceContextAttributes(
+  trace: AgentRunStartArgs["trace"],
+  fallbackName?: string,
+): Attributes {
+  return compactAttributes({
+    "anvia.trace.name": trace?.name ?? fallbackName,
+    "anvia.trace.user_id": trace?.userId,
+    "anvia.trace.session_id": trace?.sessionId,
+    "anvia.trace.tags": trace?.tags === undefined ? undefined : [...trace.tags],
+    "anvia.trace.version": trace?.version,
+  });
+}
+
 export function runStartAttributes(
   args: AgentRunStartArgs,
   serviceName: string | undefined,
@@ -33,11 +46,7 @@ export function runStartAttributes(
     "anvia.run.max_turns": args.maxTurns,
     "anvia.run.prompt": capturedJson(args.prompt, "input", options),
     "anvia.run.history": capturedJson(args.history, "input", options),
-    "anvia.trace.name": args.trace?.name ?? args.agentName,
-    "anvia.trace.user_id": args.trace?.userId,
-    "anvia.trace.session_id": args.trace?.sessionId,
-    "anvia.trace.tags": args.trace?.tags === undefined ? undefined : [...args.trace.tags],
-    "anvia.trace.version": args.trace?.version,
+    ...traceContextAttributes(args.trace, args.agentName),
     "anvia.prompt.name": args.promptRef?.name ?? args.trace?.promptRef?.name,
     "anvia.prompt.version": args.promptRef?.version ?? args.trace?.promptRef?.version,
     ...metadataAttributes("anvia.trace.metadata", args.trace?.metadata, options),

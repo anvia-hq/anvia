@@ -247,4 +247,23 @@ describe("eval type safety", () => {
 
     expect(suite.reporters).toEqual([reporter]);
   });
+
+  it("supports 3-arg targets in defineEvalSuite and agentEvalTarget(agent) shorthand", () => {
+    const suite = defineEvalSuite({
+      name: "context-target",
+      cases: [{ id: "case", input: "hello", expected: "hello" }],
+      target: (input, _testCase, context) => {
+        expectTypeOf(context?.signal).toEqualTypeOf<AbortSignal | undefined>();
+        return input;
+      },
+      metrics: [exactMatch()],
+    });
+
+    expect(suite.name).toBe("context-target");
+
+    const shorthand = agentEvalTarget({
+      generate: async () => null as never,
+    });
+    expect(shorthand).toBeTypeOf("function");
+  });
 });

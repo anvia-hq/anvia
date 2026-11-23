@@ -7,8 +7,15 @@ import {
   type JsonValue,
 } from "@anvia/core/decision";
 import { isJsonValue } from "@anvia/core/completion";
-import { isPlainObject, normalizeOpenAIUsage } from "../utils";
+import {
+  isDecisionDataObject as isDataObject,
+  isDecisionProbability as isProbability,
+  isDecisionTokenCount as isTokenCount,
+  isPlainObject,
+  probabilitiesSumToOne as sumsToOne,
+} from "@anvia/core/internal/provider";
 import type { CompiledDecisionQuestion } from "./decision-request";
+import { normalizeOpenAIUsage } from "./usage";
 
 export function mapDecisionResponse<Questions extends DecisionQuestions>(
   rawResponse: unknown,
@@ -226,17 +233,4 @@ export function mapDecisionResponse<Questions extends DecisionQuestions>(
     usage: { ...normalizedUsage, cacheCreationInputTokens: written },
     rawResponse,
   };
-}
-
-function isDataObject(value: unknown): value is Record<string, JsonValue> {
-  return isPlainObject(value) && isJsonValue(value);
-}
-function isProbability(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
-}
-function isTokenCount(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-function sumsToOne(values: number[]): boolean {
-  return Math.abs(values.reduce((sum, value) => sum + value, 0) - 1) <= 1e-5;
 }

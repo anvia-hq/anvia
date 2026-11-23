@@ -19,6 +19,9 @@ export default defineConfig({
       "@anvia/core/image-generation": fileURLToPath(
         new URL("../core/src/image-generation/index.ts", import.meta.url),
       ),
+      "@anvia/core/internal/provider": fileURLToPath(
+        new URL("../core/src/internal/provider.ts", import.meta.url),
+      ),
       "@anvia/core/model-listing": fileURLToPath(
         new URL("../core/src/model-listing/index.ts", import.meta.url),
       ),

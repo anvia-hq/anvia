@@ -117,6 +117,18 @@ describe("OpenAI embedding models", () => {
         .embeddingModel({ modelId: "embed-a" })
         .embedTexts(["first", "second"]),
     ).rejects.toThrow("Embedding response item 1 contained an invalid embedding");
+
+    const nullResponseClient = {
+      embeddings: {
+        create: async () => null,
+      },
+    };
+
+    await expect(
+      new OpenAIClient({ client: nullResponseClient as never })
+        .embeddingModel({ modelId: "embed-a" })
+        .embedTexts(["first"]),
+    ).rejects.toThrow("Embedding response length 0 did not match input length 1");
   });
 });
 

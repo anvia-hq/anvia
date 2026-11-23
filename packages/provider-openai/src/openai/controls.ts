@@ -1,11 +1,6 @@
-import {
-  defineCompletionModelControls,
-  type CompletionModelSelectControl,
-  type NoCompletionModelControls,
-  type ReasoningEffortControls,
-} from "@anvia/core/completion";
+import type { NoCompletionModelControls, ReasoningEffortControls } from "@anvia/core/completion";
+import { defineReasoningEffortControls } from "@anvia/core/internal/provider";
 import type { OpenAICompletionModelId } from "./models";
-import type { Writable } from "../utils";
 
 export const OPENAI_REASONING_EFFORTS = [
   "none",
@@ -44,34 +39,45 @@ export type OpenAIControlsFor<ModelId extends OpenAICompletionModelId> = ModelId
                   ? ReasoningEffortControls<"low" | "medium" | "high">
                   : NoCompletionModelControls;
 
-const GPT_6_REASONING_CONTROLS = reasoningControls(
+const GPT_6_REASONING_CONTROLS = defineReasoningEffortControls(
   ["low", "medium", "high", "xhigh", "max"] as const,
   "medium",
 );
-const GPT_5_6_REASONING_CONTROLS = reasoningControls(
+const GPT_5_6_REASONING_CONTROLS = defineReasoningEffortControls(
   ["none", "low", "medium", "high", "xhigh", "max"] as const,
   "medium",
 );
-const LATE_GPT_5_DEFAULT_NONE_CONTROLS = reasoningControls(
+const LATE_GPT_5_DEFAULT_NONE_CONTROLS = defineReasoningEffortControls(
   ["none", "low", "medium", "high", "xhigh"] as const,
   "none",
 );
-const GPT_5_5_REASONING_CONTROLS = reasoningControls(
+const GPT_5_5_REASONING_CONTROLS = defineReasoningEffortControls(
   ["none", "low", "medium", "high", "xhigh"] as const,
   "medium",
 );
-const GPT_5_3_REASONING_CONTROLS = reasoningControls(["low", "medium", "high", "xhigh"] as const);
-const GPT_5_1_REASONING_CONTROLS = reasoningControls(
+const GPT_5_3_REASONING_CONTROLS = defineReasoningEffortControls([
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+] as const);
+const GPT_5_1_REASONING_CONTROLS = defineReasoningEffortControls(
   ["none", "low", "medium", "high"] as const,
   "none",
 );
-const GPT_5_REASONING_CONTROLS = reasoningControls(
+const GPT_5_REASONING_CONTROLS = defineReasoningEffortControls(
   ["minimal", "low", "medium", "high"] as const,
   "medium",
 );
-const HIGH_ONLY_REASONING_CONTROLS = reasoningControls(["high"] as const, "high");
-const PRO_REASONING_CONTROLS = reasoningControls(["medium", "high", "xhigh"] as const, "high");
-const LEGACY_REASONING_CONTROLS = reasoningControls(["low", "medium", "high"] as const, "medium");
+const HIGH_ONLY_REASONING_CONTROLS = defineReasoningEffortControls(["high"] as const, "high");
+const PRO_REASONING_CONTROLS = defineReasoningEffortControls(
+  ["medium", "high", "xhigh"] as const,
+  "high",
+);
+const LEGACY_REASONING_CONTROLS = defineReasoningEffortControls(
+  ["low", "medium", "high"] as const,
+  "medium",
+);
 
 export function openAIControlsForModel(modelId: string): OpenAIReasoningControls | undefined {
   if (modelId === "gpt-5-pro") return HIGH_ONLY_REASONING_CONTROLS;
@@ -106,22 +112,4 @@ export function openAIControlsForModel(modelId: string): OpenAIReasoningControls
   if (/^o\d/.test(modelId)) return LEGACY_REASONING_CONTROLS;
 
   return undefined;
-}
-
-function reasoningControls<const Efforts extends readonly OpenAIReasoningEffort[]>(
-  efforts: Efforts,
-  defaultValue?: Efforts[number],
-): ReasoningEffortControls<Efforts[number]> {
-  const effortControl: Writable<CompletionModelSelectControl<Efforts[number]>> = {
-    type: "select",
-    label: "Reasoning effort",
-    description: "Controls how much reasoning the model applies before responding.",
-    options: efforts,
-  };
-
-  if (defaultValue !== undefined) effortControl.defaultValue = defaultValue;
-
-  return defineCompletionModelControls({
-    reasoningEffort: effortControl,
-  });
 }

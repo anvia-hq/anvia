@@ -359,16 +359,18 @@ export async function runEvalCli<
   }
 
   let baselineError: unknown;
+  let baselineLoaded = false;
   let comparisonHasRegressions = false;
+  const isSubsetRun =
+    suiteOptions.caseIds !== undefined ||
+    (suiteOptions.tags !== undefined && suiteOptions.tags.length > 0) ||
+    suiteOptions.caseFilter !== undefined ||
+    suiteOptions.shard !== undefined;
 
   if (baselinePath !== undefined) {
     try {
       const baseline = await loadEvalResult(baselinePath);
-      const isSubsetRun =
-        suiteOptions.caseIds !== undefined ||
-        (suiteOptions.tags !== undefined && suiteOptions.tags.length > 0) ||
-        suiteOptions.caseFilter !== undefined ||
-        suiteOptions.shard !== undefined;
+      baselineLoaded = true;
       const effectiveCompareOptions: CompareEvalResultsOptions = {};
 
       if (effectiveScoreTolerance !== undefined) {
@@ -385,6 +387,10 @@ export async function runEvalCli<
         effectiveCompareOptions.ignoreMissingMetrics = compareOptions.ignoreMissingMetrics;
       }
 
+      if (compareOptions?.includeOptionalMetrics !== undefined) {
+        effectiveCompareOptions.includeOptionalMetrics = compareOptions.includeOptionalMetrics;
+      }
+
       const comparison = compareEvalResults(
         baseline,
         result as EvalSuiteResult<unknown, unknown, unknown>,
@@ -392,7 +398,10 @@ export async function runEvalCli<
       );
       comparisonHasRegressions = comparison.hasRegressions;
 
-      if (format !== "quiet" && format !== "json") {
+      if (format === "json") {
+        const stderrWrite = output?.stderr ?? ((text: string) => process.stderr.write(text));
+        printEvalComparison(comparison, { stdout: stderrWrite });
+      } else if (format !== "quiet") {
         printEvalComparison(comparison, output);
       }
 
@@ -412,17 +421,24 @@ export async function runEvalCli<
   }
 
   if (savePath !== undefined) {
-    let skipSamePathOverwrite = false;
+    let skipOverwriteReason: string | undefined;
 
-    if (baselinePath !== undefined && comparisonHasRegressions && failOnRegression !== false) {
+    if (baselinePath !== undefined && baselineLoaded) {
       const path = await import("node:path");
-      skipSamePathOverwrite = path.resolve(savePath) === path.resolve(baselinePath);
+
+      if (path.resolve(savePath) === path.resolve(baselinePath)) {
+        if (comparisonHasRegressions && failOnRegression !== false) {
+          skipOverwriteReason = `Skipping overwrite of baseline ${savePath} because regressions were detected.\n`;
+        } else if (isSubsetRun) {
+          skipOverwriteReason = `Skipping overwrite of baseline ${savePath} for a filtered or sharded subset run.\n`;
+        }
+      }
     }
 
-    if (skipSamePathOverwrite) {
+    if (skipOverwriteReason !== undefined) {
       if (format !== "quiet") {
         const write = output?.stderr ?? ((text: string) => process.stderr.write(text));
-        write(`Skipping overwrite of baseline ${savePath} because regressions were detected.\n`);
+        write(skipOverwriteReason);
       }
     } else {
       await saveEvalResult(savePath, result as EvalSuiteResult<unknown, unknown, unknown>, {

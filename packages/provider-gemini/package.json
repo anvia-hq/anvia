@@ -29,7 +29,7 @@
     "build": "tsdown src/index.ts --format esm --dts --sourcemap --clean --no-fixed-extension",
     "test": "vitest run",
     "pretypecheck": "test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsrs --noEmit"
   },
   "dependencies": {
     "@google/genai": "^2.31.0"

@@ -30,7 +30,7 @@
     "pretypecheck": "test -f ../provider-openai/dist/index.d.ts || pnpm --filter @anvia/openai build",
     "test": "vitest run",
     "test:live": "ANVIA_AZURE_OPENAI_TESTS=1 node --env-file=../../.env ./node_modules/vitest/vitest.mjs run test/responses.integration.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsrs --noEmit"
   },
   "dependencies": {
     "@anvia/openai": "workspace:*",

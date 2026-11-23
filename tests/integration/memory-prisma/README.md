@@ -8,7 +8,7 @@ pnpm --filter @anvia/core build
 pnpm --filter @anvia/memory-prisma build
 ANVIA_PRISMA_TEST_URL=postgresql://postgres@localhost:5432/postgres \
   TZ=Asia/Jakarta pnpm --filter memory-prisma-integration test:postgres
-pnpm --filter memory-prisma-integration exec tsc --noEmit
+pnpm --filter memory-prisma-integration exec tsrs --noEmit
 ```
 
 The database user must be able to create databases. Each schema-owner suite creates a

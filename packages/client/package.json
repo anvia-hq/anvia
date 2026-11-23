@@ -40,7 +40,7 @@
     "build": "tsdown src/index.ts src/transport/index.ts src/durable.ts src/durable-chat.ts --format esm --dts --sourcemap --clean --no-fixed-extension",
     "coverage": "vitest run --coverage",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsrs --noEmit"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

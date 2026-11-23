@@ -6,7 +6,7 @@
   "scripts": {
     "pretest:bun": "pnpm --filter @anvia/core build && pnpm --filter @anvia/durable build && pnpm --filter @anvia/client build && pnpm --filter @anvia/server build && pnpm --filter @anvia/openai build && pnpm --filter @anvia/anthropic build && pnpm --filter @anvia/gemini build && pnpm --filter @anvia/mistral build && pnpm --filter @anvia/mcp build && pnpm --filter @anvia/memory-sqlite build && pnpm --filter @anvia/sandbox build",
     "test:bun": "bun test ./test && node ./scripts/test-packed-artifacts.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsrs --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

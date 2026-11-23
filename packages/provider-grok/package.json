@@ -29,7 +29,7 @@
     "build": "tsdown src/index.ts --format esm --dts --sourcemap --clean --no-fixed-extension",
     "test": "vitest run",
     "pretypecheck": "test -f ../provider-openai/dist/index.d.ts || pnpm --filter @anvia/openai build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsrs --noEmit"
   },
   "dependencies": {
     "@anvia/openai": "workspace:*",

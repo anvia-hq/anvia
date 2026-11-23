@@ -27,7 +27,7 @@
   "scripts": {
     "build": "tsdown src/index.ts --format esm --dts --sourcemap --clean --no-fixed-extension",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsrs --noEmit"
   },
   "dependencies": {
     "pino": "^10.4.0"

@@ -34,6 +34,12 @@ export type EvalMetricDelta = {
   direction?: EvalScoreDirection | undefined;
 };
 
+export type EvalMissingMetric = {
+  caseId: string;
+  metricName: string;
+  baselineOutcome: EvalOutcomeStatus;
+};
+
 export type EvalComparisonResult = {
   baselineName: string;
   candidateName: string;
@@ -45,6 +51,7 @@ export type EvalComparisonResult = {
   unchanged: number;
   addedCases: string[];
   removedCases: string[];
+  missingMetrics: EvalMissingMetric[];
   metricDeltas: Record<string, EvalMetricDelta>;
   durationDeltaMs: number;
   usageDelta: {
@@ -64,6 +71,8 @@ export type EvalComparisonResult = {
 
 export type CompareEvalResultsOptions = {
   scoreTolerance?: number | undefined;
+  ignoreRemovedCases?: boolean | undefined;
+  ignoreMissingMetrics?: boolean | undefined;
 };
 
 /** Compares a candidate eval result against a baseline to surface regressions, improvements, and metric deltas. */
@@ -73,11 +82,14 @@ export function compareEvalResults(
   options: CompareEvalResultsOptions = {},
 ): EvalComparisonResult {
   const tolerance = options.scoreTolerance ?? 1e-9;
+  const ignoreRemovedCases = options.ignoreRemovedCases ?? false;
+  const ignoreMissingMetrics = options.ignoreMissingMetrics ?? false;
   const baselineCases = new Map(baseline.results.map((entry) => [entry.case.id, entry]));
   const candidateCases = new Map(candidate.results.map((entry) => [entry.case.id, entry]));
 
   const addedCases: string[] = [];
   const removedCases: string[] = [];
+  const missingMetrics: EvalMissingMetric[] = [];
   const regressions: EvalComparisonItem[] = [];
   const improvements: EvalComparisonItem[] = [];
   let unchanged = 0;
@@ -99,7 +111,14 @@ export function compareEvalResults(
     for (const baseMetric of baseCase.metrics) {
       const candMetric = candMetrics.get(baseMetric.metricName);
 
-      if (candMetric === undefined) continue;
+      if (candMetric === undefined) {
+        missingMetrics.push({
+          caseId,
+          metricName: baseMetric.metricName,
+          baselineOutcome: baseMetric.outcome.outcome,
+        });
+        continue;
+      }
 
       const baseScore = extractNumericScore(baseMetric.outcome);
       const candScore = extractNumericScore(candMetric.outcome);
@@ -137,17 +156,22 @@ export function compareEvalResults(
   }
 
   const metricDeltas = computeMetricDeltas(baseline, candidate);
+  const hasRegressions =
+    regressions.length > 0 ||
+    (!ignoreRemovedCases && removedCases.length > 0) ||
+    (!ignoreMissingMetrics && missingMetrics.length > 0);
   const comparison: EvalComparisonResult = {
     baselineName: baseline.name,
     candidateName: candidate.name,
     baselineRunId: baseline.run.id,
     candidateRunId: candidate.run.id,
-    hasRegressions: regressions.length > 0,
+    hasRegressions,
     regressions,
     improvements,
     unchanged,
     addedCases,
     removedCases,
+    missingMetrics,
     metricDeltas,
     durationDeltaMs: candidate.durationMs - baseline.durationMs,
     usageDelta: {
@@ -224,6 +248,13 @@ export function formatEvalComparison(comparison: EvalComparisonResult): string {
 
   if (comparison.removedCases.length > 0) {
     lines.push("", `Removed cases: ${comparison.removedCases.join(", ")}`);
+  }
+
+  if (comparison.missingMetrics.length > 0) {
+    lines.push("", "Missing metrics:");
+    for (const item of comparison.missingMetrics) {
+      lines.push(`  - ${item.caseId}.${item.metricName}: ${item.baselineOutcome} -> missing`);
+    }
   }
 
   lines.push(

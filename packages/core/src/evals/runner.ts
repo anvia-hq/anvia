@@ -118,9 +118,11 @@ export async function runEvalSuite<
   const runEndArgs: EvalRunEndArgs = {
     ...lifecycle,
     status: "completed",
+    passed: result.passed,
     completedAt,
     durationMs: result.durationMs,
     metrics: result.metrics,
+    metricSummaries: result.metricSummaries,
     cases: result.cases,
     usage: result.usage,
   };

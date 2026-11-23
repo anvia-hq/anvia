@@ -22,6 +22,7 @@ import {
   validatePositiveInteger,
   type Verdict,
   verdictsSchema,
+  willPassHigher,
 } from "./shared";
 
 export type SummarizationOptions<Input, Output, Expected = unknown> = LlmEvalOptions<
@@ -162,6 +163,7 @@ export function summarization<
       const reasonResult = await maybeReason({
         model: options.model,
         includeReason: config.includeReason,
+        passed: willPassHigher(score, config.threshold, config.strictMode),
         retries: config.retries,
         metric: "summarization",
         abortSignal: args.signal,

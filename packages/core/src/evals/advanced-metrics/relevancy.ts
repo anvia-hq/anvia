@@ -16,6 +16,7 @@ import {
   statementsSchema,
   type Verdict,
   verdictsSchema,
+  willPassHigher,
 } from "./shared";
 
 export type AnswerRelevancyOptions<Input, Output, Expected = unknown> = LlmEvalOptions<
@@ -73,6 +74,7 @@ export function answerRelevancy<
       const reasonResult = await maybeReason({
         model: options.model,
         includeReason: config.includeReason,
+        passed: willPassHigher(score, config.threshold, config.strictMode),
         retries: config.retries,
         metric: "answer relevancy",
         abortSignal: args.signal,
@@ -135,6 +137,7 @@ export function promptAlignment<
       const reasonResult = await maybeReason({
         model: options.model,
         includeReason: config.includeReason,
+        passed: willPassHigher(score, config.threshold, config.strictMode),
         retries: config.retries,
         metric: "prompt alignment",
         abortSignal: args.signal,

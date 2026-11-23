@@ -2,18 +2,21 @@ import { z } from "zod";
 import type { CompletionModel } from "../../completion";
 import { isJsonValue, Usage as UsageValue } from "../../completion";
 import type { ZodSchema } from "../../schema";
-import { errorMessage } from "../format";
+import { errorMessage, readModelIdentity } from "../format";
 import { runJudge } from "../judge";
 import { EvalOutcome } from "../outcome";
 import { resolveActualText } from "../selectors";
 import type { EvalMetric, ValueSelector } from "../types";
 import {
   higherOutcome,
+  type IncludeReasonMode,
   jsonPrompt,
   numericMetric,
   reasonSchema,
+  shouldIncludeReason,
   validateRetries,
   validateThreshold,
+  willPassHigher,
 } from "./shared";
 
 export type JsonCorrectnessOptions<Input, Output, SchemaOutput, Expected = unknown> = {
@@ -23,7 +26,7 @@ export type JsonCorrectnessOptions<Input, Output, SchemaOutput, Expected = unkno
   model?: CompletionModel | undefined;
   threshold?: number | undefined;
   strictMode?: boolean | undefined;
-  includeReason?: boolean | undefined;
+  includeReason?: IncludeReasonMode | undefined;
   retries?: number | undefined;
   actual?: ValueSelector<Input, Output, Expected, string> | undefined;
 };
@@ -43,12 +46,21 @@ export function jsonCorrectness<
   const retries = validateRetries(options.retries ?? 0);
   const includeReason = options.includeReason ?? true;
   const strictMode = options.strictMode ?? true;
+  const modelIdentity = readModelIdentity(options.model);
+  const metricOptions: {
+    threshold: number;
+    required: boolean;
+    model?: { provider: string; modelId: string } | undefined;
+  } = {
+    threshold: strictMode ? 1 : threshold,
+    required: options.required ?? true,
+  };
+
+  if (modelIdentity !== undefined) metricOptions.model = modelIdentity;
+
   return numericMetric(
     (options.name ?? "json_correctness") as Name,
-    {
-      threshold: strictMode ? 1 : threshold,
-      required: options.required ?? true,
-    },
+    metricOptions,
     "higher_is_better",
     async (args) => {
       try {
@@ -71,10 +83,11 @@ export function jsonCorrectness<
           validationError = errorMessage(error);
         }
         const score = validationError === undefined ? 1 : 0;
+        const passed = willPassHigher(score, threshold, strictMode);
         let comment: string | undefined;
         let usage = UsageValue.empty();
 
-        if (includeReason) {
+        if (shouldIncludeReason(includeReason, passed)) {
           if (score === 1) {
             comment = "The generated JSON is syntactically valid and matches the expected schema.";
           } else if (options.model === undefined) {

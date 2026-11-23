@@ -1,5 +1,3 @@
-import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, join, relative, resolve, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { isRecord } from "../internal/record";
 import type { Skill, SkillLoader, SkillValidationIssue } from "./types";
@@ -11,6 +9,9 @@ type SkillFrontmatter = {
   license?: unknown;
   metadata?: unknown;
 };
+
+type FsPromisesModule = typeof import("node:fs/promises");
+type PathModule = typeof import("node:path");
 
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_NAME_LENGTH = 64;
@@ -25,42 +26,51 @@ export const skill = {
 };
 
 async function loadLocalSkills(path: string): Promise<Skill[]> {
-  const root = resolve(path);
+  const [fs, pathModule] = await Promise.all([import("node:fs/promises"), import("node:path")]);
+  const root = pathModule.resolve(path);
 
-  if (await hasSkillFile(root)) {
-    return [await readSkill(root)];
+  if (await hasSkillFile(fs, pathModule, root)) {
+    return [await readSkill(fs, pathModule, root)];
   }
 
-  const entries = await readdir(root, { withFileTypes: true });
+  const entries = await fs.readdir(root, { withFileTypes: true });
   const skills: Skill[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) {
       continue;
     }
 
-    const directory = join(root, entry.name);
+    const directory = pathModule.join(root, entry.name);
 
-    if (await hasSkillFile(directory)) {
-      skills.push(await readSkill(directory));
+    if (await hasSkillFile(fs, pathModule, directory)) {
+      skills.push(await readSkill(fs, pathModule, directory));
     }
   }
   return skills;
 }
 
-async function hasSkillFile(directory: string): Promise<boolean> {
+async function hasSkillFile(
+  fs: FsPromisesModule,
+  pathModule: PathModule,
+  directory: string,
+): Promise<boolean> {
   try {
-    const info = await stat(join(directory, "SKILL.md"));
+    const info = await fs.stat(pathModule.join(directory, "SKILL.md"));
     return info.isFile();
   } catch {
     return false;
   }
 }
 
-async function readSkill(directory: string): Promise<Skill> {
-  const skillPath = join(directory, "SKILL.md");
-  const markdown = await readFile(skillPath, "utf8");
+async function readSkill(
+  fs: FsPromisesModule,
+  pathModule: PathModule,
+  directory: string,
+): Promise<Skill> {
+  const skillPath = pathModule.join(directory, "SKILL.md");
+  const markdown = await fs.readFile(skillPath, "utf8");
   const parsed = parseSkillMarkdown(markdown, skillPath);
-  validateSkillFrontmatter(parsed.frontmatter, directory, skillPath);
+  validateSkillFrontmatter(parsed.frontmatter, pathModule.basename(directory), skillPath);
 
   const name = parsed.frontmatter.name as string;
   const description = parsed.frontmatter.description as string;
@@ -73,8 +83,8 @@ async function readSkill(directory: string): Promise<Skill> {
     description,
     instructions: parsed.body.trim(),
     directory,
-    references: await listRelativeFiles(join(directory, "references")),
-    scripts: await listRelativeFiles(join(directory, "scripts")),
+    references: await listRelativeFiles(fs, pathModule, pathModule.join(directory, "references")),
+    scripts: await listRelativeFiles(fs, pathModule, pathModule.join(directory, "scripts")),
     license,
     metadata,
   };
@@ -115,7 +125,7 @@ function parseSkillMarkdown(
 
 function validateSkillFrontmatter(
   frontmatter: SkillFrontmatter,
-  directory: string,
+  directoryName: string,
   path: string,
 ): void {
   const issues: SkillValidationIssue[] = [];
@@ -136,7 +146,7 @@ function validateSkillFrontmatter(
       });
     }
 
-    if (basename(directory) !== name) {
+    if (directoryName !== name) {
       issues.push({ path, message: "name must match the skill directory name" });
     }
   }
@@ -155,9 +165,13 @@ function validateSkillFrontmatter(
   }
 }
 
-async function listRelativeFiles(directory: string): Promise<string[]> {
+async function listRelativeFiles(
+  fs: FsPromisesModule,
+  pathModule: PathModule,
+  directory: string,
+): Promise<string[]> {
   try {
-    const info = await stat(directory);
+    const info = await fs.stat(directory);
 
     if (!info.isDirectory()) {
       return [];
@@ -167,23 +181,29 @@ async function listRelativeFiles(directory: string): Promise<string[]> {
   }
 
   const files: string[] = [];
-  await collectFiles(directory, directory, files);
+  await collectFiles(fs, pathModule, directory, directory, files);
   return files.sort();
 }
 
-async function collectFiles(root: string, directory: string, files: string[]): Promise<void> {
-  const entries = await readdir(directory, { withFileTypes: true });
+async function collectFiles(
+  fs: FsPromisesModule,
+  pathModule: PathModule,
+  root: string,
+  directory: string,
+  files: string[],
+): Promise<void> {
+  const entries = await fs.readdir(directory, { withFileTypes: true });
   for (const entry of entries) {
-    const path = join(directory, entry.name);
+    const entryPath = pathModule.join(directory, entry.name);
 
     if (entry.isDirectory()) {
-      await collectFiles(root, path, files);
+      await collectFiles(fs, pathModule, root, entryPath, files);
     } else if (entry.isFile()) {
-      files.push(toPortablePath(relative(root, path)));
+      files.push(toPortablePath(pathModule.relative(root, entryPath), pathModule.sep));
     }
   }
 }
 
-function toPortablePath(path: string): string {
-  return sep === "/" ? path : path.split(sep).join("/");
+function toPortablePath(filePath: string, sep: string): string {
+  return sep === "/" ? filePath : filePath.split(sep).join("/");
 }

@@ -11,8 +11,8 @@ import type {
 } from "../../completion";
 import { Usage } from "../../completion";
 import { assertCompletionResponseIntegrity } from "../../completion/provider-output-error";
-import type { AgentHook, ToolApprovalRequestOptions, ToolHookArgs } from "../../hooks";
-import { runControl, toolCallControl } from "../../hooks";
+import type { AgentHook, ToolApprovalRequestOptions, ToolHookArgs } from "../hooks";
+import { runControl, toolCallControl } from "../hooks";
 import type { ActiveAgentRunObservers } from "../../observability/group";
 import type { AgentToolStartArgs, AgentToolStreamEventArgs } from "../../observability/types";
 import type {
@@ -24,13 +24,16 @@ import type {
   ToolRequiresApproval,
 } from "../../tool";
 import { parseToolArgs } from "../../tool";
-import type { AgentMiddleware } from "../../tool/middleware";
+import type { AgentMiddleware } from "../../agent/middleware";
 import { isQuestionTool } from "../../tool/question-tool";
 import { isSkillTool } from "../../tool/skill-tool-marker";
 import { throwIfAborted } from "../abort";
 import { mapWithConcurrency } from "../concurrency";
 import type { ToolApprovalRequest } from "./approval-request";
-import { assertToolApprovalRequirement, toolMayRequireApproval } from "./approval-requirement";
+import {
+  assertToolApprovalRequirement,
+  toolMayRequireApproval,
+} from "../../tool/approval-requirement";
 import type { AgentRunExecution, AgentToolExecutionResult } from "./execution";
 import {
   AgentInteractionSignal,
@@ -42,7 +45,7 @@ import {
   type PreparedToolCall,
   prepareToolCall as prepareRegisteredToolCall,
   prepareToolCallFromInput,
-} from "./prepared-tool-call";
+} from "../../tool/prepared-tool-call";
 import {
   runToolInputMiddlewares,
   runToolResultMiddlewares,

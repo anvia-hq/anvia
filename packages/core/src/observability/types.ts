@@ -15,7 +15,7 @@ import type {
 } from "../completion";
 import type { ContextBreakdown } from "../context/breakdown";
 import type { DeepReadonly } from "../internal/type-utils";
-import type { ToolCallStreamEvent } from "../tool";
+import type { ToolCallStreamEvent } from "../tool/tool";
 
 export type AgentTraceInfo = {
   readonly observer: string;

@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { JsonObject, JsonValue } from "../completion/index";
+import type { JsonObject, JsonValue } from "../completion/types";
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "./standard-schema";
 import { toProviderJsonSchema } from "./zod-schema";
 

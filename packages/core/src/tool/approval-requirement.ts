@@ -1,4 +1,4 @@
-import type { ToolApprovalRequirement } from "../../tool/tool";
+import type { ToolApprovalRequirement } from "./tool";
 
 export function toolMayRequireApproval(requirement: unknown): boolean {
   return requirement !== undefined && requirement !== false;

@@ -10,8 +10,8 @@ export type {
   AgentCompletionStreamEvent,
   AgentCompletionStream,
 } from "./agent-runtime/execution";
-export { createHook } from "../hooks/control";
-export type { AgentHook } from "../hooks/types";
+export { createHook } from "./hooks/control";
+export type { AgentHook } from "./hooks/types";
 export {
   type InternalAgentRunOptions,
   withInternalAgentRunOptions,

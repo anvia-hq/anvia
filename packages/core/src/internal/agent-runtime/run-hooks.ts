@@ -5,10 +5,10 @@ import type {
   Message as MessageType,
   Usage,
 } from "../../completion/index";
-import type { AgentHook } from "../../hooks";
-import { runControl } from "../../hooks";
+import type { AgentHook } from "../hooks";
+import { runControl } from "../hooks";
 import type { AgentTraceOptions } from "../../observability/types";
-import type { AgentMiddleware } from "../../tool/middleware";
+import type { AgentMiddleware } from "../../agent/middleware";
 import { assertJsonObject } from "../json-object";
 
 export type CancelRunFn = (newMessages: MessageType[], reason: string) => Error;

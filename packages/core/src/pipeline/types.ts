@@ -7,8 +7,6 @@ import type {
   AgentTraceInfo,
   AgentTraceOptions,
 } from "../observability";
-import type { ActivePipelineRunObservers } from "./observability";
-import type { Pipeline } from "./pipeline";
 
 export type PipelineMetadata = {
   id?: string | undefined;
@@ -221,8 +219,24 @@ export type PipelineBatchItem<Output> =
       error: unknown;
     };
 
-export type PipelineOutput<Value> =
-  Value extends Pipeline<infer _Input, infer Output> ? Awaited<Output> : never;
+export type PipelineStageObserversHandle = {
+  readonly trace: PipelineTraceInfo | undefined;
+  end(args: PipelineStageEndArgs): Promise<void>;
+  error(args: PipelineStageErrorArgs): Promise<void>;
+};
+
+export type PipelineRunObserversHandle = {
+  readonly trace: PipelineTraceInfo | undefined;
+  startStage(args: PipelineStageStartArgs): Promise<PipelineStageObserversHandle>;
+  end(args: PipelineRunEndArgs): Promise<void>;
+  error(args: PipelineRunErrorArgs): Promise<void>;
+};
+
+export type PipelineOutput<Value> = Value extends {
+  run(options: PipelineRunOptions<never>): Promise<PipelineRunResult<infer Output>>;
+}
+  ? Awaited<Output>
+  : never;
 
 export type ParallelOutput<Branches extends Record<string, unknown>> = {
   [Key in keyof Branches]: PipelineOutput<Branches[Key]>;
@@ -246,7 +260,7 @@ export type PipelineRunContext = {
   abortSignal?: AbortSignal | undefined;
   observer?: PipelineRunObserver | undefined;
   failOnObserverError: boolean;
-  observability: ActivePipelineRunObservers;
+  observability: PipelineRunObserversHandle;
 };
 
 export type PipelineExecutor<Input, Output> = (

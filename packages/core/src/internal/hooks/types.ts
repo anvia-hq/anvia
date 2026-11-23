@@ -3,7 +3,7 @@ import type {
   Message,
   ToolResultContentPart,
   Usage,
-} from "../completion/types";
+} from "../../completion/types";
 
 /**
  * Outcome requested by a run-lifecycle hook: keep going, or terminate the run

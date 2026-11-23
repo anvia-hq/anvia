@@ -22,7 +22,7 @@ import type { RetrySetting } from "../retry";
 import type { ZodSchema } from "../schema";
 import type { SkillSet } from "../skills";
 import type { ToolIndex } from "../tool/dynamic-tools";
-import type { AgentMiddleware } from "../tool/middleware";
+import type { AgentMiddleware } from "./middleware";
 import type { AnyTool } from "../tool/tool";
 import type { AgentLifecycle } from "./lifecycle";
 import type { VectorContext } from "./vector-context";

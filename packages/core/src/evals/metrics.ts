@@ -4,14 +4,23 @@ import { cosineSimilarity, type EmbeddingModel, embedText } from "../embeddings"
 import { extract } from "../extractor";
 import { throwIfAborted } from "../internal/abort";
 import type { ZodSchema } from "../schema";
-import { evalValuesEqual, formatValue } from "./format";
+import { evalValuesEqual, formatValue, readModelIdentity } from "./format";
 import { EvalOutcome } from "./outcome";
 import { resolveActual, resolveActualText, resolveExpected, resolveJudgePrompt } from "./selectors";
-import type { EvalCaseRequirements, EvalMetric, SelectorOrValue, ValueSelector } from "./types";
+import type {
+  EvalCaseRequirements,
+  EvalMetadata,
+  EvalMetric,
+  EvalMetricArgs,
+  SelectorOrValue,
+  ValueSelector,
+} from "./types";
 
 export type ExactMatchOptions<Input, Output, Expected = unknown> = {
   name?: string | undefined;
   required?: boolean | undefined;
+  caseSensitive?: boolean | undefined;
+  trim?: boolean | undefined;
   actual?: ValueSelector<Input, Output, Expected, unknown> | undefined;
   expected?: SelectorOrValue<Input, Output, Expected, unknown> | undefined;
 };
@@ -31,6 +40,8 @@ export function exactMatch<Input, Output, Expected = unknown, const Name extends
 export function exactMatch<Input, Output, Expected = unknown, const Name extends string = string>(
   options: ExactMatchOptions<Input, Output, Expected> & { name?: Name | undefined } = {},
 ): EvalMetric<Input, Output, boolean, Expected, Name, EvalCaseRequirements> {
+  const caseSensitive = options.caseSensitive ?? true;
+  const trim = options.trim ?? false;
   return {
     name: (options.name ?? "exact_match") as Name,
     required: options.required ?? true,
@@ -45,7 +56,11 @@ export function exactMatch<Input, Output, Expected = unknown, const Name extends
         return EvalOutcome.invalid("No expected value provided for exact match.");
       }
 
-      const passed = evalValuesEqual(actual, expected);
+      const passed =
+        typeof actual === "string" && typeof expected === "string"
+          ? normalizeText(actual, caseSensitive, trim) ===
+            normalizeText(expected, caseSensitive, trim)
+          : evalValuesEqual(actual, expected);
       return passed
         ? EvalOutcome.pass(true)
         : EvalOutcome.fail(false, { comment: `Expected ${formatValue(expected)}.` });
@@ -56,10 +71,17 @@ export function exactMatch<Input, Output, Expected = unknown, const Name extends
 export type ContainsOptions<Input, Output, Expected = unknown> = {
   name?: string | undefined;
   required?: boolean | undefined;
+  caseSensitive?: boolean | undefined;
   actual?: ValueSelector<Input, Output, Expected, string> | undefined;
   expected?: SelectorOrValue<Input, Output, Expected, string | RegExp> | undefined;
 };
 
+export function contains<Input, Output, Expected = unknown, const Name extends string = string>(
+  expected: string | RegExp,
+  options?: Omit<ContainsOptions<Input, Output, Expected>, "expected"> & {
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
 export function contains<Input, Output, Expected = unknown, const Name extends string = string>(
   options: ContainsOptions<Input, Output, Expected> & {
     expected: Exclude<ContainsOptions<Input, Output, Expected>["expected"], undefined>;
@@ -73,8 +95,19 @@ export function contains<Input, Output, Expected = unknown, const Name extends s
   },
 ): EvalMetric<Input, Output, boolean, Expected, Name, { expected: string | RegExp }>;
 export function contains<Input, Output, Expected = unknown, const Name extends string = string>(
-  options: ContainsOptions<Input, Output, Expected> & { name?: Name | undefined } = {},
+  optionsOrExpected:
+    | string
+    | RegExp
+    | (ContainsOptions<Input, Output, Expected> & { name?: Name | undefined }) = {},
+  extraOptions?: Omit<ContainsOptions<Input, Output, Expected>, "expected"> & {
+    name?: Name | undefined;
+  },
 ): EvalMetric<Input, Output, boolean, Expected, Name, EvalCaseRequirements> {
+  const options: ContainsOptions<Input, Output, Expected> & { name?: Name | undefined } =
+    typeof optionsOrExpected === "string" || optionsOrExpected instanceof RegExp
+      ? { ...extraOptions, expected: optionsOrExpected }
+      : optionsOrExpected;
+  const caseSensitive = options.caseSensitive ?? true;
   return {
     name: (options.name ?? "contains") as Name,
     required: options.required ?? true,
@@ -93,8 +126,7 @@ export function contains<Input, Output, Expected = unknown, const Name extends s
         return EvalOutcome.invalid("Contains expected value must be a string or RegExp.");
       }
 
-      const passed =
-        expected instanceof RegExp ? regexMatches(expected, actual) : actual.includes(expected);
+      const passed = textExpectationMatches(expected, actual, caseSensitive);
       return passed
         ? EvalOutcome.pass(true)
         : EvalOutcome.fail(false, { comment: `Output did not contain ${String(expected)}.` });
@@ -109,6 +141,12 @@ export type NotContainsOptions<Input, Output, Expected = unknown> = ContainsOpti
 >;
 
 export function notContains<Input, Output, Expected = unknown, const Name extends string = string>(
+  expected: string | RegExp,
+  options?: Omit<NotContainsOptions<Input, Output, Expected>, "expected"> & {
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function notContains<Input, Output, Expected = unknown, const Name extends string = string>(
   options: NotContainsOptions<Input, Output, Expected> & {
     expected: Exclude<NotContainsOptions<Input, Output, Expected>["expected"], undefined>;
     name?: Name | undefined;
@@ -121,8 +159,19 @@ export function notContains<Input, Output, Expected = unknown, const Name extend
   },
 ): EvalMetric<Input, Output, boolean, Expected, Name, { expected: string | RegExp }>;
 export function notContains<Input, Output, Expected = unknown, const Name extends string = string>(
-  options: NotContainsOptions<Input, Output, Expected> & { name?: Name | undefined } = {},
+  optionsOrExpected:
+    | string
+    | RegExp
+    | (NotContainsOptions<Input, Output, Expected> & { name?: Name | undefined }) = {},
+  extraOptions?: Omit<NotContainsOptions<Input, Output, Expected>, "expected"> & {
+    name?: Name | undefined;
+  },
 ): EvalMetric<Input, Output, boolean, Expected, Name, EvalCaseRequirements> {
+  const options: NotContainsOptions<Input, Output, Expected> & { name?: Name | undefined } =
+    typeof optionsOrExpected === "string" || optionsOrExpected instanceof RegExp
+      ? { ...extraOptions, expected: optionsOrExpected }
+      : optionsOrExpected;
+  const caseSensitive = options.caseSensitive ?? true;
   return {
     name: (options.name ?? "not_contains") as Name,
     required: options.required ?? true,
@@ -141,7 +190,7 @@ export function notContains<Input, Output, Expected = unknown, const Name extend
         return EvalOutcome.invalid("notContains expected value must be a string or RegExp.");
       }
 
-      const found = textExpectationMatches(expected, actual);
+      const found = textExpectationMatches(expected, actual, caseSensitive);
       return found
         ? EvalOutcome.fail(false, {
             comment: `Output contained forbidden value ${String(expected)}.`,
@@ -154,6 +203,7 @@ export function notContains<Input, Output, Expected = unknown, const Name extend
 export type ContainsListOptions<Input, Output, Expected = unknown> = {
   name?: string | undefined;
   required?: boolean | undefined;
+  caseSensitive?: boolean | undefined;
   actual?: ValueSelector<Input, Output, Expected, string> | undefined;
   expected?: SelectorOrValue<Input, Output, Expected, ReadonlyArray<string | RegExp>> | undefined;
 };
@@ -165,20 +215,37 @@ export type ContainsAllOptions<Input, Output, Expected = unknown> = ContainsList
 >;
 
 export function containsAll<Input, Output, Expected = unknown, const Name extends string = string>(
+  expected: ReadonlyArray<string | RegExp>,
+  options?: Omit<ContainsAllOptions<Input, Output, Expected>, "expected"> & {
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function containsAll<Input, Output, Expected = unknown, const Name extends string = string>(
   options: ContainsAllOptions<Input, Output, Expected> & {
     expected: Exclude<ContainsAllOptions<Input, Output, Expected>["expected"], undefined>;
     name?: Name | undefined;
   },
 ): EvalMetric<Input, Output, boolean, Expected, Name>;
 export function containsAll<Input, Output, Expected = unknown, const Name extends string = string>(
-  options: Omit<ContainsAllOptions<Input, Output, Expected>, "expected"> & {
+  options?: Omit<ContainsAllOptions<Input, Output, Expected>, "expected"> & {
     expected?: undefined;
     name?: Name | undefined;
   },
 ): EvalMetric<Input, Output, boolean, Expected, Name, { expected: ReadonlyArray<string | RegExp> }>;
 export function containsAll<Input, Output, Expected = unknown, const Name extends string = string>(
-  options: ContainsAllOptions<Input, Output, Expected> & { name?: Name | undefined },
+  optionsOrExpected:
+    | ReadonlyArray<string | RegExp>
+    | (ContainsAllOptions<Input, Output, Expected> & { name?: Name | undefined }) = {},
+  extraOptions?: Omit<ContainsAllOptions<Input, Output, Expected>, "expected"> & {
+    name?: Name | undefined;
+  },
 ): EvalMetric<Input, Output, boolean, Expected, Name, EvalCaseRequirements> {
+  const options: ContainsAllOptions<Input, Output, Expected> & { name?: Name | undefined } =
+    Array.isArray(optionsOrExpected)
+      ? { ...extraOptions, expected: optionsOrExpected }
+      : (optionsOrExpected as ContainsAllOptions<Input, Output, Expected> & {
+          name?: Name | undefined;
+        });
   return containsListMetric("contains_all", "all", options);
 }
 
@@ -189,20 +256,37 @@ export type ContainsAnyOptions<Input, Output, Expected = unknown> = ContainsList
 >;
 
 export function containsAny<Input, Output, Expected = unknown, const Name extends string = string>(
+  expected: ReadonlyArray<string | RegExp>,
+  options?: Omit<ContainsAnyOptions<Input, Output, Expected>, "expected"> & {
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function containsAny<Input, Output, Expected = unknown, const Name extends string = string>(
   options: ContainsAnyOptions<Input, Output, Expected> & {
     expected: Exclude<ContainsAnyOptions<Input, Output, Expected>["expected"], undefined>;
     name?: Name | undefined;
   },
 ): EvalMetric<Input, Output, boolean, Expected, Name>;
 export function containsAny<Input, Output, Expected = unknown, const Name extends string = string>(
-  options: Omit<ContainsAnyOptions<Input, Output, Expected>, "expected"> & {
+  options?: Omit<ContainsAnyOptions<Input, Output, Expected>, "expected"> & {
     expected?: undefined;
     name?: Name | undefined;
   },
 ): EvalMetric<Input, Output, boolean, Expected, Name, { expected: ReadonlyArray<string | RegExp> }>;
 export function containsAny<Input, Output, Expected = unknown, const Name extends string = string>(
-  options: ContainsAnyOptions<Input, Output, Expected> & { name?: Name | undefined },
+  optionsOrExpected:
+    | ReadonlyArray<string | RegExp>
+    | (ContainsAnyOptions<Input, Output, Expected> & { name?: Name | undefined }) = {},
+  extraOptions?: Omit<ContainsAnyOptions<Input, Output, Expected>, "expected"> & {
+    name?: Name | undefined;
+  },
 ): EvalMetric<Input, Output, boolean, Expected, Name, EvalCaseRequirements> {
+  const options: ContainsAnyOptions<Input, Output, Expected> & { name?: Name | undefined } =
+    Array.isArray(optionsOrExpected)
+      ? { ...extraOptions, expected: optionsOrExpected }
+      : (optionsOrExpected as ContainsAnyOptions<Input, Output, Expected> & {
+          name?: Name | undefined;
+        });
   return containsListMetric("contains_any", "any", options);
 }
 
@@ -211,6 +295,7 @@ function containsListMetric<Input, Output, Expected, const Name extends string>(
   mode: "all" | "any",
   options: ContainsListOptions<Input, Output, Expected> & { name?: Name | undefined },
 ): EvalMetric<Input, Output, boolean, Expected, Name> {
+  const caseSensitive = options.caseSensitive ?? true;
   return {
     name: (options.name ?? defaultName) as Name,
     required: options.required ?? true,
@@ -229,7 +314,7 @@ function containsListMetric<Input, Output, Expected, const Name extends string>(
         return EvalOutcome.invalid(`${defaultName} expected values must be strings or RegExp.`);
       }
 
-      const matches = expected.map((value) => textExpectationMatches(value, actual));
+      const matches = expected.map((value) => textExpectationMatches(value, actual, caseSensitive));
       const passed = mode === "all" ? matches.every(Boolean) : matches.some(Boolean);
 
       if (passed) return EvalOutcome.pass(true);
@@ -252,20 +337,35 @@ export type MatchesOptions<Input, Output, Expected = unknown> = {
 };
 
 export function matches<Input, Output, Expected = unknown, const Name extends string = string>(
+  expected: RegExp,
+  options?: Omit<MatchesOptions<Input, Output, Expected>, "expected"> & {
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function matches<Input, Output, Expected = unknown, const Name extends string = string>(
   options: MatchesOptions<Input, Output, Expected> & {
     expected: Exclude<MatchesOptions<Input, Output, Expected>["expected"], undefined>;
     name?: Name | undefined;
   },
 ): EvalMetric<Input, Output, boolean, Expected, Name>;
 export function matches<Input, Output, Expected = unknown, const Name extends string = string>(
-  options: Omit<MatchesOptions<Input, Output, Expected>, "expected"> & {
+  options?: Omit<MatchesOptions<Input, Output, Expected>, "expected"> & {
     expected?: undefined;
     name?: Name | undefined;
   },
 ): EvalMetric<Input, Output, boolean, Expected, Name, { expected: RegExp }>;
 export function matches<Input, Output, Expected = unknown, const Name extends string = string>(
-  options: MatchesOptions<Input, Output, Expected> & { name?: Name | undefined },
+  optionsOrExpected:
+    | RegExp
+    | (MatchesOptions<Input, Output, Expected> & { name?: Name | undefined }) = {},
+  extraOptions?: Omit<MatchesOptions<Input, Output, Expected>, "expected"> & {
+    name?: Name | undefined;
+  },
 ): EvalMetric<Input, Output, boolean, Expected, Name, EvalCaseRequirements> {
+  const options: MatchesOptions<Input, Output, Expected> & { name?: Name | undefined } =
+    optionsOrExpected instanceof RegExp
+      ? { ...extraOptions, expected: optionsOrExpected }
+      : optionsOrExpected;
   return regexMetric("matches", false, options);
 }
 
@@ -276,20 +376,35 @@ export type DoesNotMatchOptions<Input, Output, Expected = unknown> = MatchesOpti
 >;
 
 export function doesNotMatch<Input, Output, Expected = unknown, const Name extends string = string>(
+  expected: RegExp,
+  options?: Omit<DoesNotMatchOptions<Input, Output, Expected>, "expected"> & {
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function doesNotMatch<Input, Output, Expected = unknown, const Name extends string = string>(
   options: DoesNotMatchOptions<Input, Output, Expected> & {
     expected: Exclude<DoesNotMatchOptions<Input, Output, Expected>["expected"], undefined>;
     name?: Name | undefined;
   },
 ): EvalMetric<Input, Output, boolean, Expected, Name>;
 export function doesNotMatch<Input, Output, Expected = unknown, const Name extends string = string>(
-  options: Omit<DoesNotMatchOptions<Input, Output, Expected>, "expected"> & {
+  options?: Omit<DoesNotMatchOptions<Input, Output, Expected>, "expected"> & {
     expected?: undefined;
     name?: Name | undefined;
   },
 ): EvalMetric<Input, Output, boolean, Expected, Name, { expected: RegExp }>;
 export function doesNotMatch<Input, Output, Expected = unknown, const Name extends string = string>(
-  options: DoesNotMatchOptions<Input, Output, Expected> & { name?: Name | undefined },
+  optionsOrExpected:
+    | RegExp
+    | (DoesNotMatchOptions<Input, Output, Expected> & { name?: Name | undefined }) = {},
+  extraOptions?: Omit<DoesNotMatchOptions<Input, Output, Expected>, "expected"> & {
+    name?: Name | undefined;
+  },
 ): EvalMetric<Input, Output, boolean, Expected, Name, EvalCaseRequirements> {
+  const options: DoesNotMatchOptions<Input, Output, Expected> & { name?: Name | undefined } =
+    optionsOrExpected instanceof RegExp
+      ? { ...extraOptions, expected: optionsOrExpected }
+      : optionsOrExpected;
   return regexMetric("does_not_match", true, options);
 }
 
@@ -333,8 +448,20 @@ export type MaxLengthOptions<Input, Output, Expected = unknown> = {
 };
 
 export function maxLength<Input, Output, Expected = unknown, const Name extends string = string>(
+  max: number,
+  options?: Omit<MaxLengthOptions<Input, Output, Expected>, "max"> & { name?: Name | undefined },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function maxLength<Input, Output, Expected = unknown, const Name extends string = string>(
   options: MaxLengthOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function maxLength<Input, Output, Expected = unknown, const Name extends string = string>(
+  optionsOrMax: number | (MaxLengthOptions<Input, Output, Expected> & { name?: Name | undefined }),
+  extraOptions?: Omit<MaxLengthOptions<Input, Output, Expected>, "max"> & {
+    name?: Name | undefined;
+  },
 ): EvalMetric<Input, Output, boolean, Expected, Name> {
+  const options: MaxLengthOptions<Input, Output, Expected> & { name?: Name | undefined } =
+    typeof optionsOrMax === "number" ? { ...extraOptions, max: optionsOrMax } : optionsOrMax;
   return {
     name: (options.name ?? "max_length") as Name,
     required: options.required ?? true,
@@ -357,6 +484,31 @@ export function maxLength<Input, Output, Expected = unknown, const Name extends 
   };
 }
 
+export type NotBlankOptions<Input, Output, Expected = unknown> = {
+  name?: string | undefined;
+  required?: boolean | undefined;
+  actual?: ValueSelector<Input, Output, Expected, string> | undefined;
+};
+
+/** Checks that the resolved output text contains at least one non-whitespace character. */
+export function notBlank<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: NotBlankOptions<Input, Output, Expected> & { name?: Name | undefined } = {},
+): EvalMetric<Input, Output, boolean, Expected, Name> {
+  return {
+    name: (options.name ?? "not_blank") as Name,
+    required: options.required ?? true,
+    dataType: "BOOLEAN",
+    direction: "higher_is_better",
+    threshold: 1,
+    async evaluate(args) {
+      const actual = await resolveActualText(options.actual, args);
+      return actual.trim().length > 0
+        ? EvalOutcome.pass(true)
+        : EvalOutcome.fail(false, { comment: "Output was blank." });
+    },
+  };
+}
+
 export type RequiredFieldsOptions<Input, Output, Expected = unknown> = {
   name?: string | undefined;
   required?: boolean | undefined;
@@ -370,8 +522,38 @@ export function requiredFields<
   Expected = unknown,
   const Name extends string = string,
 >(
+  expected: readonly string[],
+  options?: Omit<RequiredFieldsOptions<Input, Output, Expected>, "expected"> & {
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function requiredFields<
+  Input,
+  Output,
+  Expected = unknown,
+  const Name extends string = string,
+>(
   options: RequiredFieldsOptions<Input, Output, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function requiredFields<
+  Input,
+  Output,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  optionsOrExpected:
+    | readonly string[]
+    | (RequiredFieldsOptions<Input, Output, Expected> & { name?: Name | undefined }),
+  extraOptions?: Omit<RequiredFieldsOptions<Input, Output, Expected>, "expected"> & {
+    name?: Name | undefined;
+  },
 ): EvalMetric<Input, Output, boolean, Expected, Name> {
+  const options: RequiredFieldsOptions<Input, Output, Expected> & { name?: Name | undefined } =
+    Array.isArray(optionsOrExpected)
+      ? { ...extraOptions, expected: optionsOrExpected }
+      : (optionsOrExpected as RequiredFieldsOptions<Input, Output, Expected> & {
+          name?: Name | undefined;
+        });
   return {
     name: (options.name ?? "required_fields") as Name,
     required: options.required ?? true,
@@ -404,6 +586,138 @@ export function requiredFields<
   };
 }
 
+export type SchemaMatchOptions<Input, Output, SchemaOutput, Expected = unknown> = {
+  name?: string | undefined;
+  required?: boolean | undefined;
+  schema: ZodSchema<SchemaOutput>;
+  parseJson?: boolean | undefined;
+  actual?: ValueSelector<Input, Output, Expected, unknown> | undefined;
+};
+
+/** Validates structured output directly against a Zod schema, optionally parsing JSON strings. */
+export function schemaMatch<
+  Input,
+  Output,
+  SchemaOutput,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  schema: ZodSchema<SchemaOutput>,
+  options?: Omit<SchemaMatchOptions<Input, Output, SchemaOutput, Expected>, "schema"> & {
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function schemaMatch<
+  Input,
+  Output,
+  SchemaOutput,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  options: SchemaMatchOptions<Input, Output, SchemaOutput, Expected> & { name?: Name | undefined },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function schemaMatch<
+  Input,
+  Output,
+  SchemaOutput,
+  Expected = unknown,
+  const Name extends string = string,
+>(
+  optionsOrSchema:
+    | ZodSchema<SchemaOutput>
+    | (SchemaMatchOptions<Input, Output, SchemaOutput, Expected> & { name?: Name | undefined }),
+  extraOptions?: Omit<SchemaMatchOptions<Input, Output, SchemaOutput, Expected>, "schema"> & {
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name> {
+  const options: SchemaMatchOptions<Input, Output, SchemaOutput, Expected> & {
+    name?: Name | undefined;
+  } =
+    "safeParse" in optionsOrSchema ? { ...extraOptions, schema: optionsOrSchema } : optionsOrSchema;
+  return {
+    name: (options.name ?? "schema_match") as Name,
+    required: options.required ?? true,
+    dataType: "BOOLEAN",
+    direction: "higher_is_better",
+    threshold: 1,
+    async evaluate(args) {
+      let value = await resolveActual(options.actual, args);
+
+      if (options.parseJson === true && typeof value === "string") {
+        try {
+          value = JSON.parse(value);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return EvalOutcome.fail(false, { comment: `Invalid JSON: ${message}` });
+        }
+      }
+
+      const parsed = options.schema.safeParse(value);
+      return parsed.success
+        ? EvalOutcome.pass(true)
+        : EvalOutcome.fail(false, { comment: z.prettifyError(parsed.error) });
+    },
+  };
+}
+
+export type PredicateCheckResult =
+  | boolean
+  | {
+      pass: boolean;
+      comment?: string | undefined;
+    };
+
+export type PredicateOptions = {
+  required?: boolean | undefined;
+  comment?: string | undefined;
+  metadata?: EvalMetadata | undefined;
+};
+
+/** Builds a concise boolean custom metric from a predicate function. */
+export function predicate<Input, Output, Expected = unknown, const Name extends string = string>(
+  name: Name,
+  check: (
+    args: EvalMetricArgs<Input, Output, Expected>,
+  ) => PredicateCheckResult | Promise<PredicateCheckResult>,
+  options: PredicateOptions = {},
+): EvalMetric<Input, Output, boolean, Expected, Name> {
+  const metric: EvalMetric<Input, Output, boolean, Expected, Name> = {
+    name,
+    required: options.required ?? true,
+    dataType: "BOOLEAN",
+    direction: "higher_is_better",
+    threshold: 1,
+    async evaluate(args) {
+      const result = await check(args);
+
+      if (typeof result === "boolean") {
+        return result
+          ? EvalOutcome.pass(true)
+          : EvalOutcome.fail(
+              false,
+              options.comment === undefined ? {} : { comment: options.comment },
+            );
+      }
+
+      const comment = result.comment ?? options.comment;
+      return result.pass
+        ? EvalOutcome.pass(true, comment === undefined ? {} : { comment })
+        : EvalOutcome.fail(false, comment === undefined ? {} : { comment });
+    },
+  };
+
+  if (options.metadata !== undefined) {
+    metric.metadata = options.metadata;
+  }
+
+  return metric;
+}
+
+function normalizeText(value: string, caseSensitive: boolean, trim: boolean): string {
+  const trimmed = trim ? value.trim() : value;
+  return caseSensitive ? trimmed : trimmed.toLowerCase();
+}
+
 function regexMatches(pattern: RegExp, text: string): boolean {
   pattern.lastIndex = 0;
   const matched = pattern.test(text);
@@ -411,8 +725,16 @@ function regexMatches(pattern: RegExp, text: string): boolean {
   return matched;
 }
 
-function textExpectationMatches(expected: string | RegExp, actual: string): boolean {
-  return expected instanceof RegExp ? regexMatches(expected, actual) : actual.includes(expected);
+function textExpectationMatches(
+  expected: string | RegExp,
+  actual: string,
+  caseSensitive = true,
+): boolean {
+  if (expected instanceof RegExp) return regexMatches(expected, actual);
+
+  return caseSensitive
+    ? actual.includes(expected)
+    : actual.toLowerCase().includes(expected.toLowerCase());
 }
 
 async function resolveOption<Input, Output, Expected, Value>(
@@ -464,7 +786,8 @@ export function semanticSimilarity<
   options: SemanticSimilarityOptions<Input, Output, Expected> & { name?: Name | undefined },
 ): EvalMetric<Input, Output, number, Expected, Name, EvalCaseRequirements> {
   const threshold = unitInterval(options.threshold, "semanticSimilarity threshold");
-  return {
+  const modelIdentity = readModelIdentity(options.model);
+  const metric: EvalMetric<Input, Output, number, Expected, Name, EvalCaseRequirements> = {
     name: (options.name ?? "semantic_similarity") as Name,
     required: options.required ?? true,
     dataType: "NUMERIC",
@@ -496,6 +819,10 @@ export function semanticSimilarity<
         : EvalOutcome.fail(score, { comment: `Similarity below threshold ${threshold}.` });
     },
   };
+
+  if (modelIdentity !== undefined) metric.model = modelIdentity;
+
+  return metric;
 }
 
 export type LlmJudgeOptions<Input, Output, SchemaOutput, Expected = unknown> = {
@@ -504,6 +831,7 @@ export type LlmJudgeOptions<Input, Output, SchemaOutput, Expected = unknown> = {
   model: CompletionModel;
   schema: ZodSchema<SchemaOutput>;
   passes(value: SchemaOutput): boolean;
+  comment?: ((value: SchemaOutput) => string | undefined) | undefined;
   instructions?: string | undefined;
   retries?: number | undefined;
   prompt?: ValueSelector<Input, Output, Expected, string> | undefined;
@@ -519,9 +847,12 @@ export function llmJudge<
   options: LlmJudgeOptions<Input, Output, SchemaOutput, Expected> & { name?: Name | undefined },
 ): EvalMetric<Input, Output, SchemaOutput, Expected, Name> {
   const retries = extractionRetries(options.retries);
-  return {
+  const modelIdentity = readModelIdentity(options.model);
+  const metric: EvalMetric<Input, Output, SchemaOutput, Expected, Name> = {
     name: (options.name ?? "llm_judge") as Name,
     required: options.required ?? true,
+    dataType: "BOOLEAN",
+    projectScore: (value) => options.passes(value),
     async evaluate(args) {
       try {
         throwIfAborted(args.signal);
@@ -536,14 +867,42 @@ export function llmJudge<
           retries,
         });
         throwIfAborted(args.signal);
+        const comment = resolveJudgeComment(options.comment, result.output);
+        const outcomeOptions =
+          comment === undefined ? { usage: result.usage } : { comment, usage: result.usage };
         return options.passes(result.output)
-          ? EvalOutcome.pass(result.output, { usage: result.usage })
-          : EvalOutcome.fail(result.output, { usage: result.usage });
+          ? EvalOutcome.pass(result.output, outcomeOptions)
+          : EvalOutcome.fail(result.output, outcomeOptions);
       } catch (error) {
         return EvalOutcome.fromError(error);
       }
     },
   };
+
+  if (modelIdentity !== undefined) metric.model = modelIdentity;
+
+  return metric;
+}
+
+function resolveJudgeComment<SchemaOutput>(
+  selector: ((value: SchemaOutput) => string | undefined) | undefined,
+  value: SchemaOutput,
+): string | undefined {
+  if (selector !== undefined) return selector(value);
+
+  if (typeof value !== "object" || value === null) return undefined;
+
+  for (const key of ["reason", "feedback", "explanation"] as const) {
+    if (key in value) {
+      const candidate = (value as Record<string, unknown>)[key];
+
+      if (typeof candidate === "string" && candidate.trim().length > 0) {
+        return candidate;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 export type LlmScoreMetricScore = {
@@ -571,7 +930,8 @@ export function llmScore<Input, Output, Expected = unknown, const Name extends s
 
   const threshold = unitInterval(options.threshold, "llmScore threshold");
   const retries = extractionRetries(options.retries);
-  return {
+  const modelIdentity = readModelIdentity(options.model);
+  const metric: EvalMetric<Input, Output, LlmScoreMetricScore, Expected, Name> = {
     name: (options.name ?? "llm_score") as Name,
     required: options.required ?? true,
     dataType: "NUMERIC",
@@ -612,6 +972,10 @@ export function llmScore<Input, Output, Expected = unknown, const Name extends s
       }
     },
   };
+
+  if (modelIdentity !== undefined) metric.model = modelIdentity;
+
+  return metric;
 }
 
 function extractionRetries(retries: number | undefined): { maxAttempts: number } | undefined {

@@ -24,6 +24,20 @@ type IsExactly<Left, Right> =
         : false
       : false;
 
+type AgentEvalRequestOption<Input, AgentOutput, Expected> = [Input] extends [string]
+  ? {
+      request?(args: {
+        input: Input;
+        testCase: EvalCase<Input, Expected>;
+      }): AgentRunOptions<AgentOutput> | Promise<AgentRunOptions<AgentOutput>>;
+    }
+  : {
+      request(args: {
+        input: Input;
+        testCase: EvalCase<Input, Expected>;
+      }): AgentRunOptions<AgentOutput> | Promise<AgentRunOptions<AgentOutput>>;
+    };
+
 export type AgentEvalTargetOptions<
   Input,
   AgentOutput = string,
@@ -31,10 +45,6 @@ export type AgentEvalTargetOptions<
   Expected = unknown,
 > = {
   agent: EvaluableAgent<AgentOutput>;
-  request(args: {
-    input: Input;
-    testCase: EvalCase<Input, Expected>;
-  }): AgentRunOptions<AgentOutput> | Promise<AgentRunOptions<AgentOutput>>;
   interactions?:
     | {
         maxResponses?: number | undefined;
@@ -45,19 +55,20 @@ export type AgentEvalTargetOptions<
         }): AgentInteractionResponse | Promise<AgentInteractionResponse>;
       }
     | undefined;
-} & (IsExactly<Output, AgentResponse<AgentOutput>> extends true
-  ? {
-      output?(args: {
-        response: AgentResponse<AgentOutput>;
-        testCase: EvalCase<Input, Expected>;
-      }): Output | Promise<Output>;
-    }
-  : {
-      output(args: {
-        response: AgentResponse<AgentOutput>;
-        testCase: EvalCase<Input, Expected>;
-      }): Output | Promise<Output>;
-    });
+} & AgentEvalRequestOption<Input, AgentOutput, Expected> &
+  (IsExactly<Output, AgentResponse<AgentOutput>> extends true
+    ? {
+        output?(args: {
+          response: AgentResponse<AgentOutput>;
+          testCase: EvalCase<Input, Expected>;
+        }): Output | Promise<Output>;
+      }
+    : {
+        output(args: {
+          response: AgentResponse<AgentOutput>;
+          testCase: EvalCase<Input, Expected>;
+        }): Output | Promise<Output>;
+      });
 
 export class AgentEvalSuspensionError extends Error {
   constructor(
@@ -70,13 +81,30 @@ export class AgentEvalSuspensionError extends Error {
 }
 
 export function agentEvalTarget<
-  Input,
+  Input = string,
   AgentOutput = string,
   Output = AgentResponse<AgentOutput>,
   Expected = unknown,
 >(
   options: AgentEvalTargetOptions<Input, AgentOutput, Output, Expected>,
+): EvalTarget<Input, Output, Expected>;
+export function agentEvalTarget<AgentOutput = string, Expected = unknown>(
+  agent: EvaluableAgent<AgentOutput>,
+): EvalTarget<string, AgentResponse<AgentOutput>, Expected>;
+export function agentEvalTarget<
+  Input = string,
+  AgentOutput = string,
+  Output = AgentResponse<AgentOutput>,
+  Expected = unknown,
+>(
+  optionsOrAgent:
+    | EvaluableAgent<AgentOutput>
+    | AgentEvalTargetOptions<Input, AgentOutput, Output, Expected>,
 ): EvalTarget<Input, Output, Expected> {
+  const options = isEvaluableAgent<AgentOutput>(optionsOrAgent)
+    ? ({ agent: optionsOrAgent } as AgentEvalTargetOptions<Input, AgentOutput, Output, Expected>)
+    : optionsOrAgent;
+
   return async (input, testCase, context) => {
     context?.signal.throwIfAborted();
     const maxResponses = options.interactions?.maxResponses ?? 10;
@@ -87,7 +115,11 @@ export function agentEvalTarget<
 
     const request = await abortable(
       context?.signal,
-      Promise.resolve(options.request({ input, testCase })),
+      Promise.resolve(
+        options.request === undefined
+          ? defaultAgentRequest<Input, AgentOutput>(input)
+          : options.request({ input, testCase }),
+      ),
     );
     context?.signal.throwIfAborted();
     const invocation = composeEvalSignals(context?.signal, request.abortSignal);
@@ -146,6 +178,25 @@ export function agentEvalTarget<
       invocation.dispose();
     }
   };
+}
+
+function isEvaluableAgent<AgentOutput>(value: unknown): value is EvaluableAgent<AgentOutput> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "generate" in value &&
+    typeof (value as { generate?: unknown }).generate === "function"
+  );
+}
+
+function defaultAgentRequest<Input, AgentOutput>(input: Input): AgentRunOptions<AgentOutput> {
+  if (typeof input !== "string") {
+    throw new TypeError(
+      "agentEvalTarget requires a request builder when the case input is not a string.",
+    );
+  }
+
+  return { prompt: input } as AgentRunOptions<AgentOutput>;
 }
 
 function agentRunSettings<Output>(request: AgentRunOptions<Output>): AgentRunSettings<Output> {

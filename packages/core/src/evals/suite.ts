@@ -1,8 +1,11 @@
+import { predicate, type PredicateCheckResult, type PredicateOptions } from "./metrics";
 import type {
   EvalCase,
   EvalCasesForMetrics,
   EvalMetric,
+  EvalMetricArgs,
   EvalTarget,
+  EvalTargetContext,
   RunEvalSuiteOptions,
 } from "./types";
 
@@ -69,6 +72,13 @@ type EvalMetricFactory<Input, Output, Expected = unknown> = {
   defineMetric<Score, const Name extends string = string>(
     metric: EvalMetric<Input, Output, Score, Expected, Name> & { dataType?: undefined },
   ): EvalMetric<Input, Output, Score, Expected, Name>;
+  predicate<const Name extends string = string>(
+    name: Name,
+    check: (
+      args: EvalMetricArgs<Input, Output, Expected>,
+    ) => PredicateCheckResult | Promise<PredicateCheckResult>,
+    options?: PredicateOptions,
+  ): EvalMetric<Input, Output, boolean, Expected, Name>;
 };
 
 export function defineEvalCases<const Cases extends readonly EvalCaseLike[]>(cases: Cases): Cases {
@@ -84,6 +94,9 @@ export function createEvalTypes<Input, Output, Expected = unknown>(): EvalMetric
     defineMetric(metric: EvalMetric<Input, Output>) {
       return metric;
     },
+    predicate(name, check, options) {
+      return predicate(name, check, options);
+    },
   } as EvalMetricFactory<Input, Output, Expected>;
 }
 
@@ -98,6 +111,7 @@ export function defineEvalSuite<
   const Target extends (
     input: EvalCasesInput<Cases>,
     testCase: EvalCase<EvalCasesInput<Cases>, EvalCasesExpected<Cases>>,
+    context?: EvalTargetContext,
   ) => unknown,
   const Metrics extends readonly EvalMetric<
     EvalCasesInput<Cases>,

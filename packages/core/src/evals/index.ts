@@ -1,7 +1,13 @@
 export * from "./advanced-metrics";
+export * from "./agent-metrics";
 export * from "./agent-target";
+export * from "./cache";
 export * from "./cli";
+export * from "./cli-args";
+export * from "./compare";
+export * from "./dataset";
 export { EvalAbortError, EvalTimeoutError } from "./execution";
+export * from "./judge-metrics";
 export { defineMetric } from "./metric";
 export * from "./metrics";
 export * from "./outcome";
@@ -15,33 +21,39 @@ export type {
   EvalCase,
   EvalCaseRequirements,
   EvalCaseResult,
+  EvalCaseTrialRun,
+  EvalCaseTrialSummary,
   EvalCasesForMetrics,
   EvalCostCalculatorArgs,
   EvalCostOptions,
   EvalCostSummary,
   EvalDataType,
-  EvalMetadata,
   EvalInvalidKind,
+  EvalMetadata,
   EvalMetric,
   EvalMetricArgs,
   EvalMetricDescriptor,
   EvalMetricResult,
   EvalMetricResultFor,
   EvalMetricScore,
+  EvalMetricSummary,
+  EvalModelIdentity,
   EvalOutcomeStatus,
+  EvalProgressEvent,
   EvalReportArgs,
   EvalReporter,
   EvalReporterErrorPolicy,
-  EvalProgressEvent,
   EvalRunContext,
   EvalRunEndArgs,
-  EvalRunOptions,
   EvalRunStartArgs,
   EvalScoreDirection,
   EvalScoreMap,
   EvalScoreProjection,
+  EvalShard,
   EvalSuiteResult,
   EvalTarget,
+  EvalTargetCache,
+  EvalTargetCacheEntry,
   EvalTargetContext,
   EvalTargetUsageSelector,
   EvalTotals,
@@ -49,7 +61,7 @@ export type {
   EvalTraceRef,
   EvalTraceSelector,
   EvalTraceSelectorArgs,
-  EvalShard,
+  EvalTrialOptions,
   EvalTurn,
   EvalUsageSummary,
   RunEvalSuiteOptions,

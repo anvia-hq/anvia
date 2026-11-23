@@ -1,7 +1,11 @@
+import { parseEvalCliArgs } from "./cli-args";
+import { compareEvalResults, loadEvalResult, printEvalComparison, saveEvalResult } from "./compare";
 import { runEvalSuite } from "./runner";
 import type {
+  EvalCaseResult,
   EvalMetric,
   EvalOutcomeStatus,
+  EvalProgressEvent,
   EvalSuiteResult,
   EvalTotals,
   RunEvalSuiteOptions,
@@ -48,6 +52,8 @@ export type PrintEvalResultOptions = {
   output?: EvalOutputWriters | undefined;
   maxValueLength?: number | undefined;
   redact?: EvalRedactor | undefined;
+  onlyFailures?: boolean | undefined;
+  color?: boolean | undefined;
 };
 
 type EvalSuiteShape = {
@@ -87,6 +93,13 @@ export type RunEvalCliOptions<
   output?: EvalOutputWriters | undefined;
   maxValueLength?: number | undefined;
   redact?: EvalRedactor | undefined;
+  onlyFailures?: boolean | undefined;
+  color?: boolean | undefined;
+  progress?: boolean | undefined;
+  argv?: boolean | readonly string[] | undefined;
+  baselinePath?: string | undefined;
+  savePath?: string | undefined;
+  failOnRegression?: boolean | undefined;
 };
 
 export class EvalAssertionError extends Error {
@@ -171,6 +184,54 @@ export function assertEvalOutcomes(
   }
 }
 
+/** Asserts that an eval suite passed (or satisfied explicit expectations), throwing EvalAssertionError with per-case details on failure. */
+export function assertEvalPassed(
+  result: EvalSuiteResult<unknown, unknown, unknown>,
+  expectations?: EvalExpectations,
+): void {
+  const hasExpectations =
+    expectations?.totals !== undefined || expectations?.outcomes !== undefined;
+
+  if (hasExpectations) {
+    const mismatches = expectationMismatches(result, expectations);
+
+    if (mismatches.length > 0) {
+      throw new EvalAssertionError(
+        `Evaluation suite "${result.name}" did not match expectations.`,
+        mismatches,
+      );
+    }
+
+    return;
+  }
+
+  const failures: string[] = [];
+  for (const caseResult of result.results) {
+    for (const metric of caseResult.metrics) {
+      if (!metric.required || metric.outcome.outcome === "pass") continue;
+
+      const explanation =
+        metric.outcome.comment ??
+        (metric.outcome.outcome === "invalid" ? metric.outcome.reason : undefined);
+      const scoreText =
+        metric.outcome.score === undefined
+          ? ""
+          : ` (score=${compactScoreDisplay(metric.outcome.score)})`;
+      const detail = explanation === undefined ? "" : `: ${explanation}`;
+      failures.push(
+        `${caseResult.case.id}.${metric.metricName}: ${metric.outcome.outcome}${scoreText}${detail}`,
+      );
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new EvalAssertionError(
+      `Evaluation suite "${result.name}" failed (${result.cases.passed}/${result.cases.total} cases passed).`,
+      failures,
+    );
+  }
+}
+
 export async function runEvalCli<
   Input,
   Output,
@@ -185,20 +246,131 @@ export async function runEvalCli<
 >(
   options: RunEvalCliOptions<Input, Output, Expected, Metrics>,
 ): Promise<EvalSuiteResult<Input, Output, Expected, Metrics>> {
-  const { format, exitCode, expectations, output, maxValueLength, redact, ...suiteOptions } =
-    options;
-  const result = await runEvalSuite(
-    suiteOptions as RunEvalSuiteOptions<Input, Output, Expected, Metrics>,
+  let cliArgs: ReturnType<typeof parseEvalCliArgs> | undefined;
+
+  if (options.argv === true) {
+    cliArgs = parseEvalCliArgs(process.argv.slice(2));
+  } else if (Array.isArray(options.argv)) {
+    cliArgs = parseEvalCliArgs(options.argv);
+  }
+
+  const {
+    format: optionFormat,
+    exitCode,
+    expectations,
+    output,
+    maxValueLength,
+    redact,
+    onlyFailures: optionOnlyFailures,
+    color: optionColor,
+    progress: optionProgress,
+    argv: _argv,
+    baselinePath: optionBaselinePath,
+    savePath: optionSavePath,
+    failOnRegression,
+    onProgress: callerOnProgress,
+    ...rawSuiteOptions
+  } = options;
+
+  const format = cliArgs?.format ?? optionFormat;
+  const onlyFailures = cliArgs?.onlyFailures ?? optionOnlyFailures;
+  const color = cliArgs?.color ?? optionColor;
+  const progress = cliArgs?.progress ?? optionProgress;
+  const baselinePath = cliArgs?.baselinePath ?? optionBaselinePath;
+  const savePath = cliArgs?.savePath ?? optionSavePath;
+
+  const suiteOptions = {
+    ...rawSuiteOptions,
+  } as RunEvalSuiteOptions<Input, Output, Expected, Metrics>;
+
+  if (cliArgs?.caseIds !== undefined) suiteOptions.caseIds = cliArgs.caseIds;
+
+  if (cliArgs?.tags !== undefined) suiteOptions.tags = cliArgs.tags;
+
+  if (cliArgs?.concurrency !== undefined) suiteOptions.concurrency = cliArgs.concurrency;
+
+  if (cliArgs?.targetConcurrency !== undefined) {
+    suiteOptions.targetConcurrency = cliArgs.targetConcurrency;
+  }
+
+  if (cliArgs?.metricConcurrency !== undefined) {
+    suiteOptions.metricConcurrency = cliArgs.metricConcurrency;
+  }
+
+  if (cliArgs?.caseTimeoutMs !== undefined) suiteOptions.caseTimeoutMs = cliArgs.caseTimeoutMs;
+
+  if (cliArgs?.failFast !== undefined) suiteOptions.failFast = cliArgs.failFast;
+
+  if (cliArgs?.shard !== undefined) suiteOptions.shard = cliArgs.shard;
+
+  if (cliArgs?.trials !== undefined) suiteOptions.trials = cliArgs.trials;
+
+  const shouldRenderProgress =
+    format !== "quiet" &&
+    format !== "json" &&
+    (progress === true ||
+      (progress === undefined && output === undefined && process.stderr?.isTTY === true));
+
+  if (shouldRenderProgress || callerOnProgress !== undefined) {
+    const stderrWrite = output?.stderr ?? ((text: string) => process.stderr.write(text));
+    suiteOptions.onProgress = async (event: EvalProgressEvent<Input, Output, Expected>) => {
+      if (shouldRenderProgress && event.type === "case-complete") {
+        stderrWrite(
+          `[${event.completedCases}/${event.totalCases}] ${event.result.case.id}: ${event.result.outcome.toUpperCase()} (${Math.round(event.result.durationMs)}ms)\n`,
+        );
+      }
+
+      if (callerOnProgress !== undefined) {
+        await callerOnProgress(event);
+      }
+    };
+  }
+
+  const result = await runEvalSuite(suiteOptions);
+
+  if (savePath !== undefined) {
+    await saveEvalResult(savePath, result as EvalSuiteResult<unknown, unknown, unknown>);
+  }
+
+  printEvalResult(result as EvalSuiteResult<unknown, unknown, unknown>, {
+    format,
+    output,
+    maxValueLength,
+    redact,
+    onlyFailures,
+    color,
+  });
+
+  let code: 0 | 1 | 2 = evalExitCode(
+    result as EvalSuiteResult<unknown, unknown, unknown>,
+    expectations,
   );
-  printEvalResult(result, { format, output, maxValueLength, redact });
-  const code = evalExitCode(result, expectations);
-  const mismatches = expectationMismatches(result, expectations);
+  const mismatches = expectationMismatches(
+    result as EvalSuiteResult<unknown, unknown, unknown>,
+    expectations,
+  );
 
   if (mismatches.length > 0 && format !== "quiet") {
     const write = output?.stderr ?? ((text: string) => process.stderr.write(text));
     write(
       `Evaluation expectation mismatches:\n${mismatches.map((value) => `- ${value}`).join("\n")}\n`,
     );
+  }
+
+  if (baselinePath !== undefined) {
+    const baseline = await loadEvalResult(baselinePath);
+    const comparison = compareEvalResults(
+      baseline,
+      result as EvalSuiteResult<unknown, unknown, unknown>,
+    );
+
+    if (format !== "quiet" && format !== "json") {
+      printEvalComparison(comparison, output);
+    }
+
+    if (failOnRegression !== false && comparison.hasRegressions && code === 0) {
+      code = 1;
+    }
   }
 
   const currentExitCode =
@@ -213,13 +385,57 @@ function prettyResult(
   result: EvalSuiteResult<unknown, unknown, unknown>,
   options: Omit<PrintEvalResultOptions, "output">,
 ): string {
+  const useColor = options.color === true;
   const lines = [
     `${result.name} (${result.run.id})`,
     `Cases: ${totalsText(result.cases)}`,
     `Metrics: ${totalsText(result.metrics)}`,
   ];
-  for (const caseResult of result.results) {
-    lines.push(``, `[${caseResult.outcome.toUpperCase()}] ${caseResult.case.id}`);
+
+  const summaries = Object.values(result.metricSummaries ?? {});
+
+  if (summaries.length > 0) {
+    lines.push("", "Metric summary:");
+    for (const summary of summaries) {
+      const pct = `${(summary.passRate * 100).toFixed(1)}%`;
+      const parts = [`  - ${summary.metricName}: ${summary.passed}/${summary.total} pass (${pct})`];
+
+      if (summary.meanScore !== undefined) {
+        parts.push(`mean=${summary.meanScore.toFixed(3)}`);
+
+        if (summary.minScore !== undefined && summary.maxScore !== undefined && summary.total > 1) {
+          parts.push(`range=[${summary.minScore.toFixed(3)}, ${summary.maxScore.toFixed(3)}]`);
+        }
+      }
+
+      if (summary.threshold !== undefined) parts.push(`threshold=${summary.threshold}`);
+
+      if (!summary.required) parts.push("optional");
+
+      lines.push(parts.join(" | "));
+    }
+  }
+
+  const displayedCases =
+    options.onlyFailures === true
+      ? result.results.filter((caseResult) => caseResult.outcome !== "pass")
+      : result.results;
+
+  if (options.onlyFailures === true && displayedCases.length === 0) {
+    lines.push("", `All ${result.results.length} case(s) passed.`);
+  }
+
+  for (const caseResult of displayedCases) {
+    lines.push("", formatCaseHeader(caseResult, useColor));
+
+    if (caseResult.outcome !== "pass") {
+      lines.push(
+        `  input: ${displayValue(
+          redact(caseResult.case.input, options, { kind: "input", caseId: caseResult.case.id }),
+          options.maxValueLength,
+        )}`,
+      );
+    }
 
     if (caseResult.targetStatus === "succeeded") {
       lines.push(
@@ -240,19 +456,16 @@ function prettyResult(
     }
 
     for (const metric of caseResult.metrics) {
-      const parts = [`  - ${metric.metricName}: ${metric.outcome.outcome}`];
+      const statusLabel = colorizeStatus(metric.outcome.outcome, useColor);
+      const parts = [`  - ${metric.metricName}: ${statusLabel}`];
 
       if (metric.outcome.score !== undefined) {
-        parts.push(
-          `score=${displayValue(
-            redact(metric.outcome.score, options, {
-              kind: "score",
-              caseId: caseResult.case.id,
-              metricName: metric.metricName,
-            }),
-            options.maxValueLength,
-          )}`,
-        );
+        const redactedScore = redact(metric.outcome.score, options, {
+          kind: "score",
+          caseId: caseResult.case.id,
+          metricName: metric.metricName,
+        });
+        parts.push(`score=${displayScoreValue(redactedScore, options.maxValueLength)}`);
       }
 
       if (metric.threshold !== undefined) parts.push(`threshold=${metric.threshold}`);
@@ -281,7 +494,7 @@ function prettyResult(
     }
   }
   lines.push(
-    ``,
+    "",
     `Usage: target=${result.usage.target.totalTokens} evaluation=${result.usage.evaluation.totalTokens} total=${result.usage.total.totalTokens} tokens`,
   );
 
@@ -293,6 +506,56 @@ function prettyResult(
 
   lines.push(`Duration: ${result.durationMs}ms`);
   return lines.join("\n");
+}
+
+function formatCaseHeader(
+  caseResult: EvalCaseResult<unknown, unknown, unknown>,
+  useColor: boolean,
+): string {
+  const badge = `[${colorizeStatus(caseResult.outcome.toUpperCase(), useColor, caseResult.outcome)}]`;
+  const parts = [`${badge} ${caseResult.case.id}`];
+
+  if (caseResult.cached === true) parts.push("(cached)");
+
+  if (caseResult.trials !== undefined) {
+    parts.push(
+      `(trials: ${caseResult.trials.passed}/${caseResult.trials.count} pass, pass@${caseResult.trials.count}=${caseResult.trials.passAtK})`,
+    );
+  }
+
+  return parts.join(" ");
+}
+
+function colorizeStatus(
+  label: string,
+  useColor: boolean,
+  status: EvalOutcomeStatus = label.toLowerCase() as EvalOutcomeStatus,
+): string {
+  if (!useColor) return label;
+
+  if (status === "pass") return `\u001B[32m${label}\u001B[0m`;
+
+  if (status === "fail") return `\u001B[31m${label}\u001B[0m`;
+
+  return `\u001B[33m${label}\u001B[0m`;
+}
+
+function displayScoreValue(value: unknown, maxValueLength?: number): string {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "score" in value &&
+    typeof (value as { score?: unknown }).score === "number"
+  ) {
+    return truncate(String((value as { score: number }).score), maxValueLength);
+  }
+
+  return displayValue(value, maxValueLength);
+}
+
+function compactScoreDisplay(value: unknown): string {
+  return displayScoreValue(value, 80);
 }
 
 function jsonResult(

@@ -13,8 +13,7 @@ import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
-import { BatchSpanProcessor, RandomIdGenerator } from "@opentelemetry/sdk-trace-base";
-import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { BatchSpanProcessor, RandomIdGenerator, TracerProvider } from "@opentelemetry/sdk-trace";
 import { assertCaptureMaxBytes, type ResolvedLensConfig, resolveLensConfig } from "./config.js";
 import { createLensDatasetClient } from "./dataset-client.js";
 import { createLensPromptClient } from "./prompt-client.js";
@@ -35,9 +34,9 @@ import type {
 } from "./types.js";
 
 type LensResources = {
-  readonly tracerProvider: NodeTracerProvider;
+  readonly tracerProvider: TracerProvider;
   readonly loggerProvider: LoggerProvider;
-  readonly tracer: ReturnType<NodeTracerProvider["getTracer"]>;
+  readonly tracer: ReturnType<TracerProvider["getTracer"]>;
   readonly logger: ReturnType<LoggerProvider["getLogger"]>;
   readonly scorer: OtelScorer;
 };
@@ -192,7 +191,12 @@ export class LensClient {
     const resource =
       this.resource ?? (this.initialization === undefined ? undefined : await this.initialization);
     if (resource === undefined) return;
-    await Promise.all([resource.tracerProvider.forceFlush(), resource.loggerProvider.forceFlush()]);
+    const flushOptions =
+      this.config === undefined ? undefined : { timeoutMillis: this.config.timeoutMs };
+    await Promise.all([
+      resource.tracerProvider.forceFlush(flushOptions),
+      resource.loggerProvider.forceFlush(flushOptions),
+    ]);
   }
 
   close(): Promise<void> {
@@ -310,23 +314,23 @@ async function createLensResources(
     "deployment.environment.name": config.environment,
     "anvia.release": config.release,
   });
-  let tracerProvider: NodeTracerProvider | undefined;
+  let tracerProvider: TracerProvider | undefined;
   let loggerProvider: LoggerProvider | undefined;
   try {
-    tracerProvider = new NodeTracerProvider({
+    tracerProvider = new TracerProvider({
       resource,
       // Lets runs that supply a trace ID, such as durable run attempts, start real root spans.
       idGenerator: createAnviaIdGenerator(new RandomIdGenerator()),
       spanProcessors: [
-        new BatchSpanProcessor(
-          new OTLPTraceExporter({
+        new BatchSpanProcessor({
+          exporter: new OTLPTraceExporter({
             url: `${config.baseUrl}/api/public/otel/v1/traces`,
             headers,
             timeoutMillis: config.timeoutMs,
           }),
-        ),
+          exportTimeoutMillis: config.timeoutMs,
+        }),
       ],
-      forceFlushTimeoutMillis: config.timeoutMs,
     });
     loggerProvider = new LoggerProvider({
       resource,

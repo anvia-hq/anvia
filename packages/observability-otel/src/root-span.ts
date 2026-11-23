@@ -30,7 +30,7 @@ let warnedUnsupportedTracer = false;
  *
  * OpenTelemetry can only place a span in an existing trace by giving it a parent, so a run that
  * supplies `trace.traceId` without `parentObservationId` would otherwise point at a parent that
- * never exists. Install this on the tracer provider (`new NodeTracerProvider({ idGenerator })`)
+ * never exists. Install this on the tracer provider (`new TracerProvider({ idGenerator })`)
  * to keep such runs as real roots of the supplied trace. Every other ID comes from `base`.
  */
 export function createAnviaIdGenerator(base: OtelIdGenerator = randomIdGenerator): OtelIdGenerator {

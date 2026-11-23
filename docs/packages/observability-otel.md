@@ -7,7 +7,7 @@ Use this package to emit Anvia agent observer events as standard OpenTelemetry s
 ## Installation
 
 ```sh
-pnpm add @anvia/otel @anvia/core @opentelemetry/api @opentelemetry/api-logs zod
+pnpm add @anvia/otel @anvia/core @opentelemetry/api zod
 ```
 
 In this monorepo, the package is available through the workspace:
@@ -95,10 +95,9 @@ OpenTelemetry chooses a root span's trace ID through the provider's ID generator
 
 ```ts
 import { createAnviaIdGenerator } from "@anvia/otel";
-import { RandomIdGenerator } from "@opentelemetry/sdk-trace-base";
-import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { RandomIdGenerator, TracerProvider } from "@opentelemetry/sdk-trace";
 
-const provider = new NodeTracerProvider({
+const provider = new TracerProvider({
   idGenerator: createAnviaIdGenerator(new RandomIdGenerator()),
   spanProcessors: [processor],
 });

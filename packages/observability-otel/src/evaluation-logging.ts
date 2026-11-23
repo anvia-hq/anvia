@@ -1,5 +1,11 @@
-import { type Context, ROOT_CONTEXT, TraceFlags, trace } from "@opentelemetry/api";
-import type { AnyValue, AnyValueMap, LogAttributes } from "@opentelemetry/api-logs";
+import {
+  type AnyValue,
+  type Attributes,
+  type Context,
+  ROOT_CONTEXT,
+  TraceFlags,
+  trace,
+} from "@opentelemetry/api";
 import { isValidSpanId, isValidTraceId, isRecord } from "./helpers.js";
 
 export const EVALUATION_EVENT_NAME = "gen_ai.evaluation.result";
@@ -22,7 +28,7 @@ export function contextFromTraceRef(ref: EvaluationTraceRef | undefined): Contex
 }
 
 export function addMetadata(
-  attributes: LogAttributes,
+  attributes: Attributes,
   key: string,
   metadata: Record<string, unknown> | undefined,
   transform?: ((metadata: Record<string, unknown>) => Record<string, unknown>) | undefined,
@@ -41,7 +47,7 @@ function toAnyValue(value: unknown): AnyValue {
   }
   if (Array.isArray(value)) return value.map(toAnyValue);
   if (typeof value === "object") {
-    const result: AnyValueMap = {};
+    const result: Record<string, AnyValue> = {};
     for (const [key, entry] of Object.entries(value)) result[key] = toAnyValue(entry);
     return result;
   }

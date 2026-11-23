@@ -1,4 +1,4 @@
-import { logs, SeverityNumber, type LogAttributes, type Logger } from "@opentelemetry/api-logs";
+import { type Attributes, type Logger, logs, SeverityNumber } from "@opentelemetry/api";
 import { addMetadata, contextFromTraceRef, EVALUATION_EVENT_NAME } from "./evaluation-logging.js";
 import { isValidSpanId, isValidTraceId } from "./helpers.js";
 import type { OtelScoreArgs, OtelScorer, OtelScorerOptions } from "./types.js";
@@ -22,7 +22,7 @@ function emitScore(
   transformMetadata: OtelScorerOptions["transformMetadata"],
 ): void {
   const outcome = args.outcome ?? inferOutcome(args);
-  const attributes: LogAttributes = {
+  const attributes: Attributes = {
     "anvia.eval.id": args.id ?? globalThis.crypto.randomUUID(),
     "anvia.eval.suite.name": args.suiteName ?? defaultSuiteName(args),
     "anvia.eval.outcome": outcome,

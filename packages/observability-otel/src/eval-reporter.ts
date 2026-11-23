@@ -6,8 +6,13 @@ import {
   projectEvalOutcome,
   resolveEvalTraceRef,
 } from "@anvia/core/evals";
-import type { Context } from "@opentelemetry/api";
-import { type LogAttributes, type Logger, logs, SeverityNumber } from "@opentelemetry/api-logs";
+import {
+  type Attributes,
+  type Context,
+  type Logger,
+  logs,
+  SeverityNumber,
+} from "@opentelemetry/api";
 import { addMetadata, contextFromTraceRef, EVALUATION_EVENT_NAME } from "./evaluation-logging.js";
 import type { OtelEvalReporterOptions } from "./types.js";
 
@@ -90,7 +95,7 @@ function emitEvaluation<Input, Output, Score, Expected>(
     args.metric.dataType,
     args.metric.projectScore,
   );
-  const attributes: LogAttributes = {
+  const attributes: Attributes = {
     "anvia.eval.id": globalThis.crypto.randomUUID(),
     "gen_ai.evaluation.name": args.metric.name,
     "gen_ai.evaluation.score.label": projection.label,
@@ -164,7 +169,7 @@ function emitEvaluation<Input, Output, Score, Expected>(
 }
 
 function addEvaluationPayload<Input, Output, Score, Expected>(
-  attributes: LogAttributes,
+  attributes: Attributes,
   args: EvalReportArgs<Input, Output, Score, Expected>,
   options: Pick<OtelEvalReporterOptions, "captureMaxBytes" | "transformInput" | "transformOutput">,
 ): void {
@@ -211,7 +216,7 @@ function emitRunStarted(
   includeMetadata: boolean,
   transformMetadata: OtelEvalReporterOptions["transformMetadata"],
 ): void {
-  const attributes: LogAttributes = {
+  const attributes: Attributes = {
     "anvia.eval.run.id": args.run.id,
     "anvia.eval.run.status": "running",
     "anvia.eval.run.started_at": args.run.startedAt,
@@ -234,7 +239,7 @@ function emitRunFinished(
   includeMetadata: boolean,
   transformMetadata: OtelEvalReporterOptions["transformMetadata"],
 ): void {
-  const attributes: LogAttributes = {
+  const attributes: Attributes = {
     "anvia.eval.run.id": args.run.id,
     "anvia.eval.run.status": args.status,
     "anvia.eval.run.started_at": args.run.startedAt,
@@ -272,7 +277,7 @@ function emitRunFinished(
 }
 
 function addTotals(
-  attributes: LogAttributes,
+  attributes: Attributes,
   prefix: string,
   totals: { total: number; passed: number; failed: number; invalid: number },
 ): void {
@@ -283,7 +288,7 @@ function addTotals(
 }
 
 function addRunAttributes(
-  attributes: LogAttributes,
+  attributes: Attributes,
   run: EvalRunStartArgs["run"],
   includeMetadata: boolean,
   transformMetadata: OtelEvalReporterOptions["transformMetadata"],

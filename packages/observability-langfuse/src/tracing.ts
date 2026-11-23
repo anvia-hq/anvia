@@ -109,6 +109,7 @@ type LangfuseTraceContext = {
   readonly userId?: string | undefined;
   readonly sessionId?: string | undefined;
   readonly tags?: readonly string[] | undefined;
+  readonly version?: string | undefined;
 };
 
 class LangfuseObservationFactory {
@@ -126,9 +127,7 @@ class LangfuseObservationFactory {
     attributes: Parameters<LangfuseAgent["update"]>[0],
     parent?: LangfuseParent | undefined,
   ): LangfuseAgent {
-    const observation = new LangfuseAgent({ otelSpan: this.startSpan(name, parent), attributes });
-    applyTraceContextAttributes(observation.otelSpan, this.traceContext);
-    return observation;
+    return new LangfuseAgent({ otelSpan: this.startSpan(name, parent), attributes });
   }
 
   span(
@@ -136,9 +135,7 @@ class LangfuseObservationFactory {
     attributes: Parameters<LangfuseSpan["update"]>[0],
     parent: LangfuseParent,
   ): LangfuseSpan {
-    const observation = new LangfuseSpan({ otelSpan: this.startSpan(name, parent), attributes });
-    applyTraceContextAttributes(observation.otelSpan, this.traceContext);
-    return observation;
+    return new LangfuseSpan({ otelSpan: this.startSpan(name, parent), attributes });
   }
 
   generation(
@@ -146,12 +143,10 @@ class LangfuseObservationFactory {
     attributes: LangfuseGenerationAttributes,
     parent: LangfuseParent,
   ): LangfuseGeneration {
-    const observation = new LangfuseGeneration({
+    return new LangfuseGeneration({
       otelSpan: this.startSpan(name, parent),
       attributes,
     });
-    applyTraceContextAttributes(observation.otelSpan, this.traceContext);
-    return observation;
   }
 
   tool(
@@ -159,9 +154,7 @@ class LangfuseObservationFactory {
     attributes: Parameters<LangfuseTool["update"]>[0],
     parent: LangfuseParent,
   ): LangfuseTool {
-    const observation = new LangfuseTool({ otelSpan: this.startSpan(name, parent), attributes });
-    applyTraceContextAttributes(observation.otelSpan, this.traceContext);
-    return observation;
+    return new LangfuseTool({ otelSpan: this.startSpan(name, parent), attributes });
   }
 
   guardrail(
@@ -169,12 +162,10 @@ class LangfuseObservationFactory {
     attributes: Parameters<LangfuseGuardrail["update"]>[0],
     parent: LangfuseParent,
   ): LangfuseGuardrail {
-    const observation = new LangfuseGuardrail({
+    return new LangfuseGuardrail({
       otelSpan: this.startSpan(name, parent),
       attributes,
     });
-    applyTraceContextAttributes(observation.otelSpan, this.traceContext);
-    return observation;
   }
 
   event(
@@ -184,13 +175,11 @@ class LangfuseObservationFactory {
     timestamp?: Date | undefined,
   ): LangfuseEvent {
     const endTime = timestamp ?? new Date();
-    const observation = new LangfuseEvent({
+    return new LangfuseEvent({
       otelSpan: this.startSpan(name, parent, timestamp),
       attributes,
       timestamp: endTime,
     });
-    applyTraceContextAttributes(observation.otelSpan, this.traceContext);
-    return observation;
   }
 
   private startSpan(name: string, parent?: LangfuseParent, startTime?: Date): Span {
@@ -202,7 +191,13 @@ class LangfuseObservationFactory {
       parentContext = trace.setSpanContext(ROOT_CONTEXT, parent);
     }
 
-    return this.tracer.startSpan(name, startTime === undefined ? {} : { startTime }, parentContext);
+    const span = this.tracer.startSpan(
+      name,
+      startTime === undefined ? {} : { startTime },
+      parentContext,
+    );
+    applyTraceContextAttributes(span, this.traceContext);
+    return span;
   }
 }
 
@@ -359,6 +354,7 @@ export class LangfuseClient {
       userId: args.trace?.userId,
       sessionId: args.trace?.sessionId,
       tags: args.trace?.tags,
+      version: args.trace?.version,
     };
     applyTraceAttributes(root, args, capturedTraceMetadata);
     return new LangfuseRunObserver(
@@ -665,6 +661,10 @@ function applyTraceContextAttributes(
   if (context.tags !== undefined) {
     span.setAttribute(LangfuseOtelSpanAttributes.TRACE_TAGS, [...context.tags]);
   }
+
+  if (context.version !== undefined) {
+    span.setAttribute(LangfuseOtelSpanAttributes.VERSION, context.version);
+  }
 }
 
 function applyTraceAttributes(
@@ -677,6 +677,7 @@ function applyTraceAttributes(
     userId: args.trace?.userId,
     sessionId: args.trace?.sessionId,
     tags: args.trace?.tags,
+    version: args.trace?.version,
   });
 
   for (const [key, value] of Object.entries(

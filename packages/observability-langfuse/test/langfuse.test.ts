@@ -49,7 +49,16 @@ vi.mock("@opentelemetry/sdk-trace-node", () => ({
     getTracer() {
       return {
         startSpan(name: string, options: unknown, context: unknown) {
-          return { __name: name, __options: options, __context: context };
+          const pendingAttributes: Array<[string, unknown]> = [];
+          return {
+            __name: name,
+            __options: options,
+            __context: context,
+            __pendingAttributes: pendingAttributes,
+            setAttribute(key: string, value: unknown) {
+              pendingAttributes.push([key, value]);
+            },
+          };
         },
       };
     }
@@ -90,12 +99,14 @@ vi.mock("@langfuse/tracing", () => {
         otelSpan: {
           __name: string;
           __options: { startTime?: Date | undefined };
+          __pendingAttributes?: Array<[string, unknown]>;
           __context?: {
             __parentObservation?: { startObservation(...args: unknown[]): unknown } | undefined;
             __parentSpanContext?: unknown;
           };
         };
         attributes?: unknown;
+        timestamp?: Date | undefined;
       }) {
         const options: Record<string, unknown> = { asType };
 
@@ -104,23 +115,40 @@ vi.mock("@langfuse/tracing", () => {
         }
 
         const parent = params.otelSpan.__context?.__parentObservation;
+        let target: {
+          otelSpan?: {
+            setAttribute?: (key: string, value: unknown) => void;
+            end?: (endTime?: Date) => void;
+          };
+        };
 
         if (parent !== undefined) {
-          Object.assign(
-            this,
-            parent.startObservation(params.otelSpan.__name, params.attributes, options),
-          );
-          return;
+          target = parent.startObservation(
+            params.otelSpan.__name,
+            params.attributes,
+            options,
+          ) as typeof target;
+        } else {
+          const parentSpanContext = params.otelSpan.__context?.__parentSpanContext;
+
+          if (parentSpanContext !== undefined) options.parentSpanContext = parentSpanContext;
+
+          target = mocks.startObservation(
+            params.otelSpan.__name,
+            params.attributes,
+            options,
+          ) as typeof target;
         }
 
-        const parentSpanContext = params.otelSpan.__context?.__parentSpanContext;
+        Object.assign(this, target);
 
-        if (parentSpanContext !== undefined) options.parentSpanContext = parentSpanContext;
+        for (const [key, value] of params.otelSpan.__pendingAttributes ?? []) {
+          target?.otelSpan?.setAttribute?.(key, value);
+        }
 
-        Object.assign(
-          this,
-          mocks.startObservation(params.otelSpan.__name, params.attributes, options),
-        );
+        if (asType === "event") {
+          target?.otelSpan?.end?.(params.timestamp);
+        }
       }
     };
   }
@@ -138,6 +166,7 @@ vi.mock("@langfuse/tracing", () => {
       TRACE_SESSION_ID: "langfuse.trace.session_id",
       TRACE_TAGS: "langfuse.trace.tags",
       TRACE_METADATA: "langfuse.trace.metadata",
+      VERSION: "langfuse.version",
     },
   };
 });
@@ -854,7 +883,8 @@ describe("langfuse", () => {
     const turn = fakeObservation("turn", "trace-1", "obs-turn");
     const generation = fakeObservation("generation", "trace-1", "obs-generation");
     const tool = fakeObservation("tool", "trace-1", "obs-tool");
-    root.startObservation.mockReturnValueOnce(turn);
+    const event = fakeObservation("event", "trace-1", "obs-event");
+    root.startObservation.mockReturnValueOnce(turn).mockReturnValueOnce(event);
     turn.startObservation.mockReturnValueOnce(generation).mockReturnValueOnce(tool);
     mocks.startObservation.mockReturnValueOnce(root);
 
@@ -875,6 +905,7 @@ describe("langfuse", () => {
         userId: "user-1",
         sessionId: "session-1",
         tags: ["cookbook"],
+        version: "1.2.3",
         metadata: { ticketId: "TICKET-1" },
       },
     });
@@ -942,6 +973,10 @@ describe("langfuse", () => {
       internalCallId: "internal-1",
       toolCallId: "call-1",
     });
+    await runObserver.event?.({
+      name: "agent.notice",
+      attributes: { step: 1 },
+    });
     await runObserver.end({
       runId: "run-1",
       status: "completed",
@@ -978,17 +1013,15 @@ describe("langfuse", () => {
       expect.objectContaining({ metadata: expect.objectContaining({ toolCallId: "call-1" }) }),
       { asType: "tool" },
     );
-    for (const child of [turn, generation, tool]) {
-      expect(child.otelSpan.setAttribute).toHaveBeenCalledWith(
-        "langfuse.trace.name",
-        "ticket-summary",
-      );
-      expect(child.otelSpan.setAttribute).toHaveBeenCalledWith("langfuse.trace.user_id", "user-1");
-      expect(child.otelSpan.setAttribute).toHaveBeenCalledWith(
-        "langfuse.trace.session_id",
-        "session-1",
-      );
-      expect(child.otelSpan.setAttribute).toHaveBeenCalledWith("langfuse.trace.tags", ["cookbook"]);
+    expect(event.otelSpan.end).toHaveBeenCalledOnce();
+    for (const child of [turn, generation, tool, event]) {
+      expect(child.otelSpan.attributes).toMatchObject({
+        "langfuse.trace.name": "ticket-summary",
+        "langfuse.trace.user_id": "user-1",
+        "langfuse.trace.session_id": "session-1",
+        "langfuse.trace.tags": ["cookbook"],
+        "langfuse.version": "1.2.3",
+      });
     }
     expect(tool.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -2946,11 +2979,23 @@ describe("Langfuse run events", () => {
 });
 
 function fakeObservation(name: string, traceId: string, id: string) {
+  const attributes: Record<string, unknown> = {};
+  let ended = false;
   const otelSpan: {
+    attributes: Record<string, unknown>;
     setAttribute: ReturnType<typeof vi.fn>;
+    end: ReturnType<typeof vi.fn>;
     __observation?: unknown;
   } = {
-    setAttribute: vi.fn(),
+    attributes,
+    setAttribute: vi.fn((key: string, value: unknown) => {
+      if (ended) return;
+
+      attributes[key] = value;
+    }),
+    end: vi.fn(() => {
+      ended = true;
+    }),
   };
   const observation = {
     name,

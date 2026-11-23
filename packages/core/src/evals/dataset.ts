@@ -19,9 +19,43 @@ export async function loadEvalCases<Input = unknown, Expected = unknown>(
   const content = await fs.readFile(filePath, "utf8");
   const format = resolveFormat(filePath, options.format ?? "auto");
   const rawRecords = parseRecords(content, format, filePath);
+  const usedIds = new Set<string>();
+
+  for (const [index, record] of rawRecords.entries()) {
+    if (typeof record !== "object" || record === null || Array.isArray(record)) {
+      throw new TypeError(`Eval case at index ${index} in ${filePath} must be a JSON object.`);
+    }
+
+    const explicitId = (record as Record<string, unknown>).id;
+
+    if (typeof explicitId === "string" && explicitId.trim().length > 0) {
+      if (usedIds.has(explicitId)) {
+        throw new TypeError(`Duplicate eval case id "${explicitId}" in ${filePath}.`);
+      }
+
+      usedIds.add(explicitId);
+    }
+  }
+
+  let nextAutoId = 1;
+  const allocateAutoId = (): string => {
+    while (usedIds.has(`case-${nextAutoId}`)) {
+      nextAutoId += 1;
+    }
+    const allocated = `case-${nextAutoId}`;
+    usedIds.add(allocated);
+    nextAutoId += 1;
+    return allocated;
+  };
 
   return rawRecords.map((record, index) => {
-    const normalized = normalizeRecord(record, index, options.autoId ?? false, filePath);
+    const normalized = normalizeRecord(
+      record as Record<string, unknown>,
+      index,
+      options.autoId ?? false,
+      allocateAutoId,
+      filePath,
+    );
 
     if (options.schema !== undefined) {
       const parsed = options.schema.safeParse(normalized);
@@ -84,20 +118,17 @@ function parseRecords(content: string, format: "json" | "jsonl", filePath: strin
 }
 
 function normalizeRecord(
-  record: unknown,
+  record: Record<string, unknown>,
   index: number,
   autoId: boolean,
+  allocateAutoId: () => string,
   filePath: string,
 ): Record<string, unknown> {
-  if (typeof record !== "object" || record === null || Array.isArray(record)) {
-    throw new TypeError(`Eval case at index ${index} in ${filePath} must be a JSON object.`);
-  }
-
-  const entry: Record<string, unknown> = { ...(record as Record<string, unknown>) };
+  const entry: Record<string, unknown> = { ...record };
 
   if (typeof entry.id !== "string" || entry.id.trim().length === 0) {
     if (autoId) {
-      entry.id = `case-${index + 1}`;
+      entry.id = allocateAutoId();
     } else {
       throw new TypeError(
         `Eval case at index ${index} in ${filePath} is missing a non-empty string id.`,

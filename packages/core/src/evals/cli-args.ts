@@ -17,6 +17,7 @@ export type ParsedEvalCliArgs = {
   progress?: boolean | undefined;
   baselinePath?: string | undefined;
   savePath?: string | undefined;
+  scoreTolerance?: number | undefined;
 };
 
 /** Parses CLI flags (such as process.argv.slice(2)) into RunEvalCliOptions overrides. */
@@ -132,6 +133,10 @@ export function parseEvalCliArgs(argv: readonly string[]): ParsedEvalCliArgs {
         parsed.savePath = readValue();
         break;
       }
+      case "--score-tolerance": {
+        parsed.scoreTolerance = parseNonNegativeNumber(readValue(), flag);
+        break;
+      }
       default: {
         throw new TypeError(`Unknown eval CLI flag: ${flag}.`);
       }
@@ -157,6 +162,16 @@ function parsePositiveInt(raw: string, flag: string): number {
 
   if (!Number.isSafeInteger(value) || value < 1) {
     throw new RangeError(`Eval CLI flag ${flag} must be a positive integer, received ${raw}.`);
+  }
+
+  return value;
+}
+
+function parseNonNegativeNumber(raw: string, flag: string): number {
+  const value = Number(raw);
+
+  if (!Number.isFinite(value) || value < 0) {
+    throw new RangeError(`Eval CLI flag ${flag} must be a non-negative number, received ${raw}.`);
   }
 
   return value;

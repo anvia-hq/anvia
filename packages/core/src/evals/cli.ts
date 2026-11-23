@@ -1,5 +1,19 @@
 import { parseEvalCliArgs } from "./cli-args";
-import { compareEvalResults, loadEvalResult, printEvalComparison, saveEvalResult } from "./compare";
+import {
+  type CompareEvalResultsOptions,
+  compareEvalResults,
+  loadEvalResult,
+  printEvalComparison,
+  saveEvalResult,
+} from "./compare";
+import {
+  type EvalRedactionContext,
+  type EvalRedactor,
+  redactEvalValue,
+  serializeEvalResultJson,
+  truncateEvalString,
+  validateMaxValueLength,
+} from "./redact";
 import { runEvalSuite } from "./runner";
 import type {
   EvalCaseResult,
@@ -10,6 +24,8 @@ import type {
   EvalTotals,
   RunEvalSuiteOptions,
 } from "./types";
+
+export type { EvalRedactionContext, EvalRedactor } from "./redact";
 
 export type EvalOutputFormat = "pretty" | "json" | "quiet";
 
@@ -29,23 +45,6 @@ export type EvalOutputWriters = {
   stdout?(text: string): void;
   stderr?(text: string): void;
 };
-
-export type EvalRedactionContext = {
-  kind:
-    | "input"
-    | "expected"
-    | "context"
-    | "retrievalContext"
-    | "output"
-    | "score"
-    | "comment"
-    | "metadata"
-    | "error";
-  caseId?: string | undefined;
-  metricName?: string | undefined;
-};
-
-export type EvalRedactor = (value: unknown, context: EvalRedactionContext) => unknown;
 
 export type PrintEvalResultOptions = {
   format?: EvalOutputFormat | undefined;
@@ -100,6 +99,8 @@ export type RunEvalCliOptions<
   baselinePath?: string | undefined;
   savePath?: string | undefined;
   failOnRegression?: boolean | undefined;
+  scoreTolerance?: number | undefined;
+  compareOptions?: CompareEvalResultsOptions | undefined;
 };
 
 export class EvalAssertionError extends Error {
@@ -268,6 +269,8 @@ export async function runEvalCli<
     baselinePath: optionBaselinePath,
     savePath: optionSavePath,
     failOnRegression,
+    scoreTolerance: optionScoreTolerance,
+    compareOptions,
     onProgress: callerOnProgress,
     ...rawSuiteOptions
   } = options;
@@ -278,6 +281,8 @@ export async function runEvalCli<
   const progress = cliArgs?.progress ?? optionProgress;
   const baselinePath = cliArgs?.baselinePath ?? optionBaselinePath;
   const savePath = cliArgs?.savePath ?? optionSavePath;
+  const effectiveScoreTolerance =
+    cliArgs?.scoreTolerance ?? optionScoreTolerance ?? compareOptions?.scoreTolerance;
 
   const suiteOptions = {
     ...rawSuiteOptions,
@@ -353,30 +358,70 @@ export async function runEvalCli<
     );
   }
 
+  let baselineError: unknown;
+
   if (baselinePath !== undefined) {
-    const baseline = await loadEvalResult(baselinePath);
-    const comparison = compareEvalResults(
-      baseline,
-      result as EvalSuiteResult<unknown, unknown, unknown>,
-    );
+    try {
+      const baseline = await loadEvalResult(baselinePath);
+      const isSubsetRun =
+        suiteOptions.caseIds !== undefined ||
+        (suiteOptions.tags !== undefined && suiteOptions.tags.length > 0) ||
+        suiteOptions.caseFilter !== undefined ||
+        suiteOptions.shard !== undefined;
+      const effectiveCompareOptions: CompareEvalResultsOptions = {};
 
-    if (format !== "quiet" && format !== "json") {
-      printEvalComparison(comparison, output);
-    }
+      if (effectiveScoreTolerance !== undefined) {
+        effectiveCompareOptions.scoreTolerance = effectiveScoreTolerance;
+      }
 
-    if (failOnRegression !== false && comparison.hasRegressions && code === 0) {
-      code = 1;
+      if (compareOptions?.ignoreRemovedCases !== undefined) {
+        effectiveCompareOptions.ignoreRemovedCases = compareOptions.ignoreRemovedCases;
+      } else if (isSubsetRun) {
+        effectiveCompareOptions.ignoreRemovedCases = true;
+      }
+
+      if (compareOptions?.ignoreMissingMetrics !== undefined) {
+        effectiveCompareOptions.ignoreMissingMetrics = compareOptions.ignoreMissingMetrics;
+      }
+
+      const comparison = compareEvalResults(
+        baseline,
+        result as EvalSuiteResult<unknown, unknown, unknown>,
+        effectiveCompareOptions,
+      );
+
+      if (format !== "quiet" && format !== "json") {
+        printEvalComparison(comparison, output);
+      }
+
+      if (failOnRegression !== false && comparison.hasRegressions && code === 0) {
+        code = 1;
+      }
+    } catch (error) {
+      if (isEnoentError(error)) {
+        if (format !== "quiet") {
+          const write = output?.stderr ?? ((text: string) => process.stderr.write(text));
+          write(`Baseline file not found at ${baselinePath}; skipping comparison.\n`);
+        }
+      } else {
+        baselineError = error;
+      }
     }
   }
 
   if (savePath !== undefined) {
-    await saveEvalResult(savePath, result as EvalSuiteResult<unknown, unknown, unknown>);
+    await saveEvalResult(savePath, result as EvalSuiteResult<unknown, unknown, unknown>, {
+      redact,
+      maxValueLength,
+    });
   }
 
   const currentExitCode =
     typeof process.exitCode === "number" ? process.exitCode : Number(process.exitCode ?? 0);
 
   if (exitCode === true && code > currentExitCode) process.exitCode = code;
+
+  if (baselineError !== undefined) throw baselineError;
 
   return result;
 }
@@ -562,21 +607,10 @@ function jsonResult(
   result: EvalSuiteResult<unknown, unknown, unknown>,
   options: Omit<PrintEvalResultOptions, "output">,
 ): string {
-  return JSON.stringify(
-    redactJsonResult(result, options),
-    (_key, value: unknown) => {
-      if (value instanceof Error) {
-        return { name: value.name, message: value.message, stack: value.stack };
-      }
-
-      if (value instanceof RegExp) return String(value);
-
-      if (typeof value === "string") return truncate(value, options.maxValueLength);
-
-      return value;
-    },
-    2,
-  );
+  return serializeEvalResultJson(result, {
+    redact: options.redact,
+    maxValueLength: options.maxValueLength,
+  });
 }
 
 function expectationMismatches(
@@ -735,9 +769,7 @@ function errorText(error: unknown, maxValueLength?: number): string {
 }
 
 function truncate(value: string, maxValueLength: number | undefined): string {
-  return maxValueLength !== undefined && value.length > maxValueLength
-    ? `${value.slice(0, maxValueLength)}…`
-    : value;
+  return truncateEvalString(value, maxValueLength);
 }
 
 function redact(
@@ -745,125 +777,15 @@ function redact(
   options: Omit<PrintEvalResultOptions, "output">,
   context: EvalRedactionContext,
 ): unknown {
-  return options.redact === undefined ? value : options.redact(value, context);
-}
-
-function redactJsonResult(
-  result: EvalSuiteResult<unknown, unknown, unknown>,
-  options: Omit<PrintEvalResultOptions, "output">,
-): unknown {
-  return {
-    ...result,
-    run: {
-      ...result.run,
-      metadata:
-        result.run.metadata === undefined
-          ? undefined
-          : (redact(result.run.metadata, options, {
-              kind: "metadata",
-            }) as typeof result.run.metadata),
-    },
-    results: result.results.map((caseResult) => ({
-      ...caseResult,
-      case: {
-        ...caseResult.case,
-        input: redact(caseResult.case.input, options, {
-          kind: "input",
-          caseId: caseResult.case.id,
-        }),
-        expected: redact(caseResult.case.expected, options, {
-          kind: "expected",
-          caseId: caseResult.case.id,
-        }),
-        context: redact(caseResult.case.context, options, {
-          kind: "context",
-          caseId: caseResult.case.id,
-        }),
-        retrievalContext: redact(caseResult.case.retrievalContext, options, {
-          kind: "retrievalContext",
-          caseId: caseResult.case.id,
-        }),
-        metadata:
-          caseResult.case.metadata === undefined
-            ? undefined
-            : (redact(caseResult.case.metadata, options, {
-                kind: "metadata",
-                caseId: caseResult.case.id,
-              }) as typeof caseResult.case.metadata),
-      },
-      output:
-        caseResult.targetStatus === "succeeded"
-          ? redact(caseResult.output, options, { kind: "output", caseId: caseResult.case.id })
-          : undefined,
-      targetError:
-        caseResult.targetStatus === "failed"
-          ? redact(caseResult.targetError, options, {
-              kind: "error",
-              caseId: caseResult.case.id,
-            })
-          : undefined,
-      metrics: caseResult.metrics.map((metric) => ({
-        ...metric,
-        reporterErrors: metric.reporterErrors.map((error) =>
-          redact(error, options, {
-            kind: "error",
-            caseId: caseResult.case.id,
-            metricName: metric.metricName,
-          }),
-        ),
-        outcome: redactOutcome(metric.outcome, options, caseResult.case.id, metric.metricName),
-      })),
-      scores: Object.fromEntries(
-        caseResult.metrics.map((metric) => [
-          metric.metricName,
-          redactOutcome(metric.outcome, options, caseResult.case.id, metric.metricName),
-        ]),
-      ),
-    })),
-    reporterErrors: result.reporterErrors.map((error) => redact(error, options, { kind: "error" })),
-  };
-}
-
-function redactOutcome(
-  outcome: EvalSuiteResult<
-    unknown,
-    unknown,
-    unknown
-  >["results"][number]["metrics"][number]["outcome"],
-  options: Omit<PrintEvalResultOptions, "output">,
-  caseId: string,
-  metricName: string,
-): unknown {
-  const redacted: Record<string, unknown> = { ...outcome };
-
-  if (outcome.score !== undefined) {
-    redacted.score = redact(outcome.score, options, { kind: "score", caseId, metricName });
-  }
-
-  if (outcome.comment !== undefined) {
-    redacted.comment = redact(outcome.comment, options, { kind: "comment", caseId, metricName });
-  }
-
-  if ("reason" in outcome && outcome.reason !== undefined) {
-    redacted.reason = redact(outcome.reason, options, { kind: "comment", caseId, metricName });
-  }
-
-  if (outcome.metadata !== undefined) {
-    redacted.metadata = redact(outcome.metadata, options, { kind: "metadata", caseId, metricName });
-  }
-
-  if ("error" in outcome && outcome.error !== undefined) {
-    redacted.error = redact(outcome.error, options, { kind: "error", caseId, metricName });
-  }
-
-  return redacted;
+  return redactEvalValue(value, options.redact, context);
 }
 
 function validatePrintOptions(options: Omit<PrintEvalResultOptions, "output">): void {
-  if (
-    options.maxValueLength !== undefined &&
-    (!Number.isSafeInteger(options.maxValueLength) || options.maxValueLength < 1)
-  ) {
-    throw new RangeError("Evaluation maxValueLength must be a positive integer.");
-  }
+  validateMaxValueLength(options.maxValueLength);
+}
+
+function isEnoentError(error: unknown): boolean {
+  return (
+    typeof error === "object" && error !== null && (error as { code?: unknown }).code === "ENOENT"
+  );
 }

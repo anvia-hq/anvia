@@ -1,4 +1,5 @@
 import type { EvalOutputWriters } from "./cli";
+import { type EvalRedactor, serializeEvalResultJson } from "./redact";
 import { projectEvalOutcome } from "./reporting";
 import { runEvalSuite } from "./runner";
 import type {
@@ -281,26 +282,20 @@ export function printEvalComparison(
   write(`${formatEvalComparison(comparison)}\n`);
 }
 
+export type SaveEvalResultOptions = {
+  redact?: EvalRedactor | undefined;
+  maxValueLength?: number | undefined;
+};
+
 /** Persists an EvalSuiteResult snapshot to disk as JSON for later baseline comparisons. */
 export async function saveEvalResult(
   filePath: string,
   result: EvalSuiteResult<unknown, unknown, unknown>,
+  options: SaveEvalResultOptions = {},
 ): Promise<void> {
   const [fs, path] = await Promise.all([import("node:fs/promises"), import("node:path")]);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  const serialized = JSON.stringify(
-    result,
-    (_key, value: unknown) => {
-      if (value instanceof Error) {
-        return { name: value.name, message: value.message, stack: value.stack };
-      }
-
-      if (value instanceof RegExp) return String(value);
-
-      return value;
-    },
-    2,
-  );
+  const serialized = serializeEvalResultJson(result, options);
   await fs.writeFile(filePath, `${serialized}\n`, "utf8");
 }
 
@@ -312,17 +307,41 @@ export async function loadEvalResult(
   const content = await fs.readFile(filePath, "utf8");
   const parsed: unknown = JSON.parse(content);
 
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    !("name" in parsed) ||
-    !("results" in parsed) ||
-    !Array.isArray((parsed as { results?: unknown }).results)
-  ) {
+  if (!isValidEvalSnapshot(parsed)) {
     throw new TypeError(`File ${filePath} does not contain a valid EvalSuiteResult snapshot.`);
   }
 
-  return parsed as EvalSuiteResult<unknown, unknown, unknown>;
+  return parsed;
+}
+
+function isValidEvalSnapshot(value: unknown): value is EvalSuiteResult<unknown, unknown, unknown> {
+  if (!isPlainRecord(value)) return false;
+
+  if (typeof value.name !== "string" || !Array.isArray(value.results)) return false;
+
+  if (typeof value.durationMs !== "number" || !Number.isFinite(value.durationMs)) return false;
+
+  if (!isPlainRecord(value.run) || typeof value.run.id !== "string") return false;
+
+  if (!isPlainRecord(value.usage)) return false;
+
+  return (
+    isUsageLike(value.usage.target) &&
+    isUsageLike(value.usage.evaluation) &&
+    isUsageLike(value.usage.total)
+  );
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isUsageLike(value: unknown): boolean {
+  return (
+    isPlainRecord(value) &&
+    typeof value.totalTokens === "number" &&
+    Number.isFinite(value.totalTokens)
+  );
 }
 
 export type CompareEvalTargetsOptions<

@@ -292,6 +292,37 @@ describe("evals DX improvements", () => {
       expect(second.passed).toBe(true);
       expect(memoryCache.size).toBe(1);
 
+      const billingCache = createMemoryEvalCache<string, { output: string; usage: Usage }>();
+      let billingCalls = 0;
+      const billedTarget = (input: string) => {
+        billingCalls += 1;
+        return {
+          output: input.toUpperCase(),
+          usage: { ...Usage.empty(), inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+        };
+      };
+      const billingOptions = {
+        name: "cached-billing",
+        cases: [{ id: "b1", input: "hello", expected: "HELLO" }],
+        target: billedTarget,
+        metrics: [exactMatch(), maxTokens(20)],
+        targetCache: billingCache,
+        cost: {
+          currency: "USD",
+          calculate: ({ usage }: { usage: Usage }) => usage.totalTokens * 0.01,
+        },
+      };
+      const firstBilled = await runEvalSuite(billingOptions);
+      const cachedBilled = await runEvalSuite(billingOptions);
+      expect(billingCalls).toBe(1);
+      expect(firstBilled.usage.target.totalTokens).toBe(15);
+      expect(firstBilled.cost?.target).toBe(0.15);
+      expect(cachedBilled.passed).toBe(true);
+      expect(cachedBilled.results[0]?.cached).toBe(true);
+      expect(cachedBilled.usage.target.totalTokens).toBe(0);
+      expect(cachedBilled.cost?.target).toBe(0);
+      expect(cachedBilled.results[0]?.scores.max_tokens?.score).toBe(15);
+
       const wrapped = cachedEvalTarget(target, memoryCache);
       expect(await wrapped("hello", { id: "a", input: "hello" })).toBe("HELLO");
       expect(calls).toBe(1);
@@ -521,6 +552,8 @@ describe("evals DX improvements", () => {
         "--failed-only",
         "--no-color",
         "--progress",
+        "--score-tolerance",
+        "0.05",
       ]);
       expect(parsed).toEqual({
         format: "pretty",
@@ -533,6 +566,7 @@ describe("evals DX improvements", () => {
         onlyFailures: true,
         color: false,
         progress: true,
+        scoreTolerance: 0.05,
       });
 
       let stdout = "";
@@ -656,6 +690,97 @@ describe("evals DX improvements", () => {
         const updatedSnapshot = await loadEvalResult(samePath);
         expect(updatedSnapshot.results[0]?.output).toBe("regressed");
 
+        const bootstrapPath = join(dir, "bootstrap-baseline.json");
+        let bootstrapErr = "";
+        await runEvalCli({
+          name: "support",
+          cases: [{ id: "c1", input: "secret-token", expected: "secret-token" }],
+          target: (input) => input,
+          metrics: [exactMatch()],
+          trials: 2,
+          redact: (value, ctx) =>
+            ctx.kind === "input" || ctx.kind === "output" ? "[REDACTED]" : value,
+          argv: ["--baseline", bootstrapPath, "--save", bootstrapPath],
+          output: {
+            stdout: () => {},
+            stderr: (text) => {
+              bootstrapErr += text;
+            },
+          },
+        });
+        expect(bootstrapErr).toContain("Baseline file not found");
+        const bootstrapped = await loadEvalResult(bootstrapPath);
+        expect(bootstrapped.results[0]?.case.input).toBe("[REDACTED]");
+        expect(bootstrapped.results[0]?.output).toBe("[REDACTED]");
+        expect(bootstrapped.results[0]?.trials?.runs[0]?.output).toBe("[REDACTED]");
+
+        const fullBaselinePath = join(dir, "full-baseline.json");
+        const fullBaseline = await runEvalSuite({
+          name: "subset-check",
+          cases: [
+            { id: "c1", input: "ok", expected: "ok", tags: ["smoke"] },
+            { id: "c2", input: "ok", expected: "ok", tags: ["slow"] },
+          ],
+          target: (input) => input,
+          metrics: [
+            {
+              name: "score",
+              dataType: "NUMERIC",
+              threshold: 0.7,
+              evaluate: () => EvalOutcome.pass(0.9),
+            },
+          ],
+        });
+        await saveEvalResult(fullBaselinePath, fullBaseline);
+
+        const prevExitCode = process.exitCode;
+        process.exitCode = 0;
+        try {
+          await runEvalCli({
+            name: "subset-check",
+            cases: [
+              { id: "c1", input: "ok", expected: "ok", tags: ["smoke"] },
+              { id: "c2", input: "ok", expected: "ok", tags: ["slow"] },
+            ],
+            target: (input) => input,
+            metrics: [
+              {
+                name: "score",
+                dataType: "NUMERIC",
+                threshold: 0.7,
+                evaluate: () => EvalOutcome.pass(0.88),
+              },
+            ],
+            exitCode: true,
+            argv: ["--tag", "smoke", "--baseline", fullBaselinePath, "--score-tolerance", "0.05"],
+            output: { stdout: () => {} },
+          });
+          expect(process.exitCode).toBe(0);
+        } finally {
+          process.exitCode = prevExitCode;
+        }
+
+        const invalidSnapshotPath = join(dir, "invalid-snapshot.json");
+        const savedAfterInvalidPath = join(dir, "saved-after-invalid.json");
+        await writeFile(
+          invalidSnapshotPath,
+          JSON.stringify({ name: "broken", results: [] }),
+          "utf8",
+        );
+        await expect(loadEvalResult(invalidSnapshotPath)).rejects.toThrow(TypeError);
+        await expect(
+          runEvalCli({
+            name: "support",
+            cases: [{ id: "c1", input: "ok", expected: "ok" }],
+            target: (input) => input,
+            metrics: [exactMatch()],
+            argv: ["--baseline", invalidSnapshotPath, "--save", savedAfterInvalidPath],
+            output: { stdout: () => {} },
+          }),
+        ).rejects.toThrow(TypeError);
+        const savedAfterInvalid = await loadEvalResult(savedAfterInvalidPath);
+        expect(savedAfterInvalid.results[0]?.output).toBe("ok");
+
         const matrix = await compareEvalTargets({
           name: "prompt-ab",
           cases: [{ id: "c1", input: "hello", expected: "HELLO" }],
@@ -711,6 +836,30 @@ describe("evals DX improvements", () => {
         );
         const jsonCases = await loadEvalCases<string, string>(jsonPath);
         expect(jsonCases).toEqual([{ id: "j1", input: "hello", expected: "hello" }]);
+
+        const collisionPath = join(dir, "collision.json");
+        await writeFile(
+          collisionPath,
+          JSON.stringify([
+            { input: "auto-first" },
+            { id: "case-1", input: "explicit-case-1" },
+            { input: "auto-second" },
+          ]),
+          "utf8",
+        );
+        const collisionCases = await loadEvalCases<string>(collisionPath, { autoId: true });
+        expect(collisionCases.map((entry) => entry.id)).toEqual(["case-2", "case-1", "case-3"]);
+
+        const duplicatePath = join(dir, "duplicate.json");
+        await writeFile(
+          duplicatePath,
+          JSON.stringify([
+            { id: "dup", input: "a" },
+            { id: "dup", input: "b" },
+          ]),
+          "utf8",
+        );
+        await expect(loadEvalCases(duplicatePath)).rejects.toThrow(/Duplicate eval case id "dup"/);
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

@@ -1,5 +1,4 @@
-import type { Tracer } from "@opentelemetry/api";
-import type { Logger } from "@opentelemetry/api-logs";
+import type { Logger, Tracer } from "@opentelemetry/api";
 import type { JsonValue } from "@anvia/core/completion";
 
 export type OtelObserverOptions = {

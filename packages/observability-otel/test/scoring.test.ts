@@ -1,5 +1,4 @@
-import { trace } from "@opentelemetry/api";
-import { type Logger, SeverityNumber } from "@opentelemetry/api-logs";
+import { type Logger, SeverityNumber, trace } from "@opentelemetry/api";
 import { describe, expect, it, vi } from "vitest";
 import { createOtelScorer } from "../src/index";
 

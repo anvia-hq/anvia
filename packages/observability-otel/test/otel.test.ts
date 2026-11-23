@@ -1,8 +1,15 @@
 import type { ToolCallPart, Usage } from "@anvia/core/completion";
 import { EvalOutcome } from "@anvia/core/evals";
 import type { AgentGenerationStartArgs } from "@anvia/core/observability";
-import { type Context, diag, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
-import { type Logger, SeverityNumber } from "@opentelemetry/api-logs";
+import {
+  type Context,
+  diag,
+  type Logger,
+  SeverityNumber,
+  SpanKind,
+  SpanStatusCode,
+  trace,
+} from "@opentelemetry/api";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssistantContent, Message } from "../../core/test/helpers/imports";
 import {

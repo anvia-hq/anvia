@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import type { JsonObject } from "@anvia/core/completion";
+import { isObject } from "@anvia/core/internal/provider";
 import type {
   ModelCallOptions,
   SpeechGenerationModel,
@@ -108,8 +109,4 @@ function jsonObject(value: unknown, operation: string): JsonObject {
   }
 
   return value as JsonObject;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

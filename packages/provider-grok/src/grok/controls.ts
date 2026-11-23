@@ -1,71 +1,47 @@
-import {
-  defineCompletionModelControls,
-  type CompletionModelSelectControl,
-  type NoCompletionModelControls,
-  type ReasoningEffortControls,
-} from "@anvia/core/completion";
-import type { GrokCompletionModelId } from "./models";
-import type { Writable } from "./type-utils";
+import type { NoCompletionModelControls, ReasoningEffortControls } from "@anvia/core/completion";
+import { defineReasoningEffortControls } from "@anvia/core/internal/provider";
+import type { GrokCompletionModelId, KnownGrokCompletionModelId } from "./models";
 
 export const GROK_REASONING_EFFORTS = ["none", "low", "medium", "high", "xhigh"] as const;
 
 export type GrokReasoningEffort = (typeof GROK_REASONING_EFFORTS)[number];
 export type GrokReasoningControls = ReasoningEffortControls<GrokReasoningEffort>;
 
-export type GrokControlsFor<ModelId extends GrokCompletionModelId> = ModelId extends
-  | "grok-4.6"
-  | "grok-4.6-latest"
-  | "grok-4.7"
-  | "grok-4.7-latest"
-  | "grok-4.20-multi-agent-0309"
-  ? ReasoningEffortControls<"low" | "medium" | "high" | "xhigh">
-  : ModelId extends "grok-4.5"
-    ? ReasoningEffortControls<"low" | "medium" | "high">
-    : ModelId extends "grok-4.3" | "grok-4.3-latest"
-      ? ReasoningEffortControls<"none" | "low" | "medium" | "high">
-      : NoCompletionModelControls;
-
-const GROK_REASONING_CONTROLS = reasoningControls(
+const GROK_REASONING_CONTROLS = defineReasoningEffortControls(
   ["low", "medium", "high", "xhigh"] as const,
   "high",
 );
-const GROK_4_5_REASONING_CONTROLS = reasoningControls(["low", "medium", "high"] as const, "high");
-const GROK_4_3_REASONING_CONTROLS = reasoningControls(["none", "low", "medium", "high"] as const);
+const GROK_4_5_REASONING_CONTROLS = defineReasoningEffortControls(
+  ["low", "medium", "high"] as const,
+  "high",
+);
+const GROK_4_3_REASONING_CONTROLS = defineReasoningEffortControls([
+  "none",
+  "low",
+  "medium",
+  "high",
+] as const);
+
+const GROK_MODEL_CONTROLS = {
+  "grok-4.3": GROK_4_3_REASONING_CONTROLS,
+  "grok-4.3-latest": GROK_4_3_REASONING_CONTROLS,
+  "grok-4.5": GROK_4_5_REASONING_CONTROLS,
+  "grok-4.6": GROK_REASONING_CONTROLS,
+  "grok-4.6-latest": GROK_REASONING_CONTROLS,
+  "grok-4.7": GROK_REASONING_CONTROLS,
+  "grok-4.7-latest": GROK_REASONING_CONTROLS,
+  "grok-4.20-multi-agent-0309": GROK_REASONING_CONTROLS,
+} as const satisfies Partial<Record<KnownGrokCompletionModelId, GrokReasoningControls>>;
+
+export type GrokControlsFor<ModelId extends GrokCompletionModelId> =
+  ModelId extends keyof typeof GROK_MODEL_CONTROLS
+    ? (typeof GROK_MODEL_CONTROLS)[ModelId]
+    : NoCompletionModelControls;
 
 export function grokControlsForModel(modelId: string): GrokReasoningControls | undefined {
-  if (
-    modelId === "grok-4.6" ||
-    modelId === "grok-4.6-latest" ||
-    modelId === "grok-4.7" ||
-    modelId === "grok-4.7-latest" ||
-    modelId === "grok-4.20-multi-agent-0309"
-  ) {
-    return GROK_REASONING_CONTROLS;
+  if (!Object.hasOwn(GROK_MODEL_CONTROLS, modelId)) {
+    return undefined;
   }
 
-  if (modelId === "grok-4.5") return GROK_4_5_REASONING_CONTROLS;
-
-  if (modelId === "grok-4.3" || modelId === "grok-4.3-latest") {
-    return GROK_4_3_REASONING_CONTROLS;
-  }
-
-  return undefined;
-}
-
-function reasoningControls<const Efforts extends readonly GrokReasoningEffort[]>(
-  efforts: Efforts,
-  defaultValue?: Efforts[number],
-): ReasoningEffortControls<Efforts[number]> {
-  const effortControl: Writable<CompletionModelSelectControl<Efforts[number]>> = {
-    type: "select",
-    label: "Reasoning effort",
-    description: "Controls how much reasoning the model applies before responding.",
-    options: efforts,
-  };
-
-  if (defaultValue !== undefined) effortControl.defaultValue = defaultValue;
-
-  return defineCompletionModelControls({
-    reasoningEffort: effortControl,
-  });
+  return GROK_MODEL_CONTROLS[modelId as keyof typeof GROK_MODEL_CONTROLS];
 }

@@ -1,5 +1,5 @@
 import type { JsonObject, ProviderTool } from "@anvia/core/completion";
-import { isPrivateOrReservedHost } from "./mcp-url-guard.js";
+import { isPrivateOrReservedHost } from "./mcp-url-guard";
 
 export type GrokWebSearchOptions = {
   allowedDomains?: string[] | undefined;

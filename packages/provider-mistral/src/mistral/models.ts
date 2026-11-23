@@ -97,6 +97,8 @@ export type KnownMistralEmbeddingModelId =
 
 export type MistralEmbeddingModelId = ModelId<KnownMistralEmbeddingModelId>;
 
+export const MISTRAL_OCR_LATEST = "mistral-ocr-latest";
+
 export type KnownMistralOcrModelId =
   | "mistral-ocr-4"
   | "mistral-ocr-4-0"

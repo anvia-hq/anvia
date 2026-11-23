@@ -1,9 +1,9 @@
-import type { JsonObject, JsonValue } from "@anvia/core/completion";
+import type { JsonObject, JsonValue, ModelCallOptions } from "@anvia/core/completion";
+import { isPlainObject, isStringArray } from "@anvia/core/internal/provider";
 import type { Mistral } from "@mistralai/mistralai";
-import { isPlainObject } from "../utils";
 import type { MistralOcrModelId } from "./models";
 
-export const MISTRAL_OCR_LATEST = "mistral-ocr-latest";
+export { MISTRAL_OCR_LATEST } from "./models";
 
 export type MistralOcrSource =
   | {
@@ -83,16 +83,17 @@ export class MistralOcrModel {
     readonly modelId: MistralOcrModelId,
   ) {}
 
-  async ocr(request: MistralOcrRequest): Promise<MistralOcrResponse<unknown>> {
-    const { document, uploadedFile } = await this.documentFromSource(
-      request.source,
-      request.abortSignal,
-    );
+  async ocr(
+    request: MistralOcrRequest,
+    options?: ModelCallOptions,
+  ): Promise<MistralOcrResponse<unknown>> {
+    const abortSignal = options?.abortSignal ?? request.abortSignal;
+    const { document, uploadedFile } = await this.documentFromSource(request.source, abortSignal);
     const params = this.toOcrParams(request, document);
     const response = await this.client.ocr.process(
       params as never,
       {
-        signal: request.abortSignal,
+        signal: abortSignal,
         retries: { strategy: "none" },
       } as never,
     );
@@ -319,8 +320,4 @@ function toUint8Array(data: Uint8Array | ArrayBuffer): Uint8Array {
   }
 
   return new Uint8Array(data);
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }

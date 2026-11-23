@@ -1,6 +1,6 @@
 import type {
-  CompletionModelControls,
   CompletionModelCapabilities,
+  CompletionModelControls,
   CompletionModelStreamEvent,
   CompletionRequest,
   CompletionResponse,
@@ -21,13 +21,14 @@ export class GrokCompletionModel<
   private readonly delegate: StreamingCompletionModel<unknown, Controls>;
 
   constructor(
-    client: OpenAI,
+    client: OpenAI | OpenAIClient,
     readonly modelId: GrokCompletionModelId,
     api?: "responses" | "chat" | undefined,
     readonly contextLimits?: ModelContextLimits,
     readonly controls?: Controls,
   ) {
-    this.delegate = new OpenAIClient({ client }).completionModel({
+    const adapter = client instanceof OpenAIClient ? client : new OpenAIClient({ client });
+    this.delegate = adapter.completionModel({
       modelId,
       api,
       contextLimits,

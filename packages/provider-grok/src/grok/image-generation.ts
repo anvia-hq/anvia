@@ -6,6 +6,7 @@ import type {
   ImageGenerationResult,
   ModelCallOptions,
 } from "@anvia/core/image-generation";
+import { isPlainObject } from "@anvia/core/internal/provider";
 import type { OpenAI } from "openai";
 import type { GrokImageGenerationModelId } from "./models";
 
@@ -229,8 +230,4 @@ function gcd(left: number, right: number): number {
 
 function defaultFetch(): typeof fetch | undefined {
   return typeof globalThis.fetch === "function" ? globalThis.fetch.bind(globalThis) : undefined;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -1,4 +1,5 @@
 import type { JsonObject, JsonValue, ModelCallOptions } from "@anvia/core/completion";
+import { isObject } from "@anvia/core/internal/provider";
 import type {
   TranscriptionModel,
   TranscriptionRequest,
@@ -106,8 +107,4 @@ function appendFormValue(form: FormData, name: string, value: JsonValue | undefi
   }
 
   form.append(name, String(value));
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

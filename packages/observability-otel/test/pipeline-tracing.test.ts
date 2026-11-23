@@ -116,7 +116,13 @@ describe("OpenTelemetry Pipeline observer", () => {
     expect(parallelSpan?.parentSpanId).toBe(root?.spanContextValue.spanId);
     expect(branchSpan?.name).toBe("branch.web");
     expect(branchSpan?.parentSpanId).toBe(parallelSpan?.spanContextValue.spanId);
+    expect(parallelSpan?.attributes).toMatchObject({
+      "anvia.trace.name": "Research",
+      "anvia.trace.session_id": "session-1",
+    });
     expect(branchSpan?.attributes).toMatchObject({
+      "anvia.trace.name": "Research",
+      "anvia.trace.session_id": "session-1",
       "anvia.pipeline.stage.path": "fanout/web",
       "anvia.pipeline.stage.branch_key": "web",
       "anvia.pipeline.stage.output": '["result"]',

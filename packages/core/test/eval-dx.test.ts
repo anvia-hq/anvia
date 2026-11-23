@@ -570,7 +570,7 @@ describe("evals DX improvements", () => {
         cases: [{ id: "c1", input: "Refund policy?", expected: "30 days" }],
         target: () => "Refunds last 30 days.",
         metrics: [
-          judge.answerRelevancy({ threshold: 0.8 }),
+          judge.answerRelevancy({ threshold: 0.8, includeReason: undefined }),
           judge.llmScore({ threshold: 0.8, criteria: "Matches policy." }),
         ],
       });
@@ -718,6 +718,7 @@ describe("evals DX improvements", () => {
         const samePath = join(dir, "rolling-baseline.json");
         await saveEvalResult(samePath, loaded);
         let cliOut = "";
+        let cliErr = "";
         await runEvalCli({
           name: "support",
           cases: [
@@ -731,11 +732,36 @@ describe("evals DX improvements", () => {
             stdout: (text) => {
               cliOut += text;
             },
+            stderr: (text) => {
+              cliErr += text;
+            },
           },
         });
         expect(cliOut).toContain("1 regression(s) / 1 improvement(s)");
-        const updatedSnapshot = await loadEvalResult(samePath);
-        expect(updatedSnapshot.results[0]?.output).toBe("regressed");
+        expect(cliErr).toContain("Skipping overwrite of baseline");
+        const preservedBaseline = await loadEvalResult(samePath);
+        expect(preservedBaseline.results[0]?.output).toBe("good");
+
+        await runEvalCli({
+          name: "support",
+          cases: [
+            { id: "c1", input: "good", expected: "good" },
+            { id: "c2", input: "good", expected: "good" },
+          ],
+          target: (input) => input,
+          metrics: [exactMatch()],
+          argv: ["--baseline", samePath, "--save", samePath],
+          output: { stdout: () => {} },
+        });
+        const refreshedSnapshot = await loadEvalResult(samePath);
+        expect(refreshedSnapshot.results[1]?.output).toBe("good");
+
+        const truncatedPath = join(dir, "truncated-snapshot.json");
+        await saveEvalResult(truncatedPath, loaded, { maxValueLength: 2 });
+        const loadedTruncated = await loadEvalResult(truncatedPath);
+        expect(loadedTruncated.name).toBe("support");
+        expect(loadedTruncated.results[0]?.case.id).toBe("c1");
+        expect(loadedTruncated.results[0]?.metrics[0]?.metricName).toBe("exact_match");
 
         const bootstrapPath = join(dir, "bootstrap-baseline.json");
         let bootstrapErr = "";
@@ -779,6 +805,32 @@ describe("evals DX improvements", () => {
           ],
         });
         await saveEvalResult(fullBaselinePath, fullBaseline);
+
+        const driftedCandidate = await runEvalSuite({
+          name: "subset-check",
+          cases: [
+            { id: "c1", input: "ok", expected: "ok", tags: ["smoke"] },
+            { id: "c2", input: "ok", expected: "ok", tags: ["slow"] },
+          ],
+          target: (input) => input,
+          metrics: [
+            {
+              name: "score",
+              dataType: "NUMERIC",
+              threshold: 0.7,
+              evaluate: () => EvalOutcome.pass(0.85),
+            },
+          ],
+        });
+        expect(compareEvalResults(fullBaseline, driftedCandidate).hasRegressions).toBe(false);
+        expect(
+          compareEvalResults(fullBaseline, driftedCandidate, { scoreTolerance: 0.02 })
+            .hasRegressions,
+        ).toBe(true);
+        expect(
+          compareEvalResults(fullBaseline, driftedCandidate, { scoreTolerance: 0.1 })
+            .hasRegressions,
+        ).toBe(false);
 
         const prevExitCode = process.exitCode;
         process.exitCode = 0;

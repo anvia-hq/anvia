@@ -73,6 +73,7 @@ export type EvalComparisonResult = {
 };
 
 export type CompareEvalResultsOptions = {
+  /** Maximum allowed same-outcome score drift before flagging a regression/improvement. When omitted, only outcome transitions (e.g. pass -> fail) are flagged while score deltas are still reported in `metricDeltas`. */
   scoreTolerance?: number | undefined;
   ignoreRemovedCases?: boolean | undefined;
   ignoreMissingMetrics?: boolean | undefined;
@@ -84,7 +85,12 @@ export function compareEvalResults(
   candidate: EvalSuiteResult<unknown, unknown, unknown>,
   options: CompareEvalResultsOptions = {},
 ): EvalComparisonResult {
-  const tolerance = options.scoreTolerance ?? 1e-9;
+  const tolerance = options.scoreTolerance;
+
+  if (tolerance !== undefined && (!Number.isFinite(tolerance) || tolerance < 0)) {
+    throw new RangeError("compareEvalResults scoreTolerance must be a non-negative finite number.");
+  }
+
   const ignoreRemovedCases = options.ignoreRemovedCases ?? false;
   const ignoreMissingMetrics = options.ignoreMissingMetrics ?? false;
   const baselineCases = new Map(baseline.results.map((entry) => [entry.case.id, entry]));
@@ -469,7 +475,7 @@ function classifyDelta(args: {
   candidateOutcome: EvalOutcomeStatus;
   scoreDelta: number | undefined;
   direction: EvalScoreDirection | undefined;
-  tolerance: number;
+  tolerance: number | undefined;
 }): "regression" | "improvement" | "unchanged" {
   const rankDelta = outcomeRank(args.candidateOutcome) - outcomeRank(args.baselineOutcome);
 
@@ -477,7 +483,11 @@ function classifyDelta(args: {
 
   if (rankDelta > 0) return "improvement";
 
-  if (args.scoreDelta === undefined || Math.abs(args.scoreDelta) <= args.tolerance) {
+  if (
+    args.tolerance === undefined ||
+    args.scoreDelta === undefined ||
+    Math.abs(args.scoreDelta) <= args.tolerance
+  ) {
     return "unchanged";
   }
 

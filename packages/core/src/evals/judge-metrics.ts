@@ -70,7 +70,8 @@ export function createJudgeMetrics(defaults: JudgeMetricsDefaults) {
 
     if (defaults.required !== undefined) merged.required = defaults.required;
 
-    Object.assign(merged, options, { model: options.model ?? defaults.model });
+    assignDefined(merged, options as Record<string, unknown>);
+    merged.model = options.model ?? defaults.model;
     return merged as T & { model: CompletionModel };
   }
 
@@ -87,7 +88,8 @@ export function createJudgeMetrics(defaults: JudgeMetricsDefaults) {
 
     if (defaults.required !== undefined) merged.required = defaults.required;
 
-    Object.assign(merged, options, { model: options.model ?? defaults.model });
+    assignDefined(merged, options as Record<string, unknown>);
+    merged.model = options.model ?? defaults.model;
     return merged as T & { model: CompletionModel };
   }
 
@@ -267,7 +269,8 @@ export function createJudgeMetrics(defaults: JudgeMetricsDefaults) {
 
       if (defaults.required !== undefined) merged.required = defaults.required;
 
-      Object.assign(merged, options, { model: options.model ?? defaults.model });
+      assignDefined(merged, options as Record<string, unknown>);
+      merged.model = options.model ?? defaults.model;
       return abstention(
         merged as AbstentionOptions<Input, Output, Expected> & { name?: Name | undefined },
       );
@@ -313,4 +316,12 @@ export function createJudgeMetrics(defaults: JudgeMetricsDefaults) {
       return jsonCorrectness(withAdvanced(options));
     },
   };
+}
+
+function assignDefined(target: Record<string, unknown>, source: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined) {
+      target[key] = value;
+    }
+  }
 }

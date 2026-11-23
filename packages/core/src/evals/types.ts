@@ -474,6 +474,7 @@ export type RunEvalSuiteOptions<
   concurrency?: number | undefined;
   targetConcurrency?: number | undefined;
   metricConcurrency?: number | undefined;
+  /** Per-trial timeout in milliseconds (when `trials` is > 1, each trial gets its own timeout). */
   caseTimeoutMs?: number | undefined;
   signal?: AbortSignal | undefined;
   failFast?: boolean | undefined;

@@ -371,6 +371,27 @@ describe("evals DX improvements", () => {
         expect(fileCalls).toBe(1);
         expect(reloaded.results[0]?.cached).toBe(true);
         expect(reloaded.passed).toBe(true);
+
+        const { mkdir } = await import("node:fs/promises");
+        const recoverablePath = join(dir, "recoverable-cache.json");
+        const recoverableCache = createFileEvalCache<string, string>(recoverablePath);
+        expect(await recoverableCache.get("missing", { id: "c0", input: "i0" })).toBeUndefined();
+        await mkdir(recoverablePath, { recursive: true });
+        await expect(
+          recoverableCache.set(
+            "k1",
+            { output: "v1", targetDurationMs: 1, cachedAt: new Date().toISOString() },
+            { id: "c1", input: "i1" },
+          ),
+        ).rejects.toThrow();
+        await rm(recoverablePath, { recursive: true, force: true });
+        await recoverableCache.set(
+          "k2",
+          { output: "v2", targetDurationMs: 2, cachedAt: new Date().toISOString() },
+          { id: "c2", input: "i2" },
+        );
+        const recovered = createFileEvalCache<string, string>(recoverablePath);
+        expect((await recovered.get("k2", { id: "c2", input: "i2" }))?.output).toBe("v2");
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

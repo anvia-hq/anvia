@@ -26,6 +26,21 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+export function readModelIdentity(
+  model: unknown,
+): { provider: string; modelId: string } | undefined {
+  if (typeof model !== "object" || model === null) return undefined;
+
+  const provider = (model as { provider?: unknown }).provider;
+  const modelId = (model as { modelId?: unknown }).modelId;
+
+  if (typeof provider === "string" && typeof modelId === "string") {
+    return { provider, modelId };
+  }
+
+  return undefined;
+}
+
 function deepEqual(left: unknown, right: unknown, seen: WeakMap<object, object>): boolean {
   if (Object.is(left, right)) return true;
 

@@ -95,9 +95,11 @@ export async function runEvalSuite<
   const completedAt = new Date().toISOString();
   const result: EvalSuiteResult<Input, Output, Expected, Metrics> = {
     name: options.name,
+    passed: aggregates.passed,
     run: { ...run, completedAt },
     results,
     metrics: aggregates.metrics,
+    metricSummaries: aggregates.metricSummaries,
     cases: aggregates.cases,
     usage: aggregates.usage,
     durationMs: Date.now() - startedAtMs,
@@ -180,7 +182,13 @@ async function runEvalCases<
           const result = results[index];
 
           if (result !== undefined && result.outcome !== "pass") {
-            failure ??= { error: new EvalFailFastError(result.case.id, result.outcome) };
+            const partialResults = results.filter(
+              (entry): entry is EvalCaseResult<Input, Output, Expected, Metrics> =>
+                entry !== undefined,
+            );
+            failure ??= {
+              error: new EvalFailFastError(result.case.id, result.outcome, result, partialResults),
+            };
           }
         }
       } catch (error) {

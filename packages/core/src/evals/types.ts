@@ -29,6 +29,7 @@ export type EvalCase<Input, Expected = unknown> = {
   expected?: Expected | undefined;
   context?: string[] | undefined;
   retrievalContext?: string[] | undefined;
+  tags?: readonly string[] | undefined;
   metadata?: EvalMetadata | undefined;
 };
 
@@ -109,6 +110,12 @@ export type EvalMetricArgs<Input, Output, Expected = unknown> = {
   case: EvalCase<Input, Expected>;
   output: Output;
   signal: AbortSignal;
+  targetDurationMs?: number | undefined;
+};
+
+export type EvalModelIdentity = {
+  provider: string;
+  modelId: string;
 };
 
 export type EvalMetric<
@@ -127,6 +134,7 @@ export type EvalMetric<
   projectScore?(score: Score): number | string | boolean;
   scoreConfigId?: string | undefined;
   configId?: string | undefined;
+  model?: EvalModelIdentity | undefined;
   metadata?: EvalMetadata | undefined;
   readonly caseRequirements?: Requirements | undefined;
   evaluate(
@@ -163,6 +171,70 @@ export type EvalScoreMap<Metrics extends readonly AnyEvalMetric[]> = {
   [Metric in Metrics[number] as Metric["name"]]: EvalOutcome<EvalMetricScore<Metric>>;
 };
 
+export type EvalMetricSummary = {
+  metricName: string;
+  required: boolean;
+  direction?: EvalScoreDirection | undefined;
+  threshold?: number | undefined;
+  total: number;
+  passed: number;
+  failed: number;
+  invalid: number;
+  passRate: number;
+  meanScore?: number | undefined;
+  minScore?: number | undefined;
+  maxScore?: number | undefined;
+  meanDurationMs: number;
+};
+
+export type EvalTrialOptions = {
+  count: number;
+  minPassRate?: number | undefined;
+};
+
+export type EvalCaseTrialRun<Output = unknown> = {
+  trial: number;
+  outcome: EvalOutcomeStatus;
+  targetStatus: "succeeded" | "failed";
+  output?: Output | undefined;
+  targetError?: unknown;
+  targetDurationMs: number;
+  durationMs: number;
+  cached?: boolean | undefined;
+  metrics: EvalMetricResult[];
+};
+
+export type EvalCaseTrialSummary<Output = unknown> = {
+  count: number;
+  passed: number;
+  failed: number;
+  invalid: number;
+  passRate: number;
+  passAtK: boolean;
+  passAllK: boolean;
+  minPassRate: number;
+  runs: Array<EvalCaseTrialRun<Output>>;
+};
+
+export type EvalTargetCacheEntry<Output = unknown> = {
+  output: Output;
+  targetDurationMs?: number | undefined;
+  cachedAt?: string | undefined;
+};
+
+export type EvalTargetCache<in Input = unknown, Output = unknown, in Expected = unknown> = {
+  get(
+    key: string,
+    testCase: EvalCase<Input, Expected>,
+  ): EvalTargetCacheEntry<Output> | undefined | Promise<EvalTargetCacheEntry<Output> | undefined>;
+  set(
+    key: string,
+    entry: EvalTargetCacheEntry<Output>,
+    testCase: EvalCase<Input, Expected>,
+  ): void | Promise<void>;
+  keyFor?(testCase: EvalCase<Input, Expected>, trial: number): string;
+};
+
 export type EvalCaseResult<
   Input,
   Output,
@@ -176,8 +248,10 @@ export type EvalCaseResult<
   targetError?: unknown;
   targetDurationMs: number;
   durationMs: number;
+  cached?: boolean | undefined;
   metrics: Array<EvalMetricResultFor<Metrics[number]>>;
   scores: EvalScoreMap<Metrics>;
+  trials?: EvalCaseTrialSummary<Output> | undefined;
   usage: EvalUsageSummary;
   cost?: EvalCostSummary | undefined;
 };
@@ -189,9 +263,11 @@ export type EvalSuiteResult<
   Metrics extends readonly AnyEvalMetric[] = readonly AnyEvalMetric[],
 > = {
   name: string;
+  passed: boolean;
   run: EvalRunContext & { completedAt: string };
   results: Array<EvalCaseResult<Input, Output, Expected, Metrics>>;
   metrics: EvalTotals;
+  metricSummaries: Record<string, EvalMetricSummary>;
   cases: EvalTotals;
   usage: EvalUsageSummary;
   cost?: EvalCostSummary | undefined;
@@ -265,6 +341,7 @@ export type EvalCostCalculatorArgs<Input, Output, Expected = unknown> =
       case: EvalCase<Input, Expected>;
       output: Output;
       usage: Usage;
+      model?: EvalModelIdentity | undefined;
     }
   | {
       kind: "evaluation";
@@ -273,6 +350,7 @@ export type EvalCostCalculatorArgs<Input, Output, Expected = unknown> =
       output: Output;
       metric: EvalMetric<Input, Output, unknown, Expected>;
       usage: Usage;
+      model?: EvalModelIdentity | undefined;
     };
 
 export type EvalCostOptions<Input, Output, Expected = unknown> = {
@@ -395,8 +473,14 @@ export type RunEvalSuiteOptions<
   signal?: AbortSignal | undefined;
   failFast?: boolean | undefined;
   caseIds?: readonly string[] | undefined;
+  tags?: readonly string[] | undefined;
   caseFilter?(testCase: EvalCase<Input, Expected>, index: number): boolean;
   shard?: EvalShard | undefined;
+  trials?: number | EvalTrialOptions | undefined;
+  targetCache?:
+    | EvalTargetCache<NoInfer<Input>, NoInfer<Output>, NoInfer<Expected>>
+    | EvalTargetCache<unknown, unknown, unknown>
+    | undefined;
   onProgress?(event: EvalProgressEvent<Input, Output, Expected>): void | Promise<void>;
   trace?: EvalTraceSelector<NoInfer<Input>, NoInfer<Output>, NoInfer<Expected>> | undefined;
   reporters?:

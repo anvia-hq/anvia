@@ -1,17 +1,20 @@
 import { type Usage, Usage as UsageValue } from "../completion";
 import type { EvalOutcome as EvalOutcomeType } from "./outcome";
+import { projectEvalOutcome } from "./reporting";
 import type {
   EvalCase,
   EvalCaseResult,
   EvalCostSummary,
   EvalMetric,
   EvalMetricResult,
+  EvalMetricSummary,
   EvalReporter,
   EvalRunContext,
   EvalRunEndArgs,
   EvalRunStartArgs,
   EvalTotals,
   EvalTraceRef,
+  EvalTrialOptions,
   RunEvalSuiteOptions,
 } from "./types";
 
@@ -29,10 +32,28 @@ export class EvalFailFastError extends Error {
   constructor(
     readonly caseId: string,
     readonly outcome: "fail" | "invalid",
+    readonly caseResult?: EvalCaseResult<unknown, unknown, unknown> | undefined,
+    readonly partialResults: readonly EvalCaseResult<unknown, unknown, unknown>[] = [],
   ) {
     super(`Evaluation stopped after case ${caseId} produced a required ${outcome} outcome.`);
     this.name = "EvalFailFastError";
   }
+}
+
+export function resolveTrialConfig(trials: number | EvalTrialOptions | undefined): {
+  count: number;
+  minPassRate: number;
+} {
+  if (trials === undefined) return { count: 1, minPassRate: 1 };
+
+  if (typeof trials === "number") {
+    return { count: trials, minPassRate: 1 };
+  }
+
+  return {
+    count: trials.count,
+    minPassRate: trials.minPassRate ?? 1,
+  };
 }
 
 export function resolveRun<Input, Output, Expected>(
@@ -171,6 +192,107 @@ export function caseOutcome(
   return "pass";
 }
 
+export async function computeCaseUsageAndCost<
+  Input,
+  Output,
+  Expected,
+  Metrics extends readonly EvalMetric<Input, Output, unknown, Expected, string>[],
+>(args: {
+  options: RunEvalSuiteOptions<Input, Output, Expected, Metrics>;
+  testCase: EvalCase<Input, Expected>;
+  output: Output | undefined;
+  targetStatus: "succeeded" | "failed";
+  metrics: EvalMetricResult[];
+  signal: AbortSignal | undefined;
+}): Promise<{
+  usage: { target: Usage; evaluation: Usage; total: Usage };
+  cost?: EvalCostSummary | undefined;
+}> {
+  const { options, testCase, output, targetStatus, metrics, signal } = args;
+  let caseTargetUsage = UsageValue.empty();
+  let caseEvaluationUsage = UsageValue.empty();
+  let caseTargetCost = 0;
+  let caseEvaluationCost = 0;
+
+  if (targetStatus === "succeeded") {
+    const usage = await resolveTargetUsage(options, testCase, output as Output, signal);
+
+    if (usage !== undefined) {
+      caseTargetUsage = usage;
+
+      if (options.cost !== undefined) {
+        caseTargetCost = await calculateCost(
+          options.cost.calculate({
+            kind: "target",
+            suiteName: options.name,
+            case: testCase,
+            output: output as Output,
+            usage,
+          }),
+        );
+      }
+    }
+  }
+
+  for (const metricResult of metrics) {
+    const usage = metricResult.outcome.usage;
+
+    if (usage === undefined) continue;
+
+    assertUsage(usage, `Evaluation usage for metric ${metricResult.metricName}`);
+    caseEvaluationUsage = UsageValue.add(caseEvaluationUsage, usage);
+
+    if (options.cost !== undefined && targetStatus === "succeeded") {
+      const metric = options.metrics.find(
+        (candidate) => candidate.name === metricResult.metricName,
+      );
+
+      if (metric !== undefined) {
+        const costArgs: {
+          kind: "evaluation";
+          suiteName: string;
+          case: EvalCase<Input, Expected>;
+          output: Output;
+          metric: EvalMetric<Input, Output, unknown, Expected>;
+          usage: Usage;
+          model?: { provider: string; modelId: string } | undefined;
+        } = {
+          kind: "evaluation",
+          suiteName: options.name,
+          case: testCase,
+          output: output as Output,
+          metric,
+          usage,
+        };
+
+        if (metric.model !== undefined) costArgs.model = metric.model;
+
+        const metricCost = await calculateCost(options.cost.calculate(costArgs));
+        metricResult.cost = metricCost;
+        caseEvaluationCost += metricCost;
+      }
+    }
+  }
+
+  const usage = {
+    target: caseTargetUsage,
+    evaluation: caseEvaluationUsage,
+    total: UsageValue.add(caseTargetUsage, caseEvaluationUsage),
+  };
+
+  if (options.cost === undefined) return { usage };
+
+  return {
+    usage,
+    cost: {
+      currency: options.cost.currency,
+      target: caseTargetCost,
+      evaluation: caseEvaluationCost,
+      total: caseTargetCost + caseEvaluationCost,
+    },
+  };
+}
+
 export async function aggregateResult<
   Input,
   Output,
@@ -180,7 +302,9 @@ export async function aggregateResult<
   options: RunEvalSuiteOptions<Input, Output, Expected, Metrics>,
   results: Array<EvalCaseResult<Input, Output, Expected, Metrics>>,
 ): Promise<{
+  passed: boolean;
   metrics: EvalTotals;
+  metricSummaries: Record<string, EvalMetricSummary>;
   cases: EvalTotals;
   usage: { target: Usage; evaluation: Usage; total: Usage };
   cost?: EvalCostSummary | undefined;
@@ -191,77 +315,12 @@ export async function aggregateResult<
   let evaluationCost = 0;
 
   for (const result of results) {
-    let caseTargetUsage = UsageValue.empty();
-    let caseEvaluationUsage = UsageValue.empty();
-    let caseTargetCost = 0;
-    let caseEvaluationCost = 0;
+    targetUsage = UsageValue.add(targetUsage, result.usage.target);
+    evaluationUsage = UsageValue.add(evaluationUsage, result.usage.evaluation);
 
-    if (result.targetStatus === "succeeded") {
-      const usage = await resolveTargetUsage(options, result.case, result.output as Output);
-
-      if (usage !== undefined) {
-        caseTargetUsage = usage;
-        targetUsage = UsageValue.add(targetUsage, usage);
-
-        if (options.cost !== undefined) {
-          caseTargetCost = await calculateCost(
-            options.cost.calculate({
-              kind: "target",
-              suiteName: options.name,
-              case: result.case,
-              output: result.output as Output,
-              usage,
-            }),
-          );
-          targetCost += caseTargetCost;
-        }
-      }
-    }
-
-    for (const metricResult of result.metrics) {
-      const usage = metricResult.outcome.usage;
-
-      if (usage === undefined) continue;
-
-      assertUsage(usage, `Evaluation usage for metric ${metricResult.metricName}`);
-      caseEvaluationUsage = UsageValue.add(caseEvaluationUsage, usage);
-      evaluationUsage = UsageValue.add(evaluationUsage, usage);
-
-      if (options.cost !== undefined && result.targetStatus === "succeeded") {
-        const metric = options.metrics.find(
-          (candidate) => candidate.name === metricResult.metricName,
-        );
-
-        if (metric !== undefined) {
-          const metricCost = await calculateCost(
-            options.cost.calculate({
-              kind: "evaluation",
-              suiteName: options.name,
-              case: result.case,
-              output: result.output as Output,
-              metric,
-              usage,
-            }),
-          );
-          metricResult.cost = metricCost;
-          caseEvaluationCost += metricCost;
-          evaluationCost += metricCost;
-        }
-      }
-    }
-    result.usage = {
-      target: caseTargetUsage,
-      evaluation: caseEvaluationUsage,
-      total: UsageValue.add(caseTargetUsage, caseEvaluationUsage),
-    };
-
-    if (options.cost !== undefined) {
-      result.cost = {
-        currency: options.cost.currency,
-        target: caseTargetCost,
-        evaluation: caseEvaluationCost,
-        total: caseTargetCost + caseEvaluationCost,
-      };
+    if (result.cost !== undefined) {
+      targetCost += result.cost.target;
+      evaluationCost += result.cost.evaluation;
     }
   }
 
@@ -270,14 +329,21 @@ export async function aggregateResult<
     evaluation: evaluationUsage,
     total: UsageValue.add(targetUsage, evaluationUsage),
   };
+  const cases = countCaseOutcomes(results);
+  const metrics = countMetricOutcomes(results);
+  const metricSummaries = buildMetricSummaries(options.metrics, results);
   const aggregates: {
+    passed: boolean;
     metrics: EvalTotals;
+    metricSummaries: Record<string, EvalMetricSummary>;
     cases: EvalTotals;
     usage: typeof usage;
     cost?: EvalCostSummary | undefined;
   } = {
-    metrics: countMetricOutcomes(results),
-    cases: countCaseOutcomes(results),
+    passed: cases.failed === 0 && cases.invalid === 0,
+    metrics,
+    metricSummaries,
+    cases,
     usage,
   };
 
@@ -361,12 +427,26 @@ export function validateSuiteOptions<Input, Output, Expected>(
       throw new RangeError("Evaluation shard index must be between 0 and count - 1");
     }
   }
+
+  if (options.trials !== undefined) {
+    const { count, minPassRate } = resolveTrialConfig(options.trials);
+
+    if (!Number.isSafeInteger(count) || count < 1) {
+      throw new RangeError("Evaluation trials count must be a positive integer");
+    }
+
+    if (!Number.isFinite(minPassRate) || minPassRate <= 0 || minPassRate > 1) {
+      throw new RangeError("Evaluation trials minPassRate must be in (0, 1]");
+    }
+  }
 }
 
 export function selectCases<Input, Output, Expected>(
   options: RunEvalSuiteOptions<Input, Output, Expected>,
 ): readonly EvalCase<Input, Expected>[] {
   const requested = options.caseIds === undefined ? undefined : new Set(options.caseIds);
+  const requestedTags =
+    options.tags !== undefined && options.tags.length > 0 ? new Set(options.tags) : undefined;
 
   if (requested !== undefined) {
     assertUnique([...options.caseIds!], "Evaluation selected case id");
@@ -381,6 +461,8 @@ export function selectCases<Input, Output, Expected>(
   const filtered = options.cases.filter(
     (testCase, index) =>
       (requested === undefined || requested.has(testCase.id)) &&
+      (requestedTags === undefined ||
+        (testCase.tags !== undefined && testCase.tags.some((tag) => requestedTags.has(tag)))) &&
       (options.caseFilter === undefined || options.caseFilter(testCase, index)),
   );
 
@@ -433,10 +515,72 @@ function statusKey(status: "pass" | "fail" | "invalid"): "passed" | "failed" | "
   return "invalid";
 }
 
+function buildMetricSummaries<Input, Output, Expected>(
+  metrics: readonly EvalMetric<Input, Output, unknown, Expected, string>[],
+  results: Array<EvalCaseResult<Input, Output, Expected>>,
+): Record<string, EvalMetricSummary> {
+  const summaries: Record<string, EvalMetricSummary> = {};
+  for (const metric of metrics) {
+    let total = 0;
+    let passed = 0;
+    let failed = 0;
+    let invalid = 0;
+    let totalDurationMs = 0;
+    const numericScores: number[] = [];
+
+    for (const caseResult of results) {
+      const entry = caseResult.metrics.find((candidate) => candidate.metricName === metric.name);
+
+      if (entry === undefined) continue;
+
+      total += 1;
+      totalDurationMs += entry.durationMs;
+
+      if (entry.outcome.outcome === "pass") passed += 1;
+      else if (entry.outcome.outcome === "fail") failed += 1;
+      else invalid += 1;
+
+      if (entry.outcome.outcome !== "invalid") {
+        const projection = projectEvalOutcome(entry.outcome, metric.dataType, metric.projectScore);
+
+        if (projection.numericValue !== undefined && Number.isFinite(projection.numericValue)) {
+          numericScores.push(projection.numericValue);
+        }
+      }
+    }
+
+    const summary: EvalMetricSummary = {
+      metricName: metric.name,
+      required: metric.required ?? true,
+      total,
+      passed,
+      failed,
+      invalid,
+      passRate: total === 0 ? 0 : passed / total,
+      meanDurationMs: total === 0 ? 0 : totalDurationMs / total,
+    };
+
+    if (metric.direction !== undefined) summary.direction = metric.direction;
+
+    if (metric.threshold !== undefined) summary.threshold = metric.threshold;
+
+    if (numericScores.length > 0) {
+      const sum = numericScores.reduce((acc, value) => acc + value, 0);
+      summary.meanScore = sum / numericScores.length;
+      summary.minScore = Math.min(...numericScores);
+      summary.maxScore = Math.max(...numericScores);
+    }
+
+    summaries[metric.name] = summary;
+  }
+  return summaries;
+}
+
 async function resolveTargetUsage<Input, Output, Expected>(
   options: RunEvalSuiteOptions<Input, Output, Expected>,
   testCase: EvalCase<Input, Expected>,
   output: Output,
+  signal: AbortSignal | undefined,
 ): Promise<Usage | undefined> {
   const usage =
     options.targetUsage === undefined
@@ -445,7 +589,7 @@ async function resolveTargetUsage<Input, Output, Expected>(
           suiteName: options.name,
           case: testCase,
           output,
-          signal: new AbortController().signal,
+          signal: signal ?? new AbortController().signal,
         });
 
   if (usage !== undefined) assertUsage(usage, `Target usage for case ${testCase.id}`);

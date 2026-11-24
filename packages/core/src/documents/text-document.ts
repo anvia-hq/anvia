@@ -20,14 +20,15 @@ export type TextDocumentChunkingOptions =
   | Readonly<{ strategy: "none" }>
   | Readonly<{
       strategy: "fixed";
-      maxSize: number;
+      maxSize?: number | undefined;
       overlap?: number | undefined;
+      separators?: never;
     }>
   | Readonly<{
-      strategy: "recursive";
-      maxSize: number;
+      strategy?: "recursive" | undefined;
+      maxSize?: number | undefined;
       overlap?: number | undefined;
-      separators: readonly string[];
+      separators?: readonly string[] | undefined;
     }>;
 
 export type ChunkTextDocumentsOptions<Metadata = TextDocumentMetadata> = Readonly<{

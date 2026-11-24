@@ -1,7 +1,9 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   InMemoryVectorStore,
+  isVectorFilter,
   matchesVectorFilter,
+  normalizeVectorFilter,
   type VectorFilter,
   vectorFilter,
 } from "../src/vector-store";
@@ -128,5 +130,26 @@ describe("vector filters", () => {
     const metadata = { tenant: "a", payload: `x" or "1"="1` };
     expect(matchesVectorFilter(metadata, vectorFilter.eq(`tenant" or "1`, "a"))).toBe(false);
     expect(matchesVectorFilter(metadata, vectorFilter.eq("payload", `x" or "1"="1`))).toBe(true);
+  });
+
+  it("supports plain-object filter shorthand and vectorFilter.where", () => {
+    expect(matchesVectorFilter(metadata, { tenant: "a", priority: { gte: 2, lt: 4 } })).toBe(true);
+    expect(matchesVectorFilter(metadata, { tenant: "a", priority: { gt: 3 } })).toBe(false);
+    expect(matchesVectorFilter(metadata, { tenant: { in: ["a", "b"] } })).toBe(true);
+    expect(matchesVectorFilter(metadata, {})).toBe(true);
+    expect(normalizeVectorFilter({ type: "article" })).toEqual({
+      type: "eq",
+      key: "type",
+      value: "article",
+    });
+    expect(isVectorFilter({ type: "article" })).toBe(false);
+    expect(isVectorFilter(vectorFilter.eq("type", "article"))).toBe(true);
+    expect(vectorFilter.where({ tenant: "a", archived: false })).toEqual({
+      type: "and",
+      filters: [
+        { type: "eq", key: "tenant", value: "a" },
+        { type: "eq", key: "archived", value: false },
+      ],
+    });
   });
 });

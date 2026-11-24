@@ -152,10 +152,7 @@ describe("chunkText", () => {
     ).toThrow(TypeError);
   });
 
-  it("rejects missing, empty, duplicate, and non-string recursive separators", () => {
-    expect(() => chunkText({ text: "text", strategy: "recursive", maxSize: 4 } as never)).toThrow(
-      TypeError,
-    );
+  it("rejects empty, duplicate, and non-string recursive separators", () => {
     expect(() =>
       chunkText({ text: "text", strategy: "recursive", maxSize: 4, separators: [] }),
     ).toThrow(TypeError);
@@ -175,12 +172,26 @@ describe("chunkText", () => {
     ).toThrow(TypeError);
   });
 
+  it("provides sensible recursive defaults when strategy, maxSize, or separators are omitted", () => {
+    expect(chunkText({ text: "hello world" })).toEqual([
+      { index: 0, text: "hello world", start: 0, end: 11 },
+    ]);
+    expect(chunkText({ text: "aa bb\ncc dd", maxSize: 5 })).toEqual([
+      { index: 0, text: "aa ", start: 0, end: 3 },
+      { index: 1, text: "bb\n", start: 3, end: 6 },
+      { index: 2, text: "cc dd", start: 6, end: 11 },
+    ]);
+    expect(chunkText({ text: "aa bb\ncc dd", strategy: "recursive", maxSize: 5 })).toEqual([
+      { index: 0, text: "aa ", start: 0, end: 3 },
+      { index: 1, text: "bb\n", start: 3, end: 6 },
+      { index: 2, text: "cc dd", start: 6, end: 11 },
+    ]);
+  });
+
   it("rejects invalid combinations at compile time", () => {
     if (Date.now() === Number.NEGATIVE_INFINITY) {
       // @ts-expect-error Fixed chunking does not accept separators.
       chunkText({ text: "text", strategy: "fixed", maxSize: 4, separators: [" "] });
-      // @ts-expect-error Recursive chunking requires explicit separators.
-      chunkText({ text: "text", strategy: "recursive", maxSize: 4 });
     }
   });
 });

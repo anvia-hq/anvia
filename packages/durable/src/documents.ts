@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isVectorContext, type Agent } from "@anvia/core/agent";
+import { isContextSource, isVectorContext, type Agent } from "@anvia/core/agent";
 import type { Document } from "@anvia/core/completion";
 import { canonicalJson, json } from "./json.js";
 
@@ -13,7 +13,7 @@ export type DurableContextDocuments = { hash: string; documents: Document[] };
 
 export function contextDocumentsOf(agent: Agent<unknown>): DurableContextDocuments | undefined {
   const documents = agent.context
-    .filter((input) => !isVectorContext(input))
+    .filter((input) => !isVectorContext(input) && !isContextSource(input))
     .map((input) => json(input) as Document);
 
   if (documents.length === 0) return undefined;

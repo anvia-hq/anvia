@@ -2,18 +2,27 @@ import type { Document } from "../completion";
 import type { EmbeddingModel, SparseEmbeddingModel } from "../embeddings";
 import { assertFiniteMinScore, assertPositiveSearchLimit } from "../internal/vector-search-options";
 import type { RetrySetting } from "../retry";
+import { normalizeVectorFilter } from "../vector-store/filter";
 import type {
   HybridVectorStore,
   VectorFilter,
+  VectorFilterInput,
   VectorFusion,
+  VectorRerankOptions,
   VectorSearchResult,
   VectorStore,
-} from "../vector-store";
+} from "../vector-store/types";
+
+const DEFAULT_VECTOR_CONTEXT_TOP_K = 5;
 
 export type VectorContextBaseOptions<T = unknown> = {
-  topK: number;
+  topK?: number | undefined;
   minScore?: number | undefined;
-  filter?: VectorFilter | undefined;
+  filter?: VectorFilterInput | undefined;
+  rerank?(
+    options: VectorRerankOptions<T>,
+  ): Promise<readonly VectorSearchResult<T>[]> | readonly VectorSearchResult<T>[];
+  candidateTopK?: number | undefined;
   retries?: RetrySetting | undefined;
   format?(result: VectorSearchResult<T>): Document;
 };
@@ -32,8 +41,14 @@ export type CreateHybridVectorContextOptions<T = unknown> = VectorContextBaseOpt
 };
 
 export type VectorContext<T = unknown> = (
-  | CreateVectorContextOptions<T>
-  | CreateHybridVectorContextOptions<T>
+  | (Omit<CreateVectorContextOptions<T>, "topK" | "filter"> & {
+      topK: number;
+      filter?: VectorFilter | undefined;
+    })
+  | (Omit<CreateHybridVectorContextOptions<T>, "topK" | "filter"> & {
+      topK: number;
+      filter?: VectorFilter | undefined;
+    })
 ) & {
   readonly kind: "vector-context";
 };
@@ -45,19 +60,31 @@ export function createVectorContext<T>(
 export function createVectorContext<T>(
   options: CreateVectorContextOptions<T> | CreateHybridVectorContextOptions<T>,
 ): VectorContext<T> {
-  const topK = assertPositiveSearchLimit(options.topK);
+  const topK = assertPositiveSearchLimit(options.topK ?? DEFAULT_VECTOR_CONTEXT_TOP_K);
   const minScore = assertFiniteMinScore(options.minScore);
-  let context: VectorContext<T> = {
+  const filter = normalizeVectorFilter(options.filter);
+
+  if (options.candidateTopK !== undefined) {
+    assertPositiveSearchLimit(options.candidateTopK, "candidateTopK");
+  }
+
+  let context = {
     ...options,
     topK,
     kind: "vector-context" as const,
-  };
+  } as Record<string, unknown>;
 
   if (minScore !== undefined) {
     context = { ...context, minScore };
   }
 
-  return Object.freeze(context);
+  if (filter !== undefined) {
+    context = { ...context, filter };
+  } else {
+    delete context.filter;
+  }
+
+  return Object.freeze(context) as unknown as VectorContext<T>;
 }
 
 export function isVectorContext(value: unknown): value is VectorContext {

@@ -27,6 +27,22 @@ export type VectorFilter =
   | { type: "and"; filters: VectorFilterList }
   | { type: "or"; filters: VectorFilterList };
 
+export type VectorFilterFieldOperators = Readonly<{
+  eq?: VectorMetadataValue | undefined;
+  ne?: VectorMetadataValue | undefined;
+  gt?: VectorMetadataValue | undefined;
+  gte?: VectorMetadataValue | undefined;
+  lt?: VectorMetadataValue | undefined;
+  lte?: VectorMetadataValue | undefined;
+  in?: readonly VectorMetadataValue[] | undefined;
+}>;
+
+export type VectorFilterShorthand = Readonly<
+  Record<string, VectorMetadataValue | VectorFilterFieldOperators | undefined>
+>;
+
+export type VectorFilterInput = VectorFilter | VectorFilterShorthand;
+
 export type VectorMetric = "cosine" | "euclidean" | "dotProduct";
 export type VectorFusion = "rrf" | "dbsf";
 
@@ -42,6 +58,12 @@ export type IndexStrategy = { type: "bruteForce" } | LshOptions;
 export type VectorStoreUpsertOptions<T, Metadata extends VectorMetadata = VectorMetadata> = {
   documents: Array<EmbeddedDocument<T, Metadata>>;
   providerOptions?: JsonObject | undefined;
+};
+
+export type VectorStoreDeleteOptions = {
+  documentIds: readonly string[];
+  providerOptions?: JsonObject | undefined;
+  abortSignal?: AbortSignal | undefined;
 };
 
 export type VectorSearchRequest = {
@@ -63,7 +85,24 @@ export type VectorSearchResult<T = unknown, Metadata extends VectorMetadata = Ve
   id: string;
   document: T;
   metadata?: Metadata | undefined;
+  /** The specific embedded chunk text that produced the best score, when available. */
+  matchedText?: string | undefined;
 };
+
+export type VectorRerankOptions<
+  T = unknown,
+  Metadata extends VectorMetadata = VectorMetadata,
+> = Readonly<{
+  query: string;
+  results: readonly VectorSearchResult<T, Metadata>[];
+  abortSignal?: AbortSignal | undefined;
+}>;
+
+export type VectorReranker<T = unknown, Metadata extends VectorMetadata = VectorMetadata> = (
+  options: VectorRerankOptions<T, Metadata>,
+) =>
+  | Promise<readonly VectorSearchResult<T, Metadata>[]>
+  | readonly VectorSearchResult<T, Metadata>[];
 
 export type VectorInspectRequest = {
   limit: number;
@@ -89,6 +128,7 @@ export interface VectorStore<T = unknown, Metadata extends VectorMetadata = Vect
   ensure(): Promise<void>;
   validate(): Promise<void>;
   upsert(options: VectorStoreUpsertOptions<T, Metadata>): Promise<void>;
+  delete?(options: VectorStoreDeleteOptions): Promise<void>;
   search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>>;
   inspect?(request: VectorInspectRequest): Promise<VectorInspectPage<T, Metadata>>;
 }
@@ -100,11 +140,16 @@ export interface HybridVectorStore<
   searchHybrid(request: HybridVectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>>;
 }
 
-export type RetrieveDocumentsBaseOptions = {
+export type RetrieveDocumentsBaseOptions<
+  T = unknown,
+  Metadata extends VectorMetadata = VectorMetadata,
+> = {
   query: string;
-  topK: number;
+  topK?: number | undefined;
   minScore?: number | undefined;
-  filter?: VectorFilter | undefined;
+  filter?: VectorFilterInput | undefined;
+  rerank?: VectorReranker<T, Metadata> | undefined;
+  candidateTopK?: number | undefined;
   retries?: RetrySetting | undefined;
   abortSignal?: AbortSignal | undefined;
 };
@@ -112,7 +157,7 @@ export type RetrieveDocumentsBaseOptions = {
 export type RetrieveDocumentsOptions<
   T,
   Metadata extends VectorMetadata = VectorMetadata,
-> = RetrieveDocumentsBaseOptions & {
+> = RetrieveDocumentsBaseOptions<T, Metadata> & {
   store: VectorStore<T, Metadata>;
   model: EmbeddingModel;
   models?: never;
@@ -121,26 +166,31 @@ export type RetrieveDocumentsOptions<
 export type RetrieveHybridDocumentsOptions<
   T,
   Metadata extends VectorMetadata = VectorMetadata,
-> = RetrieveDocumentsBaseOptions & {
+> = RetrieveDocumentsBaseOptions<T, Metadata> & {
   store: HybridVectorStore<T, Metadata>;
   model?: never;
   models: { dense: EmbeddingModel; sparse: SparseEmbeddingModel };
   fusion?: VectorFusion | undefined;
 };
 
-export type VectorSearchToolBaseOptions = {
+export type VectorSearchToolBaseOptions<
+  T = unknown,
+  Metadata extends VectorMetadata = VectorMetadata,
+> = {
   name: string;
   description?: string | undefined;
   topK?: number | undefined;
   minScore?: number | undefined;
-  filter?: VectorFilter | undefined;
+  filter?: VectorFilterInput | undefined;
+  rerank?: VectorReranker<T, Metadata> | undefined;
+  candidateTopK?: number | undefined;
   retries?: RetrySetting | undefined;
 };
 
 export type DenseVectorSearchToolOptions<
   T,
   Metadata extends VectorMetadata = VectorMetadata,
-> = VectorSearchToolBaseOptions & {
+> = VectorSearchToolBaseOptions<T, Metadata> & {
   store: VectorStore<T, Metadata>;
   model: EmbeddingModel;
   models?: never;
@@ -149,7 +199,7 @@ export type DenseVectorSearchToolOptions<
 export type HybridVectorSearchToolOptions<
   T,
   Metadata extends VectorMetadata = VectorMetadata,
-> = VectorSearchToolBaseOptions & {
+> = VectorSearchToolBaseOptions<T, Metadata> & {
   store: HybridVectorStore<T, Metadata>;
   model?: never;
   models: { dense: EmbeddingModel; sparse: SparseEmbeddingModel };

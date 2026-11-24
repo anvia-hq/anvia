@@ -1,5 +1,5 @@
 import { AGENT_RUN_EXECUTION_VERSION, getResolvedAgentOptions } from "@anvia/core/internal/agent";
-import { isVectorContext } from "@anvia/core/agent";
+import { isContextSource, isVectorContext } from "@anvia/core/agent";
 import { isJsonValue, isStreamingCompletionModel } from "@anvia/core/completion";
 import type { GuardrailPolicy } from "@anvia/core/guardrails";
 import { compactionPolicySchema, modelRetrySchema } from "./schema.js";
@@ -330,7 +330,7 @@ function unsupportedFeatures(
     features.push("guardrails");
 
   if (
-    (options.context ?? []).some((input) => isVectorContext(input)) &&
+    (options.context ?? []).some((input) => isVectorContext(input) || isContextSource(input)) &&
     registration.context === undefined
   )
     features.push("context");

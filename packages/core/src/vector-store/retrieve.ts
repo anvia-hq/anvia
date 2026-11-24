@@ -2,11 +2,14 @@ import { embedSparseQuery, embedText, type VectorMetadata } from "../embeddings"
 import { throwIfAborted } from "../internal/abort";
 import { assertFiniteMinScore, assertPositiveSearchLimit } from "../internal/vector-search-options";
 import { type ResolvedRetryOptions, resolveRetryOptions, runWithRetries } from "../retry";
+import { normalizeVectorFilter } from "./filter";
 import type {
   RetrieveDocumentsOptions,
   RetrieveHybridDocumentsOptions,
   VectorSearchResult,
 } from "./types";
+
+const DEFAULT_RETRIEVE_TOP_K = 5;
 
 export function retrieveDocuments<T, Metadata extends VectorMetadata = VectorMetadata>(
   options: RetrieveDocumentsOptions<T, Metadata>,
@@ -17,8 +20,16 @@ export function retrieveDocuments<T, Metadata extends VectorMetadata = VectorMet
 export async function retrieveDocuments<T, Metadata extends VectorMetadata = VectorMetadata>(
   options: RetrieveDocumentsOptions<T, Metadata> | RetrieveHybridDocumentsOptions<T, Metadata>,
 ): Promise<Array<VectorSearchResult<T, Metadata>>> {
-  assertPositiveSearchLimit(options.topK);
+  const topK = assertPositiveSearchLimit(options.topK ?? DEFAULT_RETRIEVE_TOP_K);
   assertFiniteMinScore(options.minScore);
+  const searchTopK =
+    options.rerank !== undefined
+      ? assertPositiveSearchLimit(
+          options.candidateTopK ?? Math.max(topK * 3, topK),
+          "candidateTopK",
+        )
+      : topK;
+  const filter = normalizeVectorFilter(options.filter);
   throwIfAborted(options.abortSignal);
   const retries = resolveRetries(options.retries);
   const search = (operation: () => Promise<Array<VectorSearchResult<T, Metadata>>>) =>
@@ -27,6 +38,8 @@ export async function retrieveDocuments<T, Metadata extends VectorMetadata = Vec
       abortSignal: options.abortSignal,
     });
 
+  let candidates: Array<VectorSearchResult<T, Metadata>>;
+
   if ("model" in options && options.model !== undefined) {
     const { embedding } = await embedText({
       model: options.model,
@@ -34,46 +47,58 @@ export async function retrieveDocuments<T, Metadata extends VectorMetadata = Vec
       retries: options.retries,
       abortSignal: options.abortSignal,
     });
-    return deduplicateResults(
+    candidates = deduplicateResults(
       await search(() =>
         options.store.search({
           vector: embedding.vector,
-          topK: options.topK,
+          topK: searchTopK,
           minScore: options.minScore,
-          filter: options.filter,
+          filter,
+          abortSignal: options.abortSignal,
+        }),
+      ),
+    );
+  } else {
+    const [{ embedding: dense }, { embedding: sparse }] = await Promise.all([
+      embedText({
+        model: options.models.dense,
+        text: options.query,
+        retries: options.retries,
+        abortSignal: options.abortSignal,
+      }),
+      embedSparseQuery({
+        model: options.models.sparse,
+        query: options.query,
+        retries: options.retries,
+        abortSignal: options.abortSignal,
+      }),
+    ]);
+    candidates = deduplicateResults(
+      await search(() =>
+        options.store.searchHybrid({
+          vector: dense.vector,
+          sparseVector: sparse.vector,
+          fusion: options.fusion,
+          topK: searchTopK,
+          minScore: options.minScore,
+          filter,
           abortSignal: options.abortSignal,
         }),
       ),
     );
   }
 
-  const [{ embedding: dense }, { embedding: sparse }] = await Promise.all([
-    embedText({
-      model: options.models.dense,
-      text: options.query,
-      retries: options.retries,
-      abortSignal: options.abortSignal,
-    }),
-    embedSparseQuery({
-      model: options.models.sparse,
-      query: options.query,
-      retries: options.retries,
-      abortSignal: options.abortSignal,
-    }),
-  ]);
-  return deduplicateResults(
-    await search(() =>
-      options.store.searchHybrid({
-        vector: dense.vector,
-        sparseVector: sparse.vector,
-        fusion: options.fusion,
-        topK: options.topK,
-        minScore: options.minScore,
-        filter: options.filter,
-        abortSignal: options.abortSignal,
-      }),
-    ),
-  );
+  if (options.rerank === undefined || candidates.length === 0) {
+    return candidates.slice(0, topK);
+  }
+
+  const reranked = await options.rerank({
+    query: options.query,
+    results: candidates,
+    abortSignal: options.abortSignal,
+  });
+  throwIfAborted(options.abortSignal);
+  return [...reranked].slice(0, topK);
 }
 
 function deduplicateResults<T, Metadata extends VectorMetadata>(

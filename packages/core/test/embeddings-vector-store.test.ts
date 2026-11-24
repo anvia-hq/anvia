@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  Agent,
+  createContextSource,
   createVectorContext,
+  createVectorIndex,
   createVectorSearchTool,
   type Embedding,
   type EmbeddingModel,
@@ -15,10 +18,12 @@ import {
   InMemoryVectorStore,
   ingestVectorDocuments,
   ingestVectorText,
+  isContextSource,
   isVectorContext,
   retrieveDocuments,
   type SparseEmbedding,
   type SparseEmbeddingModel,
+  Usage,
   type VectorSearchRequest,
   type VectorStoreUpsertOptions,
   VectorInspectCursorError,
@@ -902,14 +907,156 @@ describe("vector stores and retrieval", () => {
     expect(VectorInspectCursorError.isCursorError(undefined)).toBe(false);
   });
 
-  it("creates explicit vector contexts", () => {
+  it("creates explicit vector contexts with default topK and filter shorthand", () => {
     const context = createVectorContext({
       store: new InMemoryVectorStore<string>({ dimensions: 2 }),
       model: new KeywordModel(),
-      topK: 2,
       minScore: 0.25,
+      filter: { tenant: "acme" },
     });
     expect(isVectorContext(context)).toBe(true);
     expect(context.kind).toBe("vector-context");
+    expect(context.topK).toBe(5);
+    expect(context.filter).toEqual({ type: "eq", key: "tenant", value: "acme" });
+  });
+
+  it("embeds strings and TextDocument objects without boilerplate selectors", async () => {
+    const model = new KeywordModel();
+    const fromStrings = await embedDocuments({
+      model,
+      documents: ["cat guide", "dog guide"],
+    });
+    expect(fromStrings.documents.map((doc) => doc.id)).toEqual(["doc0", "doc1"]);
+    expect(fromStrings.documents[0]?.embeddings[0]?.document).toBe("cat guide");
+
+    const fromObjects = await embedDocuments({
+      model,
+      documents: [{ id: "cat", text: "cat guide", metadata: { topic: "pets" } }],
+    });
+    expect(fromObjects.documents[0]).toMatchObject({
+      id: "cat",
+      metadata: { topic: "pets" },
+    });
+  });
+
+  it("supports delete(), matchedText, default topK, filter shorthand, and reranking", async () => {
+    const model = new KeywordModel();
+    const store = new InMemoryVectorStore<{ id: string; text: string }>();
+    await ingestVectorDocuments({
+      store,
+      model,
+      documents: [
+        { id: "cat", text: "alpha cat section\n\nbeta dog section", metadata: { topic: "pets" } },
+        { id: "dog", text: "dog guide", metadata: { topic: "pets" } },
+      ],
+      chunking: { maxSize: 20 },
+    });
+
+    const results = await retrieveDocuments({
+      store,
+      model,
+      query: "cat",
+      filter: { topic: "pets" },
+      rerank: ({ results: candidates }) => [...candidates].reverse(),
+      candidateTopK: 2,
+    });
+    expect(results.map((r) => r.id)).toEqual(["dog", "cat"]);
+    expect(results.find((r) => r.id === "cat")?.matchedText).toBe("alpha cat section\n\n");
+
+    await store.delete({ documentIds: ["dog"] });
+    expect(store.len()).toBe(1);
+    expect(store.get({ id: "dog" })).toBeUndefined();
+  });
+
+  it("supports hybrid ingestion and chunk granularity in ingestVectorDocuments", async () => {
+    const upserted: Array<unknown> = [];
+    const store: HybridVectorStore<{ id: string; text: string }> = {
+      async ensure() {},
+      async validate() {},
+      async upsert(options) {
+        upserted.push(...options.documents);
+      },
+      async search() {
+        return [];
+      },
+      async searchHybrid() {
+        return [];
+      },
+    };
+    const result = await ingestVectorDocuments({
+      store,
+      models: { dense: new KeywordModel(), sparse: new SparseModel() },
+      documents: [{ id: "doc-1", text: "cat1cat2", metadata: { team: "core" } }],
+      chunking: { strategy: "fixed", maxSize: 4 },
+      granularity: "chunk",
+    });
+    expect(result.documents).toHaveLength(2);
+    expect(result.documents[0]).toMatchObject({
+      id: "doc-1:chunk:0",
+      document: { id: "doc-1:chunk:0", text: "cat1" },
+      metadata: { team: "core", documentId: "doc-1", chunkIndex: 0 },
+    });
+    expect(result.documents[0]?.sparseEmbeddings).toHaveLength(1);
+    expect(upserted).toHaveLength(2);
+  });
+
+  it("formats TextDocument vector context cleanly and supports ContextSource on Agent", async () => {
+    const model = new KeywordModel();
+    const index = createVectorIndex({
+      model,
+      chunking: { maxSize: 18 },
+    });
+    await index.ingest([
+      { id: "cat-doc", text: "cat guide intro\n\ndog footer", metadata: { source: "guide.md" } },
+    ]);
+
+    const seenDocuments: Array<unknown> = [];
+    const customSource = createContextSource(async ({ query }) => [
+      { id: "custom-1", text: `custom:${query}` },
+    ]);
+    expect(isContextSource(customSource)).toBe(true);
+
+    const agent = new Agent({
+      id: "rag-agent",
+      model: {
+        provider: "test",
+        modelId: "test",
+        capabilities: {
+          streaming: false,
+          tools: false,
+          toolChoice: false,
+          outputSchema: false,
+          reasoning: false,
+          imageInput: false,
+          documentInput: false,
+        },
+        async completion(request) {
+          seenDocuments.push(...(request.documents ?? []));
+          return {
+            choice: [{ type: "text", text: "ok" }],
+            usage: Usage.empty(),
+            rawResponse: {},
+          };
+        },
+      },
+      context: [index.asContext({ topK: 1 }), customSource],
+    });
+
+    await agent.generate({ prompt: "cat" });
+    expect(seenDocuments).toEqual([
+      {
+        id: "cat-doc",
+        text: "cat guide intro\n\n",
+        additionalProps: { source: "guide.md" },
+      },
+      { id: "custom-1", text: "custom:cat" },
+    ]);
+
+    const tool = index.asTool({ name: "search_kb" });
+    const toolResults = await tool.call({ query: "cat" });
+    expect(toolResults[0]?.id).toBe("cat-doc");
+
+    await index.delete("cat-doc");
+    expect(await index.retrieve("cat")).toEqual([]);
   });
 });

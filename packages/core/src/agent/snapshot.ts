@@ -3,6 +3,7 @@ import { assertFiniteMinScore, assertPositiveSearchLimit } from "../internal/vec
 import type { AgentObservabilityOptions, AgentObserverMap } from "../observability";
 import type { VectorSearchResult } from "../vector-store";
 import type { AgentContextInput, AgentMemory } from "./types";
+import { isContextSource } from "./context-source";
 import {
   isVectorContext,
   type VectorContext,
@@ -136,6 +137,14 @@ export function cloneFrozenPlainData<T>(value: T): T {
 }
 
 function snapshotContextInput<T>(input: AgentContextInput<T>): AgentContextInput<T> {
+  if (isContextSource(input)) {
+    const retrieve = input.retrieve;
+    return Object.freeze({
+      kind: "context-source" as const,
+      retrieve: (options) => retrieve.call(input, options),
+    });
+  }
+
   if (!isVectorContext(input)) {
     let document: AgentContextInput<T> = {
       id: input.id,
@@ -153,9 +162,11 @@ function snapshotContextInput<T>(input: AgentContextInput<T>): AgentContextInput
   }
 
   const format = input.format;
-  let shared: VectorContextBaseOptions<T> & {
+  let shared: Omit<VectorContextBaseOptions<T>, "topK" | "filter"> & {
     kind: "vector-context";
     store: VectorContext<T>["store"];
+    topK: number;
+    filter?: VectorContext<T>["filter"];
   } = {
     kind: "vector-context" as const,
     store: input.store,
@@ -168,6 +179,14 @@ function snapshotContextInput<T>(input: AgentContextInput<T>): AgentContextInput
 
   if (input.filter !== undefined) {
     shared = { ...shared, filter: cloneFrozenPlainData(input.filter) };
+  }
+
+  if (input.rerank !== undefined) {
+    shared = { ...shared, rerank: input.rerank };
+  }
+
+  if (input.candidateTopK !== undefined) {
+    shared = { ...shared, candidateTopK: input.candidateTopK };
   }
 
   if (input.retries !== undefined) {

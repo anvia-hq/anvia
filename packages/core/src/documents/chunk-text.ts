@@ -1,3 +1,6 @@
+export const DEFAULT_CHUNK_SIZE = 1000;
+export const DEFAULT_CHUNK_SEPARATORS = ["\n\n", "\n", ". ", " "] as const;
+
 export type TextChunk = Readonly<{
   index: number;
   text: string;
@@ -9,15 +12,16 @@ export type ChunkTextOptions =
   | Readonly<{
       text: string;
       strategy: "fixed";
-      maxSize: number;
-      overlap?: number;
+      maxSize?: number | undefined;
+      overlap?: number | undefined;
+      separators?: never;
     }>
   | Readonly<{
       text: string;
-      strategy: "recursive";
-      maxSize: number;
-      overlap?: number;
-      separators: readonly string[];
+      strategy?: "recursive" | undefined;
+      maxSize?: number | undefined;
+      overlap?: number | undefined;
+      separators?: readonly string[] | undefined;
     }>;
 
 type TextRange = Readonly<{
@@ -69,11 +73,13 @@ function validateOptions(options: ChunkTextOptions):
     throw new TypeError("chunkText text must be a string");
   }
 
-  if (!Number.isSafeInteger(value.maxSize) || (value.maxSize as number) <= 0) {
+  const rawMaxSize = value.maxSize === undefined ? DEFAULT_CHUNK_SIZE : value.maxSize;
+
+  if (!Number.isSafeInteger(rawMaxSize) || (rawMaxSize as number) <= 0) {
     throw new RangeError("chunkText maxSize must be a positive safe integer");
   }
 
-  const maxSize = value.maxSize as number;
+  const maxSize = rawMaxSize as number;
   const overlap = value.overlap === undefined ? 0 : value.overlap;
 
   if (!Number.isSafeInteger(overlap) || (overlap as number) < 0 || (overlap as number) >= maxSize) {
@@ -82,8 +88,10 @@ function validateOptions(options: ChunkTextOptions):
     );
   }
 
-  if (value.strategy === "fixed") {
-    if ("separators" in value) {
+  const strategy = value.strategy === undefined ? "recursive" : value.strategy;
+
+  if (strategy === "fixed") {
+    if ("separators" in value && value.separators !== undefined) {
       throw new TypeError("chunkText fixed strategy does not accept separators");
     }
 
@@ -95,15 +103,18 @@ function validateOptions(options: ChunkTextOptions):
     };
   }
 
-  if (value.strategy !== "recursive") {
+  if (strategy !== "recursive") {
     throw new TypeError('chunkText strategy must be either "fixed" or "recursive"');
   }
 
-  if (!Array.isArray(value.separators) || value.separators.length === 0) {
+  const rawSeparators =
+    value.separators === undefined ? DEFAULT_CHUNK_SEPARATORS : value.separators;
+
+  if (!Array.isArray(rawSeparators) || rawSeparators.length === 0) {
     throw new TypeError("chunkText recursive separators must be a non-empty array");
   }
 
-  const separators = value.separators as unknown[];
+  const separators = rawSeparators as unknown[];
   const seen = new Set<string>();
   for (const separator of separators) {
     if (typeof separator !== "string" || separator.length === 0) {

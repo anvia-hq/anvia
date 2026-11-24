@@ -318,7 +318,12 @@ export function createVectorSearchTool<T, Metadata extends VectorMetadata>(
       options.description ?? "Search a vector store for documents relevant to the provided query.",
     inputSchema: z.object({
       query: z.string().min(1).describe("The query string to search for relevant documents."),
-      topK: z.number().int().positive().optional().describe("The maximum number of results."),
+      topK: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(`The maximum number of results (clamped to ${configuredTopK}).`),
     }),
     outputSchema: z.array(
       z.object({
@@ -334,7 +339,7 @@ export function createVectorSearchTool<T, Metadata extends VectorMetadata>(
     handler: ({ query, topK }, context) => {
       const request = {
         query,
-        topK: topK ?? configuredTopK,
+        topK: topK === undefined ? configuredTopK : Math.min(topK, configuredTopK),
         minScore: options.minScore,
         filter: options.filter,
         rerank: options.rerank,

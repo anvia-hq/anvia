@@ -16,6 +16,7 @@ import {
 import { isMcpTool } from "../../mcp";
 import type { MemoryScope } from "../../memory/types";
 import type { AgentTraceOptions } from "../../observability/types";
+import { isSkillTool } from "../../tool/skill-tool-marker";
 import { type AgentContinuationState, parseContinuationState } from "./continuation-state";
 import { normalizeMemoryScope } from "./memory-scope";
 
@@ -303,4 +304,22 @@ export function mcpToolNames(agent: object): string[] {
   return getAgentToolState(agent)
     .staticTools.filter((tool) => isMcpTool(tool))
     .map((tool) => tool.name);
+}
+
+export function skillToolNames(agent: object): string[] {
+  const state = getAgentToolState(agent);
+  const names = new Set<string>();
+  for (const tool of state.staticTools) {
+    if (isSkillTool(tool)) names.add(tool.name);
+  }
+  for (const index of state.toolIndexes) {
+    for (const tool of index.tools) {
+      if (isSkillTool(tool)) names.add(tool.name);
+    }
+  }
+  return [...names];
+}
+
+export function agentSkillInstructions(agent: object): string | undefined {
+  return getAgentToolState(agent).skillInstructions;
 }

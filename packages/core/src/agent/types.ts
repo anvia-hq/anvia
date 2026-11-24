@@ -94,6 +94,7 @@ export type ResolvedAgentOptions<
   description?: string | undefined;
   model: M;
   instructions?: string | undefined;
+  skillInstructions?: string | undefined;
   context?: readonly AgentContextInput<ContextDocument>[] | undefined;
   temperature?: number | undefined;
   maxTokens?: number | undefined;

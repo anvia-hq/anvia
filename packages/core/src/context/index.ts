@@ -6,7 +6,9 @@ export type {
   ContextSegmentId,
 } from "./breakdown";
 export {
+  CONTEXT_SEGMENT_IDS,
   estimateContextBreakdown,
   estimateContextTextTokens,
+  isContextBreakdown,
   scaleContextBreakdown,
 } from "./breakdown";

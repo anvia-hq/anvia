@@ -1,3 +1,4 @@
+import { type ContextBreakdown, isContextBreakdown } from "../context/breakdown";
 import type { JsonObject, JsonValue } from "./json-types";
 import type { ContextUsage, Usage } from "./usage";
 
@@ -231,6 +232,7 @@ export type AssistantGenerationMetadata = {
   finishReason?: CompletionFinishReason;
   providerFinishReason?: string;
   contextUsage?: ContextUsage;
+  contextBreakdown?: ContextBreakdown;
   sources?: CompletionSource[];
   providerToolCalls?: ProviderToolCall[];
 };
@@ -317,6 +319,21 @@ export function getAssistantGenerationMetadata(
         context: { ...generation.contextUsage.model.context },
       },
     };
+  }
+
+  if (isContextBreakdown(generation.contextBreakdown)) {
+    const breakdown: ContextBreakdown =
+      generation.contextBreakdown.reportedInputTokens === undefined
+        ? {
+            segments: generation.contextBreakdown.segments.map((segment) => ({ ...segment })),
+            estimatedTokens: generation.contextBreakdown.estimatedTokens,
+          }
+        : {
+            segments: generation.contextBreakdown.segments.map((segment) => ({ ...segment })),
+            estimatedTokens: generation.contextBreakdown.estimatedTokens,
+            reportedInputTokens: generation.contextBreakdown.reportedInputTokens,
+          };
+    metadata.contextBreakdown = breakdown;
   }
 
   if (isCompletionSourceArray(generation.sources)) {

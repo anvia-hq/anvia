@@ -22,6 +22,7 @@ export function getResolvedAgentOptions<Output, M extends CompletionModel, Conte
     description: agent.description,
     model: agent.model,
     instructions: agent.instructions,
+    skillInstructions: toolState.skillInstructions,
     context: [...agent.context],
     temperature: agent.temperature,
     maxTokens: agent.maxTokens,

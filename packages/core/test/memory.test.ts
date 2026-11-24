@@ -522,8 +522,8 @@ describe("agent memory", () => {
         { provider: "test", modelId: "test", usage: secondUsage },
       ];
 
-      expect(resultMetadata).toEqual(expected);
-      expect(persistedMetadata).toEqual(expected);
+      expect(resultMetadata).toMatchObject(expected);
+      expect(persistedMetadata).toEqual(resultMetadata);
     },
   );
 

@@ -8,13 +8,19 @@ import {
   type AgentObserver,
   type AgentRunObserver,
   type CompletionModel,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
   createTool,
   type McpServer,
   type McpTool,
   Usage,
+  withInternalAgentRunOptions,
 } from "./helpers/imports";
+import { createResolvedAgent, getResolvedAgentOptions } from "../src/agent/resolved-agent";
+import type { StreamingCompletionModel } from "../src/completion";
+import type { AgentRunExecution } from "../src/internal/agent-runtime/execution";
+import { loadSkills, type Skill } from "../src/skills";
 
 function response(text: string, usage: Usage): CompletionResponse {
   return {
@@ -184,5 +190,146 @@ describe("agent generation context breakdown", () => {
     const end = trace.ends[0];
     expect(end?.response.usage.inputTokens).toBe(6_000);
     expect(end?.context?.reportedInputTokens).toBe(3_000);
+  });
+
+  it("tracks skills (catalog, tools, loaded outputs) and exposes contextBreakdown on outcomes and streams", async () => {
+    const demoSkill: Skill = {
+      name: "deploy",
+      description: "Deploy services safely.",
+      instructions: "# Deploy Guide\n".repeat(40),
+      directory: "/tmp/skills/deploy",
+      references: [],
+      scripts: [],
+    };
+    const skillSet = await loadSkills({ load: async () => [demoSkill] });
+
+    let turn = 0;
+    const streamingModel: StreamingCompletionModel = {
+      provider: "test",
+      modelId: "test",
+      capabilities: {
+        streaming: true,
+        tools: true,
+        toolChoice: true,
+        imageInput: false,
+        documentInput: false,
+        outputSchema: true,
+        reasoning: false,
+      },
+      async completion() {
+        return response("done", usage(2_000));
+      },
+      async *streamCompletion(): AsyncIterable<CompletionModelStreamEvent> {
+        turn += 1;
+
+        if (turn === 1) {
+          yield {
+            type: "final",
+            response: {
+              choice: [
+                {
+                  type: "tool-call",
+                  toolCallId: "call-skill-1",
+                  toolName: "get_skill_instructions",
+                  input: { skillName: "deploy" },
+                },
+                {
+                  type: "tool-call",
+                  toolCallId: "call-local-1",
+                  toolName: "local_lookup",
+                  input: { id: "42" },
+                },
+              ],
+              usage: usage(1_000),
+              rawResponse: {},
+            },
+          };
+          return;
+        }
+
+        yield { type: "text_delta", delta: "Deployed." };
+        yield { type: "final", response: response("Deployed.", usage(2_500)) };
+      },
+    };
+
+    const trace = recorder();
+    const original = new Agent({
+      id: "skills-context-agent",
+      model: streamingModel,
+      instructions: "You are a careful assistant.",
+      skills: skillSet,
+      tools: [localTool],
+      mcpServers: [mcpServer()],
+      observability: { observers: { test: trace.observer } },
+    });
+    const agent = createResolvedAgent(getResolvedAgentOptions(original));
+
+    const stream = agent.stream({ prompt: "deploy now" });
+    const turnEnds: Array<{
+      turn: number;
+      segmentIds: string[];
+      reported: number | undefined;
+    }> = [];
+    for await (const event of stream) {
+      if (event.type === "turn_end") {
+        turnEnds.push({
+          turn: event.turn,
+          segmentIds: event.contextBreakdown?.segments.map((s) => s.id) ?? [],
+          reported: event.contextBreakdown?.reportedInputTokens,
+        });
+      }
+    }
+    const outcome = await stream.result;
+
+    expect(turnEnds).toEqual([
+      {
+        turn: 1,
+        segmentIds: ["instructions", "skills", "messages", "tools", "mcpTools"],
+        reported: 1_000,
+      },
+      {
+        turn: 2,
+        segmentIds: ["instructions", "skills", "messages", "toolResults", "tools", "mcpTools"],
+        reported: 2_500,
+      },
+    ]);
+
+    const turn1Skills = trace.starts[0]?.context?.segments.find((s) => s.id === "skills");
+    const turn2Skills = trace.starts[1]?.context?.segments.find((s) => s.id === "skills");
+    expect(turn1Skills?.items).toBe(5);
+    expect(turn2Skills?.items).toBe(6);
+    expect(turn2Skills?.characters).toBeGreaterThan(turn1Skills?.characters ?? 0);
+
+    expect(outcome.contextBreakdown?.reportedInputTokens).toBe(2_500);
+    expect(outcome.contextBreakdown?.segments.reduce((sum, s) => sum + s.tokens, 0)).toBe(2_500);
+    expect(outcome.contextBreakdown?.segments.some((s) => s.id === "skills")).toBe(true);
+    expect(outcome.contextBreakdown?.segments.some((s) => s.id === "mcpTools")).toBe(true);
+  });
+
+  it("scales contextBreakdown for replayed non-streaming model turns", async () => {
+    const agent = new Agent({
+      id: "replay-context-agent",
+      model: new FixedModel(() => {
+        throw new Error("should not call model on replay");
+      }),
+      instructions: "You are a careful assistant.",
+      tools: [localTool],
+    });
+    const execution: AgentRunExecution = {
+      replayed: (step) => step.kind === "model",
+      completion: async () => response("replayed", usage(4_200)),
+      tool: async () => {
+        throw new Error("should not call tools on replay");
+      },
+    };
+
+    const outcome = await agent.generate(
+      withInternalAgentRunOptions({ prompt: "look up record 1" }, { execution }),
+    );
+
+    expect(outcome.type).toBe("response");
+    expect(outcome.contextBreakdown?.reportedInputTokens).toBe(4_200);
+    expect(outcome.contextBreakdown?.estimatedTokens).toBe(4_200);
+    expect(outcome.contextBreakdown?.segments.reduce((sum, s) => sum + s.tokens, 0)).toBe(4_200);
   });
 });

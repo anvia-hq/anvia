@@ -95,12 +95,14 @@ import {
 import type { AgentRunExecutionStep } from "./execution";
 import {
   abortReason,
+  agentSkillInstructions,
   latestAssistantText,
   mcpToolNames,
   normalizeAgentInput,
   normalizeRequestedRunId,
   normalizeSteeringInput,
   providerMessages,
+  skillToolNames,
   textFromMessage,
   withMemoryScopeTrace,
 } from "./input-normalization";
@@ -638,7 +640,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         const toolCalls = response.choice.filter(
           (item): item is ToolCallPart => item.type === "tool-call",
         );
-        const assistantMessage = generatedAssistantMessage(this.agent.model, response);
+        const turnContextBreakdown = this.turnContextBreakdowns.get(currentTurns);
+        const assistantMessage = generatedAssistantMessage(
+          this.agent.model,
+          response,
+          turnContextBreakdown,
+        );
         newMessages.push(assistantMessage);
 
         if (toolCalls.length === 0) {
@@ -652,12 +659,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
               }
             }
 
-            yield {
-              type: "turn_end",
-              turn: currentTurns,
-              response: response as CompletionResponse<RawResponseOf<M>>,
+            yield this.createTurnEndEvent(
+              currentTurns,
+              response,
               firstDeltaMs,
-            };
+              turnContextBreakdown,
+            );
             emittedTurnEnd = true;
           }
 
@@ -727,12 +734,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         this.updateRunProgress(newMessages);
 
         if (streaming) {
-          yield {
-            type: "turn_end",
-            turn: currentTurns,
-            response: response as CompletionResponse<RawResponseOf<M>>,
-            firstDeltaMs,
-          };
+          yield this.createTurnEndEvent(currentTurns, response, firstDeltaMs, turnContextBreakdown);
         }
 
         let toolResults: ToolResultPart[];
@@ -983,14 +985,20 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           completionState.providerErrorUsage,
         );
       }
+      const reported = reportedGenerationContext(
+        this.turnContextBreakdowns.get(args.turn),
+        completionState.attemptInputTokens ??
+          (completionState.response ?? response).usage.inputTokens,
+      );
+
+      if (reported.context !== undefined) {
+        this.turnContextBreakdowns.set(args.turn, reported.context);
+      }
+
       let endArgs: AgentGenerationEndArgs = {
         turn: args.turn,
         response: completionState.response ?? response,
-        ...reportedGenerationContext(
-          this.turnContextBreakdowns.get(args.turn),
-          completionState.attemptInputTokens ??
-            (completionState.response ?? response).usage.inputTokens,
-        ),
+        ...reported,
       };
 
       if (completionState.firstDeltaMs !== undefined) {
@@ -1067,7 +1075,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     }
 
     const response = guardedOutput.response;
-    const assistantMessage = generatedAssistantMessage(this.agent.model, response);
+    const turnContextBreakdown = this.turnContextBreakdowns.get(args.turn);
+    const assistantMessage = generatedAssistantMessage(
+      this.agent.model,
+      response,
+      turnContextBreakdown,
+    );
     args.newMessages[args.newMessages.length - 1] = assistantMessage;
     await this.memoryRecorder.commitMessages(
       args.runId,
@@ -1087,12 +1100,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     }
 
     if (args.streaming && !args.emittedTurnEnd) {
-      yield {
-        type: "turn_end",
-        turn: args.turn,
-        response: response as CompletionResponse<RawResponseOf<M>>,
-        firstDeltaMs: args.firstDeltaMs,
-      };
+      yield this.createTurnEndEvent(args.turn, response, args.firstDeltaMs, turnContextBreakdown);
     }
 
     const result = this.createTerminalResult(
@@ -1131,6 +1139,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       abortSignal: this.abortController.signal,
       throwIfCancelled: () => this.throwIfCancelled(),
       getTurnContext: (turn) => this.turnContextBreakdowns.get(turn),
+      setTurnContext: (turn, context) => {
+        this.turnContextBreakdowns.set(turn, context);
+      },
       setValidatedStructuredOutput: (validated) => {
         this.validatedStructuredOutput = validated;
       },
@@ -1141,23 +1152,60 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     };
   }
 
-  private runCompletion(
+  private createTurnEndEvent(
+    turn: number,
+    response: CompletionResponse,
+    firstDeltaMs: number | undefined,
+    contextBreakdown: ContextBreakdown | undefined,
+  ): Extract<AgentStreamEvent<Output, RawResponseOf<M>>, { type: "turn_end" }> {
+    const event: Extract<AgentStreamEvent<Output, RawResponseOf<M>>, { type: "turn_end" }> = {
+      type: "turn_end",
+      turn,
+      response: response as CompletionResponse<RawResponseOf<M>>,
+      firstDeltaMs,
+    };
+
+    if (contextBreakdown !== undefined) {
+      event.contextBreakdown = contextBreakdown;
+    }
+
+    return event;
+  }
+
+  private async runCompletion(
     request: CompletionRequest,
     turn: number,
     runObservers: ActiveAgentRunObservers,
     toolMatches?: readonly AgentGenerationToolMatch[] | undefined,
   ): Promise<CompletionResponse> {
-    const execute = () =>
-      runUncachedCompletion(this.completionRunnerContext(), {
+    let executed = false;
+    const execute = () => {
+      executed = true;
+      return runUncachedCompletion(this.completionRunnerContext(), {
         request,
         turn,
         runObservers,
         promptRef: this.generationPromptRef,
         toolMatches,
       });
-    return this.execution === undefined
-      ? execute()
-      : this.execution.completion(turn, request, execute);
+    };
+    const response =
+      this.execution === undefined
+        ? await execute()
+        : await this.execution.completion(turn, request, execute);
+
+    if (!executed) {
+      const reported = reportedGenerationContext(
+        this.turnContextBreakdowns.get(turn),
+        response.usage.inputTokens,
+      );
+
+      if (reported.context !== undefined) {
+        this.turnContextBreakdowns.set(turn, reported.context);
+      }
+    }
+
+    return response;
   }
 
   private async prepareTurnMessages(
@@ -1234,6 +1282,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     this.generationPromptRef = middlewareResult.promptRef;
     const context = estimateContextBreakdown(middlewareResult.request, {
       mcpToolNames: mcpToolNames(this.agent),
+      skillInstructions: agentSkillInstructions(this.agent),
+      skillToolNames: skillToolNames(this.agent),
     });
     this.turnContextBreakdowns.set(turn, context);
     return { request: middlewareResult.request, selection };

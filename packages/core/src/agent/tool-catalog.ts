@@ -16,7 +16,10 @@ export type PreparedAgentTools = {
 };
 
 export function prepareAgentTools(
-  options: Pick<ResolvedAgentOptions, "tools" | "mcpServers" | "providerTools" | "toolIndexes">,
+  options: Pick<
+    ResolvedAgentOptions,
+    "tools" | "mcpServers" | "providerTools" | "toolIndexes" | "skillInstructions"
+  >,
 ): PreparedAgentTools {
   assertUniqueMcpServerNames(options.mcpServers ?? []);
   const mcpServers = Object.freeze((options.mcpServers ?? []).map(snapshotMcpServer));
@@ -33,12 +36,18 @@ export function prepareAgentTools(
     }
   }
   const tools = Object.freeze([...toolsByName.values()]);
-  const publicState = Object.freeze({
+  const publicStateFields: AgentToolState = {
     configuredTools: Object.freeze(configuredTools),
     staticTools: Object.freeze(staticTools),
     providerTools: Object.freeze(providerTools),
     toolIndexes: Object.freeze(toolIndexes),
-  });
+  };
+
+  if (options.skillInstructions !== undefined) {
+    publicStateFields.skillInstructions = options.skillInstructions;
+  }
+
+  const publicState = Object.freeze(publicStateFields);
   return { mcpServers, tools, publicState, toolsByName };
 }
 

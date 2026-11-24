@@ -14,6 +14,7 @@ import {
   textFromAssistantContent,
   type Usage,
 } from "../../completion/index";
+import type { ContextBreakdown } from "../../context/breakdown";
 import type { GuardrailDecisionRecord } from "../../guardrails";
 import type { AgentRunEndArgs } from "../../observability/types";
 import { completionProviderOutputErrorUsage } from "../../retry";
@@ -44,6 +45,7 @@ export async function settleFailureCleanup(
 export function generatedAssistantMessage(
   model: Pick<CompletionModel, "provider" | "modelId">,
   response: CompletionResponse,
+  contextBreakdown?: ContextBreakdown | undefined,
 ): MessageType {
   const generation: JsonObject = {
     provider: model.provider,
@@ -58,6 +60,19 @@ export function generatedAssistantMessage(
   }
 
   if (response.contextUsage !== undefined) generation.contextUsage = response.contextUsage;
+
+  if (contextBreakdown !== undefined) {
+    const serializedBreakdown: JsonObject = {
+      segments: contextBreakdown.segments.map((segment) => ({ ...segment })),
+      estimatedTokens: contextBreakdown.estimatedTokens,
+    };
+
+    if (contextBreakdown.reportedInputTokens !== undefined) {
+      serializedBreakdown.reportedInputTokens = contextBreakdown.reportedInputTokens;
+    }
+
+    generation.contextBreakdown = serializedBreakdown;
+  }
 
   if (response.sources !== undefined) generation.sources = response.sources;
 
@@ -138,12 +153,14 @@ export function generationArtifacts(messages: MessageType[]): {
   finishReason?: CompletionFinishReason;
   providerFinishReason?: string;
   contextUsage?: ContextUsage;
+  contextBreakdown?: ContextBreakdown;
 } {
   const sources = new Map<string, CompletionSource>();
   const providerToolCalls = new Map<string, ProviderToolCall>();
   let finishReason: CompletionFinishReason | undefined;
   let providerFinishReason: string | undefined;
   let contextUsage: ContextUsage | undefined;
+  let contextBreakdown: ContextBreakdown | undefined;
   for (const message of messages) {
     const metadata = getAssistantGenerationMetadata(message);
 
@@ -151,6 +168,7 @@ export function generationArtifacts(messages: MessageType[]): {
       finishReason = metadata.finishReason;
       providerFinishReason = metadata.providerFinishReason;
       contextUsage = metadata.contextUsage;
+      contextBreakdown = metadata.contextBreakdown;
     }
 
     for (const source of metadata?.sources ?? []) {
@@ -167,6 +185,7 @@ export function generationArtifacts(messages: MessageType[]): {
     finishReason?: CompletionFinishReason;
     providerFinishReason?: string;
     contextUsage?: ContextUsage;
+    contextBreakdown?: ContextBreakdown;
   } = {};
 
   if (sources.size > 0) artifacts.sources = [...sources.values()];
@@ -182,6 +201,8 @@ export function generationArtifacts(messages: MessageType[]): {
   }
 
   if (contextUsage !== undefined) artifacts.contextUsage = contextUsage;
+
+  if (contextBreakdown !== undefined) artifacts.contextBreakdown = contextBreakdown;
 
   return artifacts;
 }

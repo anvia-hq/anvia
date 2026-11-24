@@ -7,6 +7,7 @@ import {
 import type { AgentInput, AgentSteerInput } from "../../agent/run-types";
 import { getAgentToolState } from "../../agent/tool-state";
 import {
+  type JsonObject,
   type Message as MessageType,
   parseMessage,
   parseMessages,
@@ -249,6 +250,11 @@ export function withMemoryScopeTrace(
 export function providerMessages(messages: readonly MessageType[]): MessageType[] {
   const result: MessageType[] = [];
   for (const message of messages) {
+    if (message.role === "assistant") {
+      result.push(stripProviderContextBreakdown(message));
+      continue;
+    }
+
     if (message.role !== "tool") {
       result.push(message);
       continue;
@@ -261,6 +267,36 @@ export function providerMessages(messages: readonly MessageType[]): MessageType[
     }
   }
   return result;
+}
+
+function stripProviderContextBreakdown(
+  message: Extract<MessageType, { role: "assistant" }>,
+): Extract<MessageType, { role: "assistant" }> {
+  const metadata = asJsonObject(message.metadata);
+  const anvia = asJsonObject(metadata?.anvia);
+  const generation = asJsonObject(anvia?.generation);
+
+  if (metadata === undefined || anvia === undefined || generation === undefined) return message;
+
+  if (!("contextBreakdown" in generation)) return message;
+
+  const { contextBreakdown: _omitted, ...nextGeneration } = generation;
+  return {
+    ...message,
+    metadata: {
+      ...metadata,
+      anvia: {
+        ...anvia,
+        generation: nextGeneration,
+      },
+    },
+  };
+}
+
+function asJsonObject(value: unknown): JsonObject | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as JsonObject)
+    : undefined;
 }
 
 export function textFromMessage(message: MessageType): string {

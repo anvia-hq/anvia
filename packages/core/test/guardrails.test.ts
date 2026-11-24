@@ -327,10 +327,11 @@ describe("guardrails", () => {
     expect(result.output).toBe("[redacted] token");
     const assistantMessage = result.messages.at(-1);
     expect(assistantMessage).toMatchObject(Message.assistant("[redacted] token"));
-    expect(assistantMessage && getAssistantGenerationMetadata(assistantMessage)).toMatchObject({
+    expect(assistantMessage && getAssistantGenerationMetadata(assistantMessage)).toEqual({
       provider: "test",
       modelId: "test",
       usage: Usage.empty(),
+      contextBreakdown: expect.any(Object),
     });
     expect(result.guardrails).toMatchObject([
       { guardrailId: "safe-output", action: "rewrite", applied: true },

@@ -18,7 +18,7 @@ import {
   withInternalAgentRunOptions,
 } from "./helpers/imports";
 import { createResolvedAgent, getResolvedAgentOptions } from "../src/agent/resolved-agent";
-import type { StreamingCompletionModel } from "../src/completion";
+import { getAssistantGenerationMetadata, type StreamingCompletionModel } from "../src/completion";
 import type { AgentRunExecution } from "../src/internal/agent-runtime/execution";
 import { loadSkills, type Skill } from "../src/skills";
 
@@ -204,6 +204,7 @@ describe("agent generation context breakdown", () => {
     const skillSet = await loadSkills({ load: async () => [demoSkill] });
 
     let turn = 0;
+    const outboundRequests: CompletionRequest[] = [];
     const streamingModel: StreamingCompletionModel = {
       provider: "test",
       modelId: "test",
@@ -219,7 +220,8 @@ describe("agent generation context breakdown", () => {
       async completion() {
         return response("done", usage(2_000));
       },
-      async *streamCompletion(): AsyncIterable<CompletionModelStreamEvent> {
+      async *streamCompletion(request): AsyncIterable<CompletionModelStreamEvent> {
+        outboundRequests.push(request);
         turn += 1;
 
         if (turn === 1) {
@@ -304,6 +306,19 @@ describe("agent generation context breakdown", () => {
     expect(outcome.contextBreakdown?.segments.reduce((sum, s) => sum + s.tokens, 0)).toBe(2_500);
     expect(outcome.contextBreakdown?.segments.some((s) => s.id === "skills")).toBe(true);
     expect(outcome.contextBreakdown?.segments.some((s) => s.id === "mcpTools")).toBe(true);
+
+    const turn2OutboundAssistant = outboundRequests[1]?.chatHistory.find(
+      (message) => message.role === "assistant",
+    );
+    expect(
+      turn2OutboundAssistant && getAssistantGenerationMetadata(turn2OutboundAssistant),
+    ).not.toHaveProperty("contextBreakdown");
+    const outcomeAssistantReported = outcome.messages
+      .filter((message) => message.role === "assistant")
+      .map(
+        (message) => getAssistantGenerationMetadata(message)?.contextBreakdown?.reportedInputTokens,
+      );
+    expect(outcomeAssistantReported).toEqual([1_000, 2_500]);
   });
 
   it("scales contextBreakdown for replayed non-streaming model turns", async () => {

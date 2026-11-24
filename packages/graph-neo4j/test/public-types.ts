@@ -72,22 +72,27 @@ const existingEvidence: RetrieveGraphContextOptions<Neo4jGraphSchema> = {
   evidence: { type: "chunks", maxChunks: 2 },
 };
 
-// @ts-expect-error Retrieval always requires an explicit evidence mode.
-const missingEvidence: RetrieveGraphContextOptions<Neo4jGraphSchema> = {
-  ...retrieval,
+const minimalManaged: RetrieveGraphContextOptions<Neo4jGraphSchema> = {
+  model,
+  query: "query",
   graph: managed,
 };
 
-// @ts-expect-error Tool registration also requires an explicit evidence mode.
-const toolWithoutEvidence: CreateGraphSearchToolOptions<
+const minimalTool: CreateGraphSearchToolOptions<
   Neo4jGraphSchema,
   ManagedNeo4jKnowledgeGraph<Neo4jGraphSchema>
 > = {
-  ...retrieval,
   name: "search_graph",
-  description: "Search the graph.",
   graph: managed,
+  model,
 };
+
+const shorthandManaged = client.managedKnowledgeGraph({
+  name: "support",
+  schema: {} as Neo4jGraphSchema,
+  dimensions: 1536,
+  fulltext: true,
+});
 
 const existingToolEvidence: CreateGraphSearchToolOptions<
   Neo4jGraphSchema,
@@ -106,8 +111,6 @@ ingestGraphText({
   document: { id: "one", text: "Product One" },
   extractionModel: {} as never,
   embeddingModel: model,
-  conflict: "error",
-  orphanEntities: "delete",
 });
 
 ingestGraphText({
@@ -116,15 +119,14 @@ ingestGraphText({
   document: { id: "one", text: "Product One" },
   extractionModel: {} as never,
   embeddingModel: model,
-  conflict: "error",
-  orphanEntities: "delete",
 });
 
 void [
   managedEvidence,
   forgedEvidence,
   existingEvidence,
-  missingEvidence,
-  toolWithoutEvidence,
+  minimalManaged,
+  minimalTool,
+  shorthandManaged,
   existingToolEvidence,
 ];

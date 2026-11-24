@@ -36,7 +36,9 @@ import {
 import type {
   DeleteNeo4jDocumentsOptions,
   ExistingNeo4jSeed,
+  ManagedNeo4jFulltextShorthand,
   ManagedNeo4jKnowledgeGraphOptions,
+  ManagedNeo4jResources,
   Neo4jFulltextIndex,
   Neo4jGraphConflict,
   Neo4jGraphEnsureOptions,
@@ -250,12 +252,14 @@ export class Neo4jKnowledgeGraph<Schema extends Neo4jGraphSchema> extends Neo4jK
   }
 }
 
+const DEFAULT_INDEX_TIMEOUT_MS = 60_000;
+
 export class ManagedNeo4jKnowledgeGraph<
   Schema extends Neo4jGraphSchema,
 > extends Neo4jKnowledgeGraphBase<Schema, "chunks"> {
   readonly evidenceCapability = "chunks" as const;
   readonly seeds: Readonly<Record<string, SeedRegistration>>;
-  readonly resources: ManagedNeo4jKnowledgeGraphOptions<Schema>["resources"];
+  readonly resources: ManagedNeo4jResources;
   readonly name: string;
 
   constructor(
@@ -270,7 +274,7 @@ export class ManagedNeo4jKnowledgeGraph<
     if (namespace !== undefined) assertName(namespace, "Managed Neo4j namespace");
 
     this.name = options.name;
-    this.resources = validateManagedResources(options.resources);
+    this.resources = validateManagedResources(resolveManagedResources(options));
     let chunks: SeedRegistration = {
       labels: Object.freeze([this.resources.labels.chunk]),
       vectorIndex: Object.freeze({
@@ -328,8 +332,9 @@ export class ManagedNeo4jKnowledgeGraph<
     });
   }
 
-  async ensure(options: Neo4jGraphEnsureOptions): Promise<void> {
-    positiveInteger(options.indexTimeoutMs, "Neo4j index timeout");
+  async ensure(options: Neo4jGraphEnsureOptions = {}): Promise<void> {
+    const indexTimeoutMs = options.indexTimeoutMs ?? DEFAULT_INDEX_TIMEOUT_MS;
+    positiveInteger(indexTimeoutMs, "Neo4j index timeout");
     throwIfAborted(options.abortSignal);
     const { labels, indexes } = this.resources;
     const identityPrefix = this.namespace === undefined ? [] : ["__anvia_namespace"];
@@ -380,7 +385,7 @@ export class ManagedNeo4jKnowledgeGraph<
       await this.query(statement, {}, options.abortSignal, "write");
     await this.query(
       "CALL db.awaitIndexes($timeoutSeconds)",
-      { timeoutSeconds: Math.ceil(options.indexTimeoutMs / 1000) },
+      { timeoutSeconds: Math.ceil(indexTimeoutMs / 1000) },
       options.abortSignal,
     );
     await this.validate({ abortSignal: options.abortSignal });
@@ -597,9 +602,99 @@ function validateExistingSeed(schema: Neo4jGraphSchema, seed: ExistingNeo4jSeed)
   return Object.freeze(registration);
 }
 
-function validateManagedResources<Schema extends Neo4jGraphSchema>(
-  resources: ManagedNeo4jKnowledgeGraphOptions<Schema>["resources"],
-): ManagedNeo4jKnowledgeGraphOptions<Schema>["resources"] {
+function resolveManagedResources<Schema extends Neo4jGraphSchema>(
+  options: ManagedNeo4jKnowledgeGraphOptions<Schema>,
+): ManagedNeo4jResources {
+  if ("resources" in options && options.resources !== undefined) {
+    return options.resources;
+  }
+
+  const labelPrefix = toPascalCase(options.name);
+  const indexPrefix = toSnakeCase(options.name);
+  const similarity = options.similarity ?? "cosine";
+  const dimensions = options.dimensions;
+  const fulltext = resolveFulltextShorthand(options.schema, indexPrefix, options.fulltext);
+  const chunks: { vector: Neo4jVectorIndex; fulltext?: Neo4jFulltextIndex | undefined } = {
+    vector: { name: `${indexPrefix}_chunks_vector`, dimensions, similarity },
+  };
+  const entities: { vector: Neo4jVectorIndex; fulltext?: Neo4jFulltextIndex | undefined } = {
+    vector: { name: `${indexPrefix}_entities_vector`, dimensions, similarity },
+  };
+
+  if (fulltext.chunks !== undefined) chunks.fulltext = fulltext.chunks;
+
+  if (fulltext.entities !== undefined) entities.fulltext = fulltext.entities;
+
+  return {
+    labels: {
+      document: `${labelPrefix}Document`,
+      chunk: `${labelPrefix}Chunk`,
+      entity: `${labelPrefix}Entity`,
+    },
+    indexes: { chunks, entities },
+  };
+}
+
+function resolveFulltextShorthand(
+  schema: Neo4jGraphSchema,
+  indexPrefix: string,
+  fulltext: ManagedNeo4jFulltextShorthand | undefined,
+): { chunks?: Neo4jFulltextIndex; entities?: Neo4jFulltextIndex } {
+  if (fulltext === undefined || fulltext === false) return {};
+
+  const entityProperties = [
+    ...new Set(Object.values(schema.nodes).flatMap((node) => Object.keys(node.properties.shape))),
+  ];
+
+  if (fulltext === true) {
+    const result: { chunks?: Neo4jFulltextIndex; entities?: Neo4jFulltextIndex } = {
+      chunks: { name: `${indexPrefix}_chunks_fulltext` },
+    };
+
+    if (entityProperties.length > 0) {
+      result.entities = { name: `${indexPrefix}_entities_fulltext`, properties: entityProperties };
+    }
+
+    return result;
+  }
+
+  const result: { chunks?: Neo4jFulltextIndex; entities?: Neo4jFulltextIndex } = {};
+
+  if (fulltext.chunks === true) {
+    result.chunks = { name: `${indexPrefix}_chunks_fulltext` };
+  } else if (typeof fulltext.chunks === "object") {
+    result.chunks = fulltext.chunks;
+  }
+
+  if (fulltext.entities === true) {
+    result.entities = { name: `${indexPrefix}_entities_fulltext`, properties: entityProperties };
+  } else if (Array.isArray(fulltext.entities)) {
+    result.entities = { name: `${indexPrefix}_entities_fulltext`, properties: fulltext.entities };
+  } else if (typeof fulltext.entities === "object") {
+    result.entities = fulltext.entities as Neo4jFulltextIndex;
+  }
+
+  return result;
+}
+
+function toPascalCase(name: string): string {
+  const parts = name
+    .split(/[^A-Za-z0-9]+/)
+    .filter((part) => part.length > 0)
+    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`);
+  return parts.length > 0 ? parts.join("") : "Graph";
+}
+
+function toSnakeCase(name: string): string {
+  const normalized = name
+    .replaceAll(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replaceAll(/[^A-Za-z0-9]+/g, "_")
+    .replaceAll(/^_+|_+$/g, "")
+    .toLowerCase();
+  return normalized.length > 0 ? normalized : "graph";
+}
+
+function validateManagedResources(resources: ManagedNeo4jResources): ManagedNeo4jResources {
   const labels = Object.values(resources.labels);
   for (const label of labels) assertName(label, "Neo4j managed label");
 
@@ -904,7 +999,7 @@ function fulltextIndex(name: string, label: string, properties: readonly string[
 
 function validateReplacement<Schema extends Neo4jGraphSchema>(
   options: ReplaceNeo4jDocumentsOptions<Schema>,
-  indexes: ManagedNeo4jKnowledgeGraphOptions<Schema>["resources"]["indexes"],
+  indexes: ManagedNeo4jResources["indexes"],
   schema: Schema,
 ): void {
   if (

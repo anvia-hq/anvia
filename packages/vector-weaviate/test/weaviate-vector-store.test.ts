@@ -195,4 +195,28 @@ describe("WeaviateVectorClient", () => {
     ]);
     expect(nearVector.mock.calls.map(([, options]) => options?.limit)).toEqual([2, 4]);
   });
+
+  it("deletes documents by id and supports AsyncDisposable", async () => {
+    const deleteMany = vi.fn(async () => ({ failed: 0 }));
+    const client: WeaviateClientLike = {
+      collections: {
+        exists: vi.fn(async () => true),
+        create: vi.fn(async () => undefined),
+        get: vi.fn(() => ({
+          query: { nearVector: vi.fn(async () => ({ objects: [] })) },
+          data: { deleteMany, insertMany: vi.fn(async () => ({ hasErrors: false })) },
+        })),
+      },
+    };
+    const owner = new WeaviateVectorClient({ client });
+    const store = owner.vectorStore<string>({ collectionName: "Docs", dimensions: 2 });
+
+    await store.delete({ documentIds: ["a", "a", "b"] });
+    expect(deleteMany).toHaveBeenCalledWith(
+      { target: { property: "__anvia_document_id" }, operator: "ContainsAny", value: ["a", "b"] },
+      undefined,
+    );
+    await owner[Symbol.asyncDispose]();
+    expect(() => owner.nativeClient()).toThrow("closed");
+  });
 });

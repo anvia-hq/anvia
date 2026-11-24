@@ -3,6 +3,7 @@ import type {
   VectorSearchRequest,
   VectorSearchResult,
   VectorStore,
+  VectorStoreDeleteOptions,
   VectorStoreUpsertOptions,
 } from "@anvia/core/vector-store";
 import type { RedisVectorClient } from "./client.js";
@@ -109,6 +110,18 @@ export class RedisVectorStore<
     if (keys.length > 0) await client.del(keys);
 
     for (const record of records) await client.hSet(record.key, record.fields);
+  }
+  async delete(options: VectorStoreDeleteOptions): Promise<void> {
+    throwIfAborted(options.abortSignal);
+    const ids = [...new Set(options.documentIds)];
+
+    if (ids.length === 0) return;
+
+    const client = await this.owner.nativeClient();
+    const query = `@${documentIdField}:{${ids.map((id) => escapeRedis(id)).join("|")}}`;
+    const keys = await matchingKeys(client, this.options.indexName, query);
+
+    if (keys.length > 0) await client.del(keys);
   }
   async search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>> {
     validateSearchRequest(request, this.options.dimensions);

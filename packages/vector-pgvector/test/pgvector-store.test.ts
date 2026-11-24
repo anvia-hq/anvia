@@ -85,4 +85,17 @@ describe("PgVectorClient", () => {
     ]);
     expect(limits).toEqual([2, 4]);
   });
+
+  it("deletes documents by id and supports AsyncDisposable", async () => {
+    const query = vi.fn(async () => ({ rows: [] }));
+    const owner = new PgVectorClient({ client: { query: query as PgClientLike["query"] } });
+    const store = owner.vectorStore<string>({ tableName: "docs", dimensions: 2 });
+
+    await store.delete({ documentIds: ["a", "a", "b"] });
+    expect(query).toHaveBeenCalledWith('DELETE FROM "docs" WHERE document_id = ANY($1::text[])', [
+      ["a", "b"],
+    ]);
+    await owner[Symbol.asyncDispose]();
+    expect(() => owner.nativeClient()).toThrow("closed");
+  });
 });

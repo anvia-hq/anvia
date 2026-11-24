@@ -3,6 +3,7 @@ import type {
   VectorSearchRequest,
   VectorSearchResult,
   VectorStore,
+  VectorStoreDeleteOptions,
   VectorStoreUpsertOptions,
 } from "@anvia/core/vector-store";
 import type { PineconeVectorClient } from "./client.js";
@@ -82,6 +83,18 @@ export class PineconeVectorStore<
 
     if (vectors.length > 0)
       await namespace.upsert({ ...options.providerOptions, records: vectors });
+  }
+  async delete(options: VectorStoreDeleteOptions): Promise<void> {
+    throwIfAborted(options.abortSignal);
+    const ids = [...new Set(options.documentIds)];
+
+    if (ids.length === 0) return;
+
+    const namespace = await this.namespace();
+    await namespace.deleteMany({
+      ...options.providerOptions,
+      filter: { [documentIdMetadataKey]: { $in: ids } },
+    });
   }
   async search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>> {
     validateSearchRequest(request, this.options.dimensions);

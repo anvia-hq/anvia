@@ -51,6 +51,9 @@ export class QdrantVectorClient {
   async close(): Promise<void> {
     this.closed = true;
   }
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.close();
+  }
   private assertOpen(): void {
     if (this.closed) throw new Error("QdrantVectorClient is closed.");
   }

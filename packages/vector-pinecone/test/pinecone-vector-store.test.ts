@@ -137,4 +137,27 @@ describe("PineconeVectorClient", () => {
     ]);
     expect(query.mock.calls.map(([options]) => options.topK)).toEqual([2, 4]);
   });
+
+  it("deletes documents by id and supports AsyncDisposable", async () => {
+    const deleteMany = vi.fn(async () => undefined);
+    const namespace: PineconeNamespaceLike = {
+      deleteMany,
+      upsert: vi.fn(async () => undefined),
+      query: vi.fn(async () => ({ matches: [] })),
+    };
+    const client: PineconeClientLike = {
+      listIndexes: vi.fn(async () => ({ indexes: [{ name: "docs" }] })),
+      createIndex: vi.fn(async () => undefined),
+      index: vi.fn(() => ({ namespace: () => namespace })),
+    };
+    const owner = new PineconeVectorClient({ client });
+    const store = owner.vectorStore<string>({ indexName: "docs", dimensions: 2 });
+
+    await store.delete({ documentIds: ["a", "a", "b"] });
+    expect(deleteMany).toHaveBeenCalledWith({
+      filter: { __anvia_document_id: { $in: ["a", "b"] } },
+    });
+    await owner[Symbol.asyncDispose]();
+    expect(() => owner.nativeClient()).toThrow("closed");
+  });
 });

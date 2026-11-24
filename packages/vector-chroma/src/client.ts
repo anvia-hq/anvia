@@ -40,6 +40,10 @@ export class ChromaVectorClient {
     await client.close?.();
   }
 
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.close();
+  }
+
   private async createClient(): Promise<ChromaClientLike> {
     const chroma = await import("chromadb");
     return new chroma.ChromaClient(

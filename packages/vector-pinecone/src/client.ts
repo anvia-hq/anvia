@@ -27,6 +27,9 @@ export class PineconeVectorClient {
   async close(): Promise<void> {
     this.closed = true;
   }
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.close();
+  }
   private async createClient(): Promise<PineconeClientLike> {
     const { Pinecone } = await import("@pinecone-database/pinecone");
     return new Pinecone(

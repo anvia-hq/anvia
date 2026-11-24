@@ -3,6 +3,7 @@ import type {
   VectorSearchRequest,
   VectorSearchResult,
   VectorStore,
+  VectorStoreDeleteOptions,
   VectorStoreUpsertOptions,
 } from "@anvia/core/vector-store";
 import type { WeaviateVectorClient } from "./client.js";
@@ -92,6 +93,28 @@ export class WeaviateVectorStore<
 
     const insertion = await collection.data.insertMany(objects);
     assertInsertManySucceeded(insertion);
+  }
+  async delete(options: VectorStoreDeleteOptions): Promise<void> {
+    throwIfAborted(options.abortSignal);
+    const ids = [...new Set(options.documentIds)];
+
+    if (ids.length === 0) return;
+
+    const client = await this.owner.nativeClient();
+    const collection = client.collections.get(this.options.collectionName);
+
+    if (collection.data === undefined)
+      throw new TypeError("Weaviate document deletion requires collection.data.deleteMany(...).");
+
+    const deletion = await collection.data.deleteMany(
+      {
+        target: { property: documentIdPropertyKey },
+        operator: "ContainsAny",
+        value: ids,
+      },
+      options.providerOptions,
+    );
+    assertDeleteManySucceeded(deletion);
   }
   async search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>> {
     validateSearchRequest(request, this.options.dimensions);

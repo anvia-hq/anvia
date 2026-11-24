@@ -42,6 +42,10 @@ export class LanceDBVectorClient {
     await (await this.clientPromise).close?.();
   }
 
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.close();
+  }
+
   private assertOpen(): void {
     if (this.closed) throw new Error("LanceDBVectorClient is closed.");
   }

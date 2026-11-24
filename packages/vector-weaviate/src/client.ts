@@ -33,6 +33,9 @@ export class WeaviateVectorClient {
 
     await (await this.clientPromise).close?.();
   }
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.close();
+  }
   private async createClient(): Promise<WeaviateClientLike> {
     const module = await import("weaviate-client");
     const weaviate = module.default ?? module;

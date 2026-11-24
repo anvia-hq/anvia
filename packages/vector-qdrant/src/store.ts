@@ -273,9 +273,11 @@ export class QdrantVectorStore<
     return page;
   }
   async delete(options: {
-    documentIds: string[];
+    documentIds: readonly string[];
     providerOptions?: QdrantMutationOptions | undefined;
+    abortSignal?: AbortSignal | undefined;
   }): Promise<void> {
+    throwIfAborted(options.abortSignal);
     const ids = [...new Set(options.documentIds)];
 
     if (ids.length === 0) return;

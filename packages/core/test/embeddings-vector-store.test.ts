@@ -846,6 +846,8 @@ describe("vector stores and retrieval", () => {
     });
     await tool.call({ query: "cat", topK: 2 });
     expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ topK: 2, filter }));
+    await tool.call({ query: "cat", topK: 100 });
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ topK: 4, filter }));
   });
 
   it("pages in-memory inspect results with validated cursors", async () => {
@@ -937,6 +939,14 @@ describe("vector stores and retrieval", () => {
       id: "cat",
       metadata: { topic: "pets" },
     });
+
+    const withExplicitContent = await embedDocuments({
+      model,
+      documents: [{ id: "cat", body: "cat guide", metadata: { nested: { raw: true } } }],
+      content: (doc) => doc.body,
+    });
+    expect(withExplicitContent.documents[0]?.id).toBe("doc0");
+    expect(withExplicitContent.documents[0]?.metadata).toBeUndefined();
   });
 
   it("supports delete(), matchedText, default topK, filter shorthand, and reranking", async () => {
@@ -998,6 +1008,23 @@ describe("vector stores and retrieval", () => {
     });
     expect(result.documents[0]?.sparseEmbeddings).toHaveLength(1);
     expect(upserted).toHaveLength(2);
+
+    await expect(
+      ingestVectorDocuments({
+        store,
+        model: new KeywordModel(),
+        documents: [{ id: "doc-2", text: "hello", metadata: { documentId: "other" } }],
+        granularity: "chunk",
+      }),
+    ).rejects.toThrow(/reserved key "documentId"/);
+    await expect(
+      ingestVectorDocuments({
+        store,
+        model: new KeywordModel(),
+        documents: [{ id: "doc-3", text: "hello", metadata: { chunkIndex: 9 } }],
+        granularity: "chunk",
+      }),
+    ).rejects.toThrow(/reserved key "chunkIndex"/);
   });
 
   it("formats TextDocument vector context cleanly and supports ContextSource on Agent", async () => {

@@ -234,8 +234,17 @@ function prepareDocuments<T, Metadata extends VectorMetadata>(
   },
 ) {
   const ids = new Set<string>();
+  const useTextLikeDefaults = options.content === undefined;
   return documents.map((document, index) => {
-    const id = options.id?.(document, index) ?? defaultDocumentId(document, index);
+    let id: string;
+
+    if (options.id !== undefined) {
+      id = options.id(document, index);
+    } else if (useTextLikeDefaults) {
+      id = defaultDocumentId(document, index);
+    } else {
+      id = `doc${index}`;
+    }
 
     if (id.length === 0) throw new TypeError("Embedded document ids must not be empty");
 
@@ -250,10 +259,13 @@ function prepareDocuments<T, Metadata extends VectorMetadata>(
     if (Array.isArray(content) && content.length === 0)
       throw new TypeError(`Embedded document ${id} must contain at least one text chunk`);
 
-    const metadata =
-      options.metadata !== undefined
-        ? options.metadata(document, index)
-        : defaultDocumentMetadata<Metadata>(document);
+    let metadata: Metadata | undefined;
+
+    if (options.metadata !== undefined) {
+      metadata = options.metadata(document, index);
+    } else if (useTextLikeDefaults) {
+      metadata = defaultDocumentMetadata<Metadata>(document);
+    }
 
     return {
       id,

@@ -74,10 +74,10 @@ export async function ingestVectorText<Metadata extends VectorMetadata = VectorM
 export async function ingestVectorDocuments<Metadata extends VectorMetadata = VectorMetadata>(
   options: IngestVectorDocumentsOptions<Metadata>,
 ): Promise<IngestVectorDocumentsResult<Metadata>> {
-  for (const document of options.documents) {
-    validateVectorMetadata(document.metadata, document.id);
-  }
   const granularity = options.granularity ?? "document";
+  for (const document of options.documents) {
+    validateVectorMetadata(document.metadata, document.id, granularity);
+  }
   const chunks = chunkTextDocuments({
     documents: options.documents,
     chunking: options.chunking,
@@ -163,7 +163,13 @@ async function embedChunkItems<Metadata extends VectorMetadata>(
   return embedDocuments({ ...base, model: model as EmbeddingModel });
 }
 
-function validateVectorMetadata(metadata: VectorMetadata | undefined, documentId: string): void {
+const RESERVED_CHUNK_METADATA_KEYS = new Set(["documentId", "chunkIndex"]);
+
+function validateVectorMetadata(
+  metadata: VectorMetadata | undefined,
+  documentId: string,
+  granularity: VectorIngestGranularity,
+): void {
   if (metadata === undefined) {
     return;
   }
@@ -173,6 +179,12 @@ function validateVectorMetadata(metadata: VectorMetadata | undefined, documentId
   }
 
   for (const [key, value] of Object.entries(metadata)) {
+    if (granularity === "chunk" && RESERVED_CHUNK_METADATA_KEYS.has(key)) {
+      throw new TypeError(
+        `Text document ${documentId} metadata cannot use reserved key "${key}" when granularity is "chunk".`,
+      );
+    }
+
     validateVectorMetadataValue(value, `Text document ${documentId} metadata.${key}`);
   }
 }

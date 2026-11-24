@@ -9,15 +9,18 @@ import type {
   Embedding,
   EmbeddingOperationOptions,
   EmbedHybridDocumentsOptions,
+  EmbedHybridTextDocumentsOptions,
   EmbedSparseQueryOptions,
   EmbedSparseQueryResult,
   EmbedSparseTextsOptions,
   EmbedSparseTextsResult,
+  EmbedTextDocumentsOptions,
   EmbedTextOptions,
   EmbedTextResult,
   EmbedTextsOptions,
   EmbedTextsResult,
   SparseEmbedding,
+  TextLikeDocument,
   VectorMetadata,
 } from "./types";
 
@@ -83,14 +86,32 @@ export async function embedSparseQuery(
 export function embedDocuments<T, Metadata extends VectorMetadata = VectorMetadata>(
   options: EmbedDocumentsOptions<T, Metadata>,
 ): Promise<EmbedDocumentsResult<T, Metadata>>;
+export function embedDocuments<
+  T extends TextLikeDocument,
+  Metadata extends VectorMetadata = VectorMetadata,
+>(options: EmbedTextDocumentsOptions<T, Metadata>): Promise<EmbedDocumentsResult<T, Metadata>>;
 export function embedDocuments<T, Metadata extends VectorMetadata = VectorMetadata>(
   options: EmbedHybridDocumentsOptions<T, Metadata>,
 ): Promise<EmbedDocumentsResult<T, Metadata>>;
+export function embedDocuments<
+  T extends TextLikeDocument,
+  Metadata extends VectorMetadata = VectorMetadata,
+>(
+  options: EmbedHybridTextDocumentsOptions<T, Metadata>,
+): Promise<EmbedDocumentsResult<T, Metadata>>;
 export async function embedDocuments<T, Metadata extends VectorMetadata = VectorMetadata>(
-  options: EmbedDocumentsOptions<T, Metadata> | EmbedHybridDocumentsOptions<T, Metadata>,
+  options:
+    | EmbedDocumentsOptions<T, Metadata>
+    | EmbedHybridDocumentsOptions<T, Metadata>
+    | (Omit<EmbedDocumentsOptions<T, Metadata>, "content"> & {
+        content?: ((document: T, index: number) => string | string[]) | undefined;
+      })
+    | (Omit<EmbedHybridDocumentsOptions<T, Metadata>, "content"> & {
+        content?: ((document: T, index: number) => string | string[]) | undefined;
+      }),
 ): Promise<EmbedDocumentsResult<T, Metadata>> {
   throwIfAborted(options.abortSignal);
-  const prepared = prepareDocuments(options.documents, options);
+  const prepared = prepareDocuments<T, Metadata>(options.documents, options);
   const flatTexts = prepared.flatMap((item, documentIndex) =>
     item.texts.map((text) => ({ documentIndex, text })),
   );

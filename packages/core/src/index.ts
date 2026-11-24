@@ -46,6 +46,8 @@ export type {
   AgentToolInput,
   AgentToolOptions,
 } from "./agent/types";
+export type { ContextSource, ContextSourceRetrieveOptions } from "./agent/context-source";
+export { createContextSource, isContextSource } from "./agent/context-source";
 export type {
   CreateHybridVectorContextOptions,
   CreateVectorContextOptions,

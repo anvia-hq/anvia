@@ -10,7 +10,7 @@ import {
 import { assertFiniteMinScore, assertPositiveSearchLimit } from "../internal/vector-search-options";
 import { createTool } from "../tool/create-tool";
 import type { Tool } from "../tool/tool";
-import { matchesVectorFilter } from "./filter";
+import { isVectorFilter, matchesVectorFilter, normalizeVectorFilter, vectorFilter } from "./filter";
 import { parseVectorInspectCursor } from "./inspect-cursor";
 import { LshIndex } from "./lsh";
 import { retrieveDocuments } from "./retrieve";
@@ -24,13 +24,40 @@ import type {
   VectorSearchResult,
   VectorSearchToolOptions,
   VectorStore,
+  VectorStoreDeleteOptions,
   VectorStoreUpsertOptions,
 } from "./types";
 
-export { matchesVectorFilter, vectorFilter } from "./filter";
+import {
+  buildVectorIndex,
+  type CreateDenseVectorIndexOptions,
+  type CreateHybridVectorIndexOptions,
+  type CreateVectorIndexOptions,
+  type VectorIndex,
+  type VectorIndexContextOptions,
+  type VectorIndexDocumentInput,
+  type VectorIndexIngestInput,
+  type VectorIndexIngestOptions,
+  type VectorIndexRetrieveOptions,
+  type VectorIndexToolOptions,
+} from "./vector-index";
+
+export { isVectorFilter, matchesVectorFilter, normalizeVectorFilter, vectorFilter };
 export * from "./ingest";
 export { parseVectorInspectCursor, VectorInspectCursorError } from "./inspect-cursor";
 export { retrieveDocuments } from "./retrieve";
+export type {
+  CreateDenseVectorIndexOptions,
+  CreateHybridVectorIndexOptions,
+  CreateVectorIndexOptions,
+  VectorIndex,
+  VectorIndexContextOptions,
+  VectorIndexDocumentInput,
+  VectorIndexIngestInput,
+  VectorIndexIngestOptions,
+  VectorIndexRetrieveOptions,
+  VectorIndexToolOptions,
+};
 export type * from "./types";
 
 const VECTOR_METRICS: ReadonlySet<VectorMetric> = new Set(["cosine", "euclidean", "dotProduct"]);
@@ -105,6 +132,16 @@ export class InMemoryVectorStore<
     this.replaceDocuments(options.documents);
   }
 
+  async delete(options: VectorStoreDeleteOptions): Promise<void> {
+    throwIfAborted(options.abortSignal);
+    let deleted = false;
+    for (const id of options.documentIds) {
+      if (this.documents.delete(id)) deleted = true;
+    }
+
+    if (deleted) this.rebuildLshIndex();
+  }
+
   get(options: { id: string }): StoredDocument<T, Metadata> | undefined {
     return this.documents.get(options.id);
   }
@@ -129,20 +166,27 @@ export class InMemoryVectorStore<
     const results = this.candidates(queryEmbedding)
       .filter((document) => matchesVectorFilter(document.metadata, request.filter))
       .flatMap((document) => {
-        const score = bestScore(queryEmbedding, document.embeddings, this.metric);
+        const match = bestMatch(queryEmbedding, document.embeddings, this.metric);
 
-        if (score === undefined || (request.minScore !== undefined && score < request.minScore)) {
+        if (
+          match === undefined ||
+          (request.minScore !== undefined && match.score < request.minScore)
+        ) {
           return [];
         }
 
         let result: VectorSearchResult<T, Metadata> = {
-          score,
+          score: match.score,
           id: document.id,
           document: document.document,
         };
 
         if (document.metadata !== undefined) {
           result = { ...result, metadata: document.metadata };
+        }
+
+        if (match.matchedText !== undefined) {
+          result = { ...result, matchedText: match.matchedText };
         }
 
         return [result];
@@ -284,6 +328,7 @@ export function createVectorSearchTool<T, Metadata extends VectorMetadata>(
         metadata: z
           .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
           .optional(),
+        matchedText: z.string().optional(),
       }),
     ),
     handler: ({ query, topK }, context) => {
@@ -292,6 +337,8 @@ export function createVectorSearchTool<T, Metadata extends VectorMetadata>(
         topK: topK ?? configuredTopK,
         minScore: options.minScore,
         filter: options.filter,
+        rerank: options.rerank,
+        candidateTopK: options.candidateTopK,
         retries: options.retries,
         abortSignal: context.abortSignal,
       };
@@ -307,15 +354,33 @@ export function createVectorSearchTool<T, Metadata extends VectorMetadata>(
   }) as Tool<{ query: string; topK?: number }, Array<VectorSearchResult<T, Metadata>>>;
 }
 
-function bestScore(
+export function createVectorIndex<Metadata extends VectorMetadata = VectorMetadata>(
+  options: CreateDenseVectorIndexOptions<Metadata>,
+): VectorIndex<Metadata>;
+export function createVectorIndex<Metadata extends VectorMetadata = VectorMetadata>(
+  options: CreateHybridVectorIndexOptions<Metadata>,
+): VectorIndex<Metadata>;
+export function createVectorIndex<Metadata extends VectorMetadata = VectorMetadata>(
+  options: CreateVectorIndexOptions<Metadata>,
+): VectorIndex<Metadata> {
+  return buildVectorIndex(options, {
+    createDefaultStore: () => new InMemoryVectorStore(),
+    createSearchTool: createVectorSearchTool,
+  });
+}
+
+function bestMatch(
   queryEmbedding: Embedding,
   embeddings: Embedding[],
   metric: VectorMetric,
-): number | undefined {
-  let best: number | undefined;
+): { score: number; matchedText?: string | undefined } | undefined {
+  let best: { score: number; matchedText?: string | undefined } | undefined;
   for (const embedding of embeddings) {
     const score = metricScore(queryEmbedding.vector, embedding.vector, metric);
-    best = best === undefined ? score : Math.max(best, score);
+
+    if (best === undefined || score > best.score) {
+      best = embedding.document.length > 0 ? { score, matchedText: embedding.document } : { score };
+    }
   }
   return best;
 }

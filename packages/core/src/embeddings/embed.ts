@@ -205,30 +205,91 @@ async function embedSparseBatch(
 }
 
 function prepareDocuments<T, Metadata extends VectorMetadata>(
-  documents: T[],
-  options: Pick<EmbedDocumentsOptions<T, Metadata>, "id" | "content" | "metadata">,
+  documents: readonly T[],
+  options: {
+    id?: ((document: T, index: number) => string) | undefined;
+    content?: ((document: T, index: number) => string | string[]) | undefined;
+    metadata?: ((document: T, index: number) => Metadata | undefined) | undefined;
+  },
 ) {
   const ids = new Set<string>();
   return documents.map((document, index) => {
-    const id = options.id?.(document, index) ?? `doc${index}`;
+    const id = options.id?.(document, index) ?? defaultDocumentId(document, index);
 
     if (id.length === 0) throw new TypeError("Embedded document ids must not be empty");
 
     if (ids.has(id)) throw new TypeError(`Duplicate embedded document id: ${id}`);
 
     ids.add(id);
-    const content = options.content(document, index);
+    const content =
+      options.content !== undefined
+        ? options.content(document, index)
+        : defaultDocumentContent(document, id);
 
     if (Array.isArray(content) && content.length === 0)
       throw new TypeError(`Embedded document ${id} must contain at least one text chunk`);
 
+    const metadata =
+      options.metadata !== undefined
+        ? options.metadata(document, index)
+        : defaultDocumentMetadata<Metadata>(document);
+
     return {
       id,
       document,
-      metadata: options.metadata?.(document, index),
+      metadata,
       texts: Array.isArray(content) ? content : [content],
     };
   });
+}
+
+function defaultDocumentId(document: unknown, index: number): string {
+  if (
+    typeof document === "object" &&
+    document !== null &&
+    "id" in document &&
+    typeof (document as { id?: unknown }).id === "string"
+  ) {
+    return (document as { id: string }).id;
+  }
+
+  return `doc${index}`;
+}
+
+function defaultDocumentContent(document: unknown, id: string): string {
+  if (typeof document === "string") {
+    return document;
+  }
+
+  if (
+    typeof document === "object" &&
+    document !== null &&
+    "text" in document &&
+    typeof (document as { text?: unknown }).text === "string"
+  ) {
+    return (document as { text: string }).text;
+  }
+
+  throw new TypeError(
+    `Embedded document ${id} requires a content selector or a string / { text: string } document.`,
+  );
+}
+
+function defaultDocumentMetadata<Metadata extends VectorMetadata>(
+  document: unknown,
+): Metadata | undefined {
+  if (
+    typeof document === "object" &&
+    document !== null &&
+    "metadata" in document &&
+    typeof (document as { metadata?: unknown }).metadata === "object" &&
+    (document as { metadata?: unknown }).metadata !== null &&
+    !Array.isArray((document as { metadata?: unknown }).metadata)
+  ) {
+    return (document as { metadata: Metadata }).metadata;
+  }
+
+  return undefined;
 }
 
 function embeddedDocument<T, Metadata extends VectorMetadata>(

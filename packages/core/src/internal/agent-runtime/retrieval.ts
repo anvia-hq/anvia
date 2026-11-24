@@ -1,4 +1,5 @@
 import type { Agent } from "../../agent/agent";
+import { isContextSource } from "../../agent/context-source";
 import { getAgentToolState } from "../../agent/tool-state";
 import { isVectorContext, type VectorContext } from "../../agent/vector-context";
 import type { CompletionModel, Document, ToolDefinition } from "../../completion/index";
@@ -9,24 +10,34 @@ export async function fetchContextDocuments<Output, M extends CompletionModel, C
   ragText: string | undefined,
   abortSignal?: AbortSignal | undefined,
   /**
-   * Wraps each vector context's retrieval (`index` is its position in `agent.context`). A runtime
+   * Wraps each dynamic context's retrieval (`index` is its position in `agent.context`). A runtime
    * that replays a turn can return the persisted documents without calling `retrieve`.
    */
   selectContext?: (index: number, retrieve: () => Promise<Document[]>) => Promise<Document[]>,
 ): Promise<Document[]> {
   const documents: Document[] = [];
   for (const [index, input] of agent.context.entries()) {
-    if (!isVectorContext(input)) {
-      documents.push(input);
+    if (isContextSource(input)) {
+      if (ragText === undefined || ragText.length === 0) continue;
+
+      const retrieve = async () => [...(await input.retrieve({ query: ragText, abortSignal }))];
+      documents.push(
+        ...(selectContext !== undefined ? await selectContext(index, retrieve) : await retrieve()),
+      );
       continue;
     }
 
-    if (ragText === undefined || ragText.length === 0) continue;
+    if (isVectorContext(input)) {
+      if (ragText === undefined || ragText.length === 0) continue;
 
-    const retrieve = () => retrieveContext(input, ragText, abortSignal);
-    documents.push(
-      ...(selectContext !== undefined ? await selectContext(index, retrieve) : await retrieve()),
-    );
+      const retrieve = () => retrieveContext(input, ragText, abortSignal);
+      documents.push(
+        ...(selectContext !== undefined ? await selectContext(index, retrieve) : await retrieve()),
+      );
+      continue;
+    }
+
+    documents.push(input as Document);
   }
   return documents;
 }
@@ -42,6 +53,8 @@ async function retrieveContext(
     topK: input.topK,
     minScore: input.minScore,
     filter: input.filter,
+    rerank: input.rerank,
+    candidateTopK: input.candidateTopK,
     retries: input.retries,
     abortSignal,
   };
@@ -65,10 +78,7 @@ async function retrieveContext(
     const metadata = formatMetadata(result.metadata);
     const document: Document = {
       id: result.id,
-      text:
-        typeof result.document === "string"
-          ? result.document
-          : JSON.stringify(result.document, null, 2),
+      text: formatRetrievedDocumentText(result.document, result.matchedText),
     };
 
     if (metadata !== undefined) document.additionalProps = metadata;
@@ -76,6 +86,32 @@ async function retrieveContext(
     documents.push(document);
   }
   return documents;
+}
+
+function formatRetrievedDocumentText(document: unknown, matchedText: string | undefined): string {
+  if (typeof document === "string") {
+    return document;
+  }
+
+  if (matchedText !== undefined && matchedText.length > 0 && isTextDocumentLike(document)) {
+    return matchedText;
+  }
+
+  if (isTextDocumentLike(document)) {
+    return document.text;
+  }
+
+  return JSON.stringify(document, null, 2);
+}
+
+function isTextDocumentLike(value: unknown): value is { text: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "text" in value &&
+    typeof (value as { text?: unknown }).text === "string"
+  );
 }
 
 /**

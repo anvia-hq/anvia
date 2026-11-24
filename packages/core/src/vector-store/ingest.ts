@@ -9,28 +9,51 @@ import {
   embedDocuments,
   type EmbeddedDocument,
   type EmbeddingModel,
+  type SparseEmbeddingModel,
   type VectorMetadata,
   type VectorMetadataValue,
 } from "../embeddings";
 import type { RetrySetting } from "../retry";
 import type { VectorStore } from "./types";
 
+export type VectorIngestGranularity = "document" | "chunk";
+
+type IngestVectorModelSelection =
+  | Readonly<{
+      model: EmbeddingModel;
+      embeddingModel?: never;
+      models?: never;
+    }>
+  | Readonly<{
+      embeddingModel: EmbeddingModel;
+      model?: never;
+      models?: never;
+    }>
+  | Readonly<{
+      models: { dense: EmbeddingModel; sparse: SparseEmbeddingModel };
+      model?: never;
+      embeddingModel?: never;
+    }>;
+
+type IngestVectorDocumentsBaseOptions<Metadata extends VectorMetadata = VectorMetadata> = Readonly<{
+  store: VectorStore<TextDocument<Metadata>, Metadata>;
+  documents: readonly TextDocument<Metadata>[];
+  chunking?: TextDocumentChunkingOptions | undefined;
+  granularity?: VectorIngestGranularity | undefined;
+  retries?: RetrySetting | undefined;
+  concurrency?: number | undefined;
+  providerOptions?: JsonObject | undefined;
+  abortSignal?: AbortSignal | undefined;
+}>;
+
 export type IngestVectorDocumentsOptions<Metadata extends VectorMetadata = VectorMetadata> =
-  Readonly<{
-    store: VectorStore<TextDocument<Metadata>, Metadata>;
-    documents: readonly TextDocument<Metadata>[];
-    embeddingModel: EmbeddingModel;
-    chunking?: TextDocumentChunkingOptions | undefined;
-    retries?: RetrySetting | undefined;
-    concurrency?: number | undefined;
-    providerOptions?: JsonObject | undefined;
-    abortSignal?: AbortSignal | undefined;
-  }>;
+  IngestVectorDocumentsBaseOptions<Metadata> & IngestVectorModelSelection;
 
 export type IngestVectorTextOptions<Metadata extends VectorMetadata = VectorMetadata> = Omit<
-  IngestVectorDocumentsOptions<Metadata>,
+  IngestVectorDocumentsBaseOptions<Metadata>,
   "documents"
 > &
+  IngestVectorModelSelection &
   Readonly<{ document: TextDocument<Metadata> }>;
 
 export type IngestVectorDocumentsResult<Metadata extends VectorMetadata = VectorMetadata> =
@@ -41,16 +64,11 @@ export type IngestVectorDocumentsResult<Metadata extends VectorMetadata = Vector
 export async function ingestVectorText<Metadata extends VectorMetadata = VectorMetadata>(
   options: IngestVectorTextOptions<Metadata>,
 ): Promise<IngestVectorDocumentsResult<Metadata>> {
+  const { document, ...rest } = options;
   return ingestVectorDocuments({
-    store: options.store,
-    documents: [options.document],
-    embeddingModel: options.embeddingModel,
-    chunking: options.chunking,
-    retries: options.retries,
-    concurrency: options.concurrency,
-    providerOptions: options.providerOptions,
-    abortSignal: options.abortSignal,
-  });
+    ...rest,
+    documents: [document],
+  } as IngestVectorDocumentsOptions<Metadata>);
 }
 
 export async function ingestVectorDocuments<Metadata extends VectorMetadata = VectorMetadata>(
@@ -59,16 +77,34 @@ export async function ingestVectorDocuments<Metadata extends VectorMetadata = Ve
   for (const document of options.documents) {
     validateVectorMetadata(document.metadata, document.id);
   }
+  const granularity = options.granularity ?? "document";
   const chunks = chunkTextDocuments({
     documents: options.documents,
     chunking: options.chunking,
   });
+
+  const embedded =
+    granularity === "chunk"
+      ? await embedChunkItems(chunks, options)
+      : await embedDocumentItems(options.documents, chunks, options);
+
+  await options.store.upsert({
+    documents: embedded.documents,
+    providerOptions: options.providerOptions,
+  });
+  return { documents: embedded.documents };
+}
+
+async function embedDocumentItems<Metadata extends VectorMetadata>(
+  documents: readonly TextDocument<Metadata>[],
+  chunks: readonly TextDocumentChunk<Metadata>[],
+  options: IngestVectorDocumentsOptions<Metadata>,
+) {
   const chunksByDocument = groupChunksByDocument(chunks);
-  const embedded = await embedDocuments({
-    model: options.embeddingModel,
-    documents: [...options.documents],
-    id: (document) => document.id,
-    content: (document) => {
+  const base = {
+    documents: [...documents],
+    id: (document: TextDocument<Metadata>) => document.id,
+    content: (document: TextDocument<Metadata>) => {
       const documentChunks = chunksByDocument.get(document.id);
 
       if (documentChunks === undefined) {
@@ -77,16 +113,54 @@ export async function ingestVectorDocuments<Metadata extends VectorMetadata = Ve
 
       return documentChunks.map((chunk) => chunk.text);
     },
-    metadata: (document) => document.metadata,
+    metadata: (document: TextDocument<Metadata>) => document.metadata,
     retries: options.retries,
     concurrency: options.concurrency,
     abortSignal: options.abortSignal,
+  };
+
+  if ("models" in options && options.models !== undefined) {
+    return embedDocuments({ ...base, models: options.models });
+  }
+
+  const model =
+    "model" in options && options.model !== undefined ? options.model : options.embeddingModel;
+  return embedDocuments({ ...base, model: model as EmbeddingModel });
+}
+
+async function embedChunkItems<Metadata extends VectorMetadata>(
+  chunks: readonly TextDocumentChunk<Metadata>[],
+  options: IngestVectorDocumentsOptions<Metadata>,
+) {
+  const chunkDocuments: Array<TextDocument<Metadata>> = chunks.map((chunk) => {
+    const metadata = {
+      ...chunk.metadata,
+      documentId: chunk.documentId,
+      chunkIndex: chunk.index,
+    } as unknown as Metadata;
+    return {
+      id: chunk.id,
+      text: chunk.text,
+      metadata,
+    };
   });
-  await options.store.upsert({
-    documents: embedded.documents,
-    providerOptions: options.providerOptions,
-  });
-  return { documents: embedded.documents };
+  const base = {
+    documents: chunkDocuments,
+    id: (document: TextDocument<Metadata>) => document.id,
+    content: (document: TextDocument<Metadata>) => document.text,
+    metadata: (document: TextDocument<Metadata>) => document.metadata,
+    retries: options.retries,
+    concurrency: options.concurrency,
+    abortSignal: options.abortSignal,
+  };
+
+  if ("models" in options && options.models !== undefined) {
+    return embedDocuments({ ...base, models: options.models });
+  }
+
+  const model =
+    "model" in options && options.model !== undefined ? options.model : options.embeddingModel;
+  return embedDocuments({ ...base, model: model as EmbeddingModel });
 }
 
 function validateVectorMetadata(metadata: VectorMetadata | undefined, documentId: string): void {

@@ -24,11 +24,12 @@ import type { SkillSet } from "../skills";
 import type { ToolIndex } from "../tool/dynamic-tools";
 import type { AgentMiddleware } from "./middleware";
 import type { AnyTool } from "../tool/tool";
+import type { ContextSource } from "./context-source";
 import type { AgentLifecycle } from "./lifecycle";
 import type { VectorContext } from "./vector-context";
 
 export type AgentToolInput = AnyTool | ProviderTool | ToolIndex;
-export type AgentContextInput<T = unknown> = Document | VectorContext<T>;
+export type AgentContextInput<T = unknown> = Document | VectorContext<T> | ContextSource;
 
 type RawResponseOf<Model> =
   Model extends CompletionModel<infer RawResponse> ? RawResponse : unknown;

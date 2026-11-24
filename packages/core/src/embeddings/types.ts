@@ -74,16 +74,20 @@ export type EmbedSparseQueryOptions = EmbeddingOperationOptions & {
   query: string;
 };
 
+type EmbedDocumentContentOption<T> = T extends string | Readonly<{ text: string }>
+  ? { content?: ((document: T, index: number) => string | string[]) | undefined }
+  : { content(document: T, index: number): string | string[] };
+
 export type EmbedDocumentsBaseOptions<
   T,
   Metadata extends VectorMetadata = VectorMetadata,
-> = EmbeddingOperationOptions & {
-  documents: T[];
-  id?: ((document: T, index: number) => string) | undefined;
-  content(document: T, index: number): string | string[];
-  metadata?: ((document: T, index: number) => Metadata | undefined) | undefined;
-  concurrency?: number | undefined;
-};
+> = EmbeddingOperationOptions &
+  EmbedDocumentContentOption<T> & {
+    documents: readonly T[];
+    id?: ((document: T, index: number) => string) | undefined;
+    metadata?: ((document: T, index: number) => Metadata | undefined) | undefined;
+    concurrency?: number | undefined;
+  };
 
 export type EmbedDocumentsOptions<
   T,

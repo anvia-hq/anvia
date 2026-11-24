@@ -1,12 +1,24 @@
 import type { VectorMetadata, VectorMetadataValue } from "../embeddings";
-import type { VectorFilter, VectorFilterList } from "./types";
+import type {
+  VectorFilter,
+  VectorFilterFieldOperators,
+  VectorFilterInput,
+  VectorFilterList,
+  VectorFilterShorthand,
+} from "./types";
 
 export type {
   VectorFilter,
   VectorFilterComparisonOperator,
+  VectorFilterFieldOperators,
+  VectorFilterInput,
   VectorFilterList,
   VectorFilterOperator,
+  VectorFilterShorthand,
 } from "./types";
+
+const COMPARISON_TYPES = new Set(["eq", "ne", "gt", "gte", "lt", "lte"]);
+const FIELD_OPERATOR_KEYS = new Set(["eq", "ne", "gt", "gte", "lt", "lte", "in"]);
 
 export const vectorFilter = {
   eq(key: string, value: VectorMetadataValue): VectorFilter {
@@ -36,12 +48,135 @@ export const vectorFilter = {
   or(...filters: VectorFilterList): VectorFilter {
     return { type: "or", filters };
   },
+  where(shorthand: VectorFilterShorthand): VectorFilter | undefined {
+    return shorthandToVectorFilter(shorthand);
+  },
 };
+
+export function isVectorFilter(value: unknown): value is VectorFilter {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  const type = record.type;
+
+  if (typeof type !== "string") return false;
+
+  const keys = Object.keys(record);
+
+  if (COMPARISON_TYPES.has(type)) {
+    return (
+      keys.length === 3 &&
+      typeof record.key === "string" &&
+      "value" in record &&
+      isMetadataValue(record.value)
+    );
+  }
+
+  if (type === "in") {
+    return (
+      keys.length === 3 &&
+      typeof record.key === "string" &&
+      Array.isArray(record.values) &&
+      record.values.every(isMetadataValue)
+    );
+  }
+
+  if (type === "and" || type === "or") {
+    return (
+      keys.length === 2 &&
+      Array.isArray(record.filters) &&
+      record.filters.length > 0 &&
+      record.filters.every(isVectorFilter)
+    );
+  }
+
+  return false;
+}
+
+export function normalizeVectorFilter(
+  filter: VectorFilterInput | undefined,
+): VectorFilter | undefined {
+  if (filter === undefined) return undefined;
+
+  if (isVectorFilter(filter)) return filter;
+
+  return shorthandToVectorFilter(filter);
+}
+
+function shorthandToVectorFilter(shorthand: VectorFilterShorthand): VectorFilter | undefined {
+  if (typeof shorthand !== "object" || shorthand === null || Array.isArray(shorthand)) {
+    throw new TypeError("Vector filter must be a VectorFilter or plain metadata filter object.");
+  }
+
+  const clauses: VectorFilter[] = [];
+  for (const [key, condition] of Object.entries(shorthand)) {
+    if (condition === undefined) continue;
+
+    if (isMetadataValue(condition)) {
+      clauses.push(vectorFilter.eq(key, condition));
+      continue;
+    }
+
+    if (typeof condition !== "object" || condition === null || Array.isArray(condition)) {
+      throw new TypeError(`Invalid vector filter condition for key "${key}".`);
+    }
+
+    const operators = condition as VectorFilterFieldOperators;
+    for (const [operator, value] of Object.entries(operators)) {
+      if (value === undefined) continue;
+
+      if (!FIELD_OPERATOR_KEYS.has(operator)) {
+        throw new TypeError(`Unsupported vector filter operator "${operator}" for key "${key}".`);
+      }
+
+      if (operator === "in") {
+        if (!Array.isArray(value) || !value.every(isMetadataValue)) {
+          throw new TypeError(
+            `Vector filter operator "in" for key "${key}" requires metadata values.`,
+          );
+        }
+
+        clauses.push(vectorFilter.in(key, value));
+      } else {
+        if (!isMetadataValue(value)) {
+          throw new TypeError(
+            `Vector filter operator "${operator}" for key "${key}" requires a metadata value.`,
+          );
+        }
+
+        clauses.push({
+          type: operator as "eq" | "ne" | "gt" | "gte" | "lt" | "lte",
+          key,
+          value,
+        });
+      }
+    }
+  }
+
+  if (clauses.length === 0) return undefined;
+
+  if (clauses.length === 1) return clauses[0];
+
+  return { type: "and", filters: clauses as VectorFilterList };
+}
+
+function isMetadataValue(value: unknown): value is VectorMetadataValue {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  );
+}
 
 export function matchesVectorFilter(
   metadata: VectorMetadata | undefined,
-  filter: VectorFilter | undefined,
+  filterInput: VectorFilterInput | undefined,
 ): boolean {
+  const filter = normalizeVectorFilter(filterInput);
+
   if (filter === undefined) {
     return true;
   }

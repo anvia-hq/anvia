@@ -7,19 +7,38 @@ import type {
   ComposerQuote,
   ComposerSubmitMessage,
   ComposerSubmitMessageArgs,
+  DurableChatRun,
+  DurableChatTransportLike,
   ImageContextValue,
   MessageAttachmentPart,
   MessageEntityProps,
   MessageToolPart,
   SelectionToolbarSelection,
+  StreamMarkdownProps,
   ThreadListController,
   ThreadListRecord,
+  UseChatResult,
+  UseCompletionResult,
+  UseDurableChatResult,
+} from "../src";
+import {
+  ContextMeterPrimitive,
+  initialMessagesFromMemory,
+  StreamMarkdown,
+  useChat,
+  useCompletion,
+  useDurableChat,
+  useSmoothStreamItems,
+  useSmoothStreamText,
 } from "../src";
 import {
   GraphExplorerNodePrimitive,
   GraphExplorerPrimitive,
   type GraphExplorerController,
   GraphExplorerProvider,
+  graphExplorerNodeMatches,
+  mergeGraphExploreResults,
+  useGraphExplorer,
   useGraphExplorerContext,
 } from "../src/graph-explorer";
 import { AttachmentPrimitive } from "../src/attachment";
@@ -115,6 +134,26 @@ describe("public entrypoints", () => {
       createThread(): Promise<void> | void;
       switchThread(threadId: string): Promise<void> | void;
     }>();
+  });
+
+  it("exports controller hooks and streaming helpers from root and graph-explorer", () => {
+    expect(useChat).toBeTypeOf("function");
+    expect(useCompletion).toBeTypeOf("function");
+    expect(useDurableChat).toBeTypeOf("function");
+    expect(useSmoothStreamText).toBeTypeOf("function");
+    expect(useSmoothStreamItems).toBeTypeOf("function");
+    expect(initialMessagesFromMemory).toBeTypeOf("function");
+    expect(StreamMarkdown).toBeTypeOf("object");
+    expect(ContextMeterPrimitive).toBeTypeOf("object");
+    expect(useGraphExplorer).toBeTypeOf("function");
+    expect(graphExplorerNodeMatches).toBeTypeOf("function");
+    expect(mergeGraphExploreResults).toBeTypeOf("function");
+    expectTypeOf<UseChatResult["sendMessage"]>().toBeFunction();
+    expectTypeOf<UseCompletionResult["complete"]>().toBeFunction();
+    expectTypeOf<
+      UseDurableChatResult<DurableChatTransportLike>["run"]
+    >().toEqualTypeOf<DurableChatRun>();
+    expectTypeOf<StreamMarkdownProps>().toMatchTypeOf<{ content: string }>();
   });
 
   it("keeps the terminal and desktop on their own subpaths so their viewers stay optional peers", () => {

@@ -178,7 +178,7 @@ export function SupportChat() {
 The primitives are headless: pass `className` or `asChild` for design-system integration. Their
 small semantic DOM contract consists of ARIA attributes, `data-state`, and `data-role`; there is no
 package stylesheet. For editable, styled application components, run
-`pnpm dlx @anvia/cli add chat`.
+`pnpm dlx @anvia/cli ui add chat`.
 
 Control `ComposerPrimitive.Root` with `input`/`attachments` props when needed, and use
 `submitMessage` for custom composer payloads. Use `keepMounted` on optional collections when empty

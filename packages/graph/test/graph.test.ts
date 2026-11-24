@@ -223,7 +223,8 @@ describe("provider-neutral graph primitives", () => {
       embeddingModel,
       extractionModel: {} as never,
     });
-    await kg.ingest("Product One");
+    const ingestResult = await kg.ingest(["Product One", "Product One"]);
+    expect(ingestResult.documents).toHaveLength(1);
     expect(replaceDocuments).toHaveBeenCalledWith(
       expect.objectContaining({ conflict: "overwrite", orphanEntities: "delete" }),
     );

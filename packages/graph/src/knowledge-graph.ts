@@ -138,6 +138,14 @@ export interface KnowledgeGraphHandle<
   Graph extends GraphContextRetriever<Schema> = GraphContextRetriever<Schema>,
 > {
   readonly graph: Graph;
+  /**
+   * Ingest one or more documents into the knowledge graph.
+   *
+   * Plain-string inputs and objects without an explicit `id` derive a deterministic
+   * content-hash document id. Re-ingesting edited text without an explicit `id` creates
+   * a new document rather than replacing the previous one; pass `{ id, text }` whenever
+   * you want in-place document replacement.
+   */
   ingest(
     input: KnowledgeGraphIngestInput,
     options?: KnowledgeGraphIngestOptions<Schema>,
@@ -290,19 +298,38 @@ function normalizeDocuments(
   input: KnowledgeGraphIngestInput,
 ): TextDocument<TextDocumentMetadata>[] {
   const items = Array.isArray(input) ? input : [input];
-  return items.map((item) => {
+  const documents: TextDocument<TextDocumentMetadata>[] = [];
+  const autoDerivedIndexById = new Map<string, number>();
+
+  for (const item of items) {
+    const isAutoId = typeof item === "string" || item.id === undefined;
+    let doc: TextDocument<TextDocumentMetadata>;
+
     if (typeof item === "string") {
-      return { id: stableTextId(item), text: item };
+      doc = { id: stableTextId(item), text: item };
+    } else {
+      const id = item.id ?? stableTextId(item.text);
+      doc =
+        item.metadata === undefined
+          ? { id, text: item.text }
+          : { id, text: item.text, metadata: item.metadata };
     }
 
-    const id = item.id ?? stableTextId(item.text);
+    if (isAutoId) {
+      const existingIndex = autoDerivedIndexById.get(doc.id);
 
-    if (item.metadata === undefined) {
-      return { id, text: item.text };
+      if (existingIndex !== undefined) {
+        documents[existingIndex] = doc;
+        continue;
+      }
+
+      autoDerivedIndexById.set(doc.id, documents.length);
     }
 
-    return { id, text: item.text, metadata: item.metadata };
-  });
+    documents.push(doc);
+  }
+
+  return documents;
 }
 
 function stableTextId(text: string): string {

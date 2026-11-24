@@ -130,13 +130,17 @@ export interface VectorIndex<Metadata extends VectorMetadata = VectorMetadata> {
    * Delete documents by id from the underlying store.
    *
    * When the index uses `granularity: "chunk"`, document ids are resolved to their
-   * stored chunk record ids via `store.inspect()`. Chunk-granularity deletion requires
-   * a store that implements `inspect()`; otherwise call `store.delete()` directly with
-   * chunk record ids.
+   * stored chunk record ids via `store.inspect()`. Always configure `granularity: "chunk"`
+   * on `createVectorIndex()` (or pass `{ granularity: "chunk" }` here) when attaching to
+   * a persistent store holding chunk-granularity records. Chunk-granularity deletion
+   * requires a store that implements `inspect()`; otherwise call `store.delete()` directly
+   * with chunk record ids.
    */
   delete(
     documentIds: string | readonly string[],
-    options?: Omit<VectorStoreDeleteOptions, "documentIds">,
+    options?: Omit<VectorStoreDeleteOptions, "documentIds"> & {
+      granularity?: VectorIngestGranularity | undefined;
+    },
   ): Promise<void>;
   retrieve(
     query: string,
@@ -207,8 +211,11 @@ export function buildVectorIndex<Metadata extends VectorMetadata = VectorMetadat
       }
 
       let recordIds: readonly string[] = ids;
+      const deleteAsChunks =
+        deleteOptions.granularity === "chunk" ||
+        (deleteOptions.granularity === undefined && usesChunkGranularity);
 
-      if (usesChunkGranularity) {
+      if (deleteAsChunks) {
         if (store.inspect === undefined) {
           throw new TypeError(
             "Deleting by document id on a chunk-granularity vector index requires a store that implements inspect(); call store.delete() directly with chunk record ids instead.",

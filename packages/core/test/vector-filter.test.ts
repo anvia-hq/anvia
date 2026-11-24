@@ -152,4 +152,17 @@ describe("vector filters", () => {
       ],
     });
   });
+
+  it("rejects undefined or empty shorthand conditions instead of failing open", () => {
+    expect(() => normalizeVectorFilter({ tenant: undefined } as never)).toThrow(
+      /must not be undefined/,
+    );
+    expect(() => normalizeVectorFilter({ tenant: {} })).toThrow(
+      /must specify at least one operator/,
+    );
+    expect(() => normalizeVectorFilter({ priority: { gt: undefined } } as never)).toThrow(
+      /must not be undefined/,
+    );
+    expect(() => vectorFilter.where({ tenant: undefined } as never)).toThrow(TypeError);
+  });
 });

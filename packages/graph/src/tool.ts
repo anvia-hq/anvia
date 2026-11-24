@@ -1,5 +1,6 @@
 import { createTool } from "@anvia/core/tool";
 import { z } from "zod";
+import { DEFAULT_GRAPH_SEARCH_TOP_K } from "./retrieve-options.js";
 import type {
   CreateGraphSearchToolOptions,
   GraphContext,
@@ -131,6 +132,12 @@ export function createGraphSearchTool<
   Retriever extends GraphContextRetriever<Schema>,
   Formatted = GraphContext,
 >(options: CreateGraphSearchToolOptions<Schema, Retriever, Formatted>): GraphSearchTool<Formatted> {
+  const configuredTopK = options.search?.topK ?? DEFAULT_GRAPH_SEARCH_TOP_K;
+
+  if (!Number.isSafeInteger(configuredTopK) || configuredTopK < 1) {
+    throw new RangeError("Graph search topK must be a positive safe integer.");
+  }
+
   const description = options.description ?? DEFAULT_GRAPH_SEARCH_TOOL_DESCRIPTION;
   const baseOptions = {
     name: options.name,
@@ -142,7 +149,9 @@ export function createGraphSearchTool<
         .int()
         .positive()
         .optional()
-        .describe("Optional maximum number of seed matches to retrieve."),
+        .describe(
+          `Optional maximum number of seed matches to retrieve (clamped to ${configuredTopK}).`,
+        ),
     }),
   };
 
@@ -154,7 +163,11 @@ export function createGraphSearchTool<
     let search: GraphSearchInput | undefined = options.search;
 
     if (topK !== undefined) {
-      search = options.search === undefined ? { topK } : { ...options.search, topK };
+      const boundedTopK = Math.min(topK, configuredTopK);
+      search =
+        options.search === undefined
+          ? { topK: boundedTopK }
+          : { ...options.search, topK: boundedTopK };
     }
 
     return options.graph.retrieve({

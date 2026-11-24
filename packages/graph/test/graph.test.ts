@@ -241,6 +241,30 @@ describe("provider-neutral graph primitives", () => {
       expect.objectContaining({ query: "One", search: { topK: 3 } }),
     );
 
+    await textTool.call({ query: "One", topK: 500 });
+    expect(retrieve).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: "One", search: { topK: 8 } }),
+    );
+
+    const boundedTool = createGraphSearchTool({
+      name: "bounded_graph",
+      graph,
+      model: embeddingModel,
+      search: { topK: 4 },
+    });
+    await boundedTool.call({ query: "One", topK: 50 });
+    expect(retrieve).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: "One", search: { topK: 4 } }),
+    );
+    expect(() =>
+      createGraphSearchTool({
+        name: "invalid_graph",
+        graph,
+        model: embeddingModel,
+        search: { topK: 0 },
+      }),
+    ).toThrow(RangeError);
+
     const ctx = createGraphContext({ graph, model: embeddingModel });
     const docs = await ctx.retrieve({ query: "One" });
     expect(docs).toHaveLength(1);

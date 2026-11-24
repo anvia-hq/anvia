@@ -503,7 +503,7 @@ describe("MemgraphClient", () => {
           records: [
             record({
               internalId: 1,
-              labels: ["SupportKbEntity", "Product"],
+              labels: ["SupportEntity", "Product"],
               properties: {
                 id: "checkout",
                 name: "Checkout",
@@ -522,7 +522,7 @@ describe("MemgraphClient", () => {
             record({
               node: {
                 internalId: 1,
-                labels: ["SupportKbEntity", "Product"],
+                labels: ["SupportEntity", "Product"],
                 properties: {
                   id: "checkout",
                   name: "Checkout",
@@ -548,7 +548,7 @@ describe("MemgraphClient", () => {
     });
     const client = new MemgraphClient({ driver: driver.value });
     const graph = client.managedKnowledgeGraph({
-      name: "support-kb",
+      name: "support",
       schema: nodeOnlySchema,
       dimensions: 2,
       similarity: "dotProduct",
@@ -556,21 +556,50 @@ describe("MemgraphClient", () => {
     });
     expect(graph.resources).toEqual({
       labels: {
-        document: "SupportKbDocument",
-        chunk: "SupportKbChunk",
-        entity: "SupportKbEntity",
+        document: "SupportDocument",
+        chunk: "SupportChunk",
+        entity: "SupportEntity",
       },
       indexes: {
         chunks: {
-          vector: { name: "support_kb_chunks_vector", dimensions: 2, similarity: "dotProduct" },
-          text: { name: "support_kb_chunks_text" },
+          vector: { name: "support_chunks_vector", dimensions: 2, similarity: "dotProduct" },
+          text: { name: "support_chunks_text" },
         },
         entities: {
-          vector: { name: "support_kb_entities_vector", dimensions: 2, similarity: "dotProduct" },
-          text: { name: "support_kb_entities_text", properties: ["id", "name"] },
+          vector: { name: "support_entities_vector", dimensions: 2, similarity: "dotProduct" },
+          text: { name: "support_entities_text", properties: ["id", "name"] },
         },
       },
     });
+
+    const dashed = client.managedKnowledgeGraph({
+      name: "my-graph",
+      schema: nodeOnlySchema,
+      dimensions: 2,
+    });
+    const underscored = client.managedKnowledgeGraph({
+      name: "my_graph",
+      schema: nodeOnlySchema,
+      dimensions: 2,
+    });
+    expect(dashed.resources.labels.document).not.toBe(underscored.resources.labels.document);
+    expect(dashed.resources.indexes.chunks.vector.name).not.toBe(
+      underscored.resources.indexes.chunks.vector.name,
+    );
+
+    const emptyPropsSchema = {
+      kind: "graph-schema" as const,
+      nodes: {},
+      relationships: {},
+    };
+    const emptyWithObjectShorthand = client.managedKnowledgeGraph({
+      name: "empty",
+      schema: emptyPropsSchema,
+      dimensions: 2,
+      text: { chunks: true, entities: true },
+    });
+    expect(emptyWithObjectShorthand.resources.indexes.entities.text).toBeUndefined();
+    expect(emptyWithObjectShorthand.resources.indexes.chunks.text).toBeDefined();
 
     const context = await graph.retrieve({
       model: {

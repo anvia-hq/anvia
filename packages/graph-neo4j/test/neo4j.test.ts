@@ -1821,7 +1821,7 @@ describe("graph retrieval", () => {
             records: [
               record({
                 elementId: "4:entity",
-                labels: ["SupportKbEntity", "Product"],
+                labels: ["SupportEntity", "Product"],
                 properties: {
                   id: "checkout",
                   name: "Checkout",
@@ -1840,7 +1840,7 @@ describe("graph retrieval", () => {
               record({
                 node: {
                   elementId: "4:entity",
-                  labels: ["SupportKbEntity", "Product"],
+                  labels: ["SupportEntity", "Product"],
                   properties: {
                     id: "checkout",
                     name: "Checkout",
@@ -1867,28 +1867,57 @@ describe("graph retrieval", () => {
     });
     const client = new Neo4jClient({ driver: driver.value });
     const graph = client.managedKnowledgeGraph({
-      name: "support-kb",
+      name: "support",
       schema: nodeOnlySchema,
       dimensions: 2,
       fulltext: true,
     });
     expect(graph.resources).toEqual({
       labels: {
-        document: "SupportKbDocument",
-        chunk: "SupportKbChunk",
-        entity: "SupportKbEntity",
+        document: "SupportDocument",
+        chunk: "SupportChunk",
+        entity: "SupportEntity",
       },
       indexes: {
         chunks: {
-          vector: { name: "support_kb_chunks_vector", dimensions: 2, similarity: "cosine" },
-          fulltext: { name: "support_kb_chunks_fulltext" },
+          vector: { name: "support_chunks_vector", dimensions: 2, similarity: "cosine" },
+          fulltext: { name: "support_chunks_fulltext" },
         },
         entities: {
-          vector: { name: "support_kb_entities_vector", dimensions: 2, similarity: "cosine" },
-          fulltext: { name: "support_kb_entities_fulltext", properties: ["id", "name"] },
+          vector: { name: "support_entities_vector", dimensions: 2, similarity: "cosine" },
+          fulltext: { name: "support_entities_fulltext", properties: ["id", "name"] },
         },
       },
     });
+
+    const dashed = client.managedKnowledgeGraph({
+      name: "my-graph",
+      schema: nodeOnlySchema,
+      dimensions: 2,
+    });
+    const underscored = client.managedKnowledgeGraph({
+      name: "my_graph",
+      schema: nodeOnlySchema,
+      dimensions: 2,
+    });
+    expect(dashed.resources.labels.document).not.toBe(underscored.resources.labels.document);
+    expect(dashed.resources.indexes.chunks.vector.name).not.toBe(
+      underscored.resources.indexes.chunks.vector.name,
+    );
+
+    const emptyPropsSchema = {
+      kind: "graph-schema" as const,
+      nodes: {},
+      relationships: {},
+    };
+    const emptyWithObjectShorthand = client.managedKnowledgeGraph({
+      name: "empty",
+      schema: emptyPropsSchema,
+      dimensions: 2,
+      fulltext: { chunks: true, entities: true },
+    });
+    expect(emptyWithObjectShorthand.resources.indexes.entities.fulltext).toBeUndefined();
+    expect(emptyWithObjectShorthand.resources.indexes.chunks.fulltext).toBeDefined();
 
     const context = await graph.retrieve({
       model: {

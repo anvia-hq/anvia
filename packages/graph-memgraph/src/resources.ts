@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { GraphSchemaLike } from "@anvia/graph";
 import type { Record as DriverRecord } from "neo4j-driver";
 import { driverNumber, positiveInteger, quoteIdentifier } from "./helpers.js";
@@ -65,8 +66,7 @@ export function resolveResources<Schema extends GraphSchemaLike>(
     return options.resources;
   }
 
-  const labelPrefix = toPascalCase(options.name);
-  const indexPrefix = toSnakeCase(options.name);
+  const { labelPrefix, indexPrefix } = derivedResourcePrefixes(options.name);
   const similarity = options.similarity ?? "cosine";
   const dimensions = options.dimensions;
   const textShorthand = options.text ?? options.fulltext;
@@ -124,7 +124,9 @@ function resolveTextShorthand(
   }
 
   if (text.entities === true) {
-    result.entities = { name: `${indexPrefix}_entities_text`, properties: entityProperties };
+    if (entityProperties.length > 0) {
+      result.entities = { name: `${indexPrefix}_entities_text`, properties: entityProperties };
+    }
   } else if (Array.isArray(text.entities)) {
     result.entities = { name: `${indexPrefix}_entities_text`, properties: text.entities };
   } else if (typeof text.entities === "object") {
@@ -132,6 +134,23 @@ function resolveTextShorthand(
   }
 
   return result;
+}
+
+const CANONICAL_GRAPH_NAME = /^[a-z][a-z0-9]*$/;
+
+function derivedResourcePrefixes(name: string): { labelPrefix: string; indexPrefix: string } {
+  if (CANONICAL_GRAPH_NAME.test(name)) {
+    return {
+      labelPrefix: `${name[0]?.toUpperCase() ?? ""}${name.slice(1)}`,
+      indexPrefix: name,
+    };
+  }
+
+  const suffix = createHash("sha256").update(name).digest("hex").slice(0, 8);
+  return {
+    labelPrefix: `${toPascalCase(name)}_${suffix}`,
+    indexPrefix: `${toSnakeCase(name)}_${suffix}`,
+  };
 }
 
 function toPascalCase(name: string): string {

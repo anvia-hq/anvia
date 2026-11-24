@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type GraphContext,
   type GraphExploreOptions,
@@ -609,8 +610,7 @@ function resolveManagedResources<Schema extends Neo4jGraphSchema>(
     return options.resources;
   }
 
-  const labelPrefix = toPascalCase(options.name);
-  const indexPrefix = toSnakeCase(options.name);
+  const { labelPrefix, indexPrefix } = derivedResourcePrefixes(options.name);
   const similarity = options.similarity ?? "cosine";
   const dimensions = options.dimensions;
   const fulltext = resolveFulltextShorthand(options.schema, indexPrefix, options.fulltext);
@@ -667,7 +667,9 @@ function resolveFulltextShorthand(
   }
 
   if (fulltext.entities === true) {
-    result.entities = { name: `${indexPrefix}_entities_fulltext`, properties: entityProperties };
+    if (entityProperties.length > 0) {
+      result.entities = { name: `${indexPrefix}_entities_fulltext`, properties: entityProperties };
+    }
   } else if (Array.isArray(fulltext.entities)) {
     result.entities = { name: `${indexPrefix}_entities_fulltext`, properties: fulltext.entities };
   } else if (typeof fulltext.entities === "object") {
@@ -675,6 +677,23 @@ function resolveFulltextShorthand(
   }
 
   return result;
+}
+
+const CANONICAL_GRAPH_NAME = /^[a-z][a-z0-9]*$/;
+
+function derivedResourcePrefixes(name: string): { labelPrefix: string; indexPrefix: string } {
+  if (CANONICAL_GRAPH_NAME.test(name)) {
+    return {
+      labelPrefix: `${name[0]?.toUpperCase() ?? ""}${name.slice(1)}`,
+      indexPrefix: name,
+    };
+  }
+
+  const suffix = createHash("sha256").update(name).digest("hex").slice(0, 8);
+  return {
+    labelPrefix: `${toPascalCase(name)}_${suffix}`,
+    indexPrefix: `${toSnakeCase(name)}_${suffix}`,
+  };
 }
 
 function toPascalCase(name: string): string {

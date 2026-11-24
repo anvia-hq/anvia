@@ -1086,4 +1086,59 @@ describe("vector stores and retrieval", () => {
     await index.delete("cat-doc");
     expect(await index.retrieve("cat")).toEqual([]);
   });
+
+  it("deletes all chunk records by document id for chunk-granularity vector indexes", async () => {
+    const model = new KeywordModel();
+    const index = createVectorIndex({
+      model,
+      granularity: "chunk",
+      chunking: { strategy: "fixed", maxSize: 4 },
+    });
+    await index.ingest([
+      { id: "cat-doc", text: "cat1cat2" },
+      { id: "dog-doc", text: "dog1dog2" },
+    ]);
+    expect((await index.retrieve("cat", { minScore: 0.9 })).map((r) => r.id)).toEqual([
+      "cat-doc:chunk:0",
+      "cat-doc:chunk:1",
+    ]);
+
+    await index.delete("cat-doc");
+    expect(await index.retrieve("cat", { minScore: 0.9 })).toEqual([]);
+    expect((await index.retrieve("dog")).map((r) => r.id)).toEqual([
+      "dog-doc:chunk:0",
+      "dog-doc:chunk:1",
+    ]);
+
+    const storeWithoutInspect = {
+      async ensure() {},
+      async validate() {},
+      async upsert() {},
+      async delete() {},
+      async search() {
+        return [];
+      },
+    };
+    const nonInspectable = createVectorIndex({
+      store: storeWithoutInspect,
+      model,
+      granularity: "chunk",
+    });
+    await expect(nonInspectable.delete("cat-doc")).rejects.toThrow(
+      /requires a store that implements inspect\(\)/,
+    );
+  });
+
+  it("deduplicates identical plain-string inputs in createVectorIndex().ingest()", async () => {
+    const index = createVectorIndex({ model: new KeywordModel() });
+    const result = await index.ingest(["cat guide", "cat guide", "dog guide"]);
+    expect(result.documents).toHaveLength(2);
+
+    await expect(
+      index.ingest([
+        { id: "dup", text: "cat guide" },
+        { id: "dup", text: "dog guide" },
+      ]),
+    ).rejects.toThrow(/Duplicate text document id: dup/);
+  });
 });

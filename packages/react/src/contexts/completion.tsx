@@ -1,5 +1,5 @@
 import type { ClientDataMap, ClientMetadata } from "@anvia/client";
-import type { UseCompletionResult } from "@anvia/react";
+import type { UseCompletionResult } from "../use-completion";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
 
 export type CompletionController<

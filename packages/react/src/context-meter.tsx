@@ -1,4 +1,4 @@
-import type { UseChatResult } from "@anvia/react";
+import type { UseChatResult } from "./types";
 import { forwardRef, type ReactNode } from "react";
 
 import { type PrimitiveProps, renderPrimitive } from "./primitives";
@@ -11,7 +11,7 @@ export type ContextMeterProps = Omit<PrimitiveProps<"div">, "children"> & {
   children?: ReactNode | ((usage: ContextUsage) => ReactNode);
 };
 
-export const ContextMeterPrimitive = forwardRef<HTMLDivElement, ContextMeterProps>(
+export const ContextMeterPrimitive = /* @__PURE__ */ forwardRef<HTMLDivElement, ContextMeterProps>(
   function ContextMeter({ usage, display = "remaining", children, ...props }, ref) {
     if (usage === undefined) {
       return null;

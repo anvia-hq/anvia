@@ -3,7 +3,7 @@ import type {
   AgentToolApprovalRequest,
   AgentToolQuestionRequest,
 } from "@anvia/core/agent/interactions";
-import type { UseChatResult, UseCompletionResult } from "@anvia/react";
+import type { UseChatResult, UseCompletionResult } from "../src";
 import { vi } from "vitest";
 
 export function textMessage(id: string, role: UIMessage["role"], text: string): UIMessage {

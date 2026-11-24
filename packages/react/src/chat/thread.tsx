@@ -1,5 +1,5 @@
 import type { UIMessage } from "@anvia/client";
-import type { ChatSuggestion, UseChatStatus } from "@anvia/react";
+import type { ChatSuggestion, UseChatStatus } from "../types";
 import {
   Fragment,
   forwardRef,

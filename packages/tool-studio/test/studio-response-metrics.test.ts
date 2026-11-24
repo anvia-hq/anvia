@@ -104,10 +104,11 @@ describe("assistant response metrics", () => {
           context: {
             segments: [
               { id: "instructions", tokens: 8, characters: 32, items: 1 },
+              { id: "skills", tokens: 3, characters: 12, items: 2 },
               { id: "mcpTools", tokens: 4, characters: 16, items: 2 },
             ],
-            estimatedTokens: 12,
-            reportedInputTokens: 12,
+            estimatedTokens: 15,
+            reportedInputTokens: 15,
           },
         },
       ],
@@ -117,10 +118,11 @@ describe("assistant response metrics", () => {
     expect(metrics.get(2)?.context).toEqual({
       segments: [
         { id: "instructions", label: "System prompt", tokens: 8, items: 1 },
+        { id: "skills", label: "Skills", tokens: 3, items: 2 },
         { id: "mcpTools", label: "MCP tools", tokens: 4, items: 2 },
       ],
-      totalTokens: 12,
-      reportedInputTokens: 12,
+      totalTokens: 15,
+      reportedInputTokens: 15,
     });
   });
 

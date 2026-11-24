@@ -23,6 +23,9 @@ export default defineConfig({
       "@anvia/core/completion": fileURLToPath(
         new URL("../core/src/completion/index.ts", import.meta.url),
       ),
+      "@anvia/core/context": fileURLToPath(
+        new URL("../core/src/context/index.ts", import.meta.url),
+      ),
       "@anvia/core/embeddings": fileURLToPath(
         new URL("../core/src/embeddings/index.ts", import.meta.url),
       ),

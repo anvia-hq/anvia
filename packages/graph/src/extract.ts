@@ -65,6 +65,14 @@ export async function extractGraphFacts<
 
   const outputSchema = extractionSchema(options.schema);
   const instructions = graphInstructions(options.schema, options.instructions);
+  const onInvalidFact = options.onInvalidFact ?? "throw";
+
+  if (onInvalidFact !== "throw" && onInvalidFact !== "warn") {
+    throw new TypeError('Graph extraction onInvalidFact must be "throw" or "warn".');
+  }
+
+  let completed = 0;
+  const total = options.chunks.length;
   const extractions = await mapConcurrent(
     options.chunks,
     options.concurrency ?? 1,
@@ -78,11 +86,13 @@ export async function extractGraphFacts<
         retries: options.retries,
         abortSignal: options.abortSignal,
       });
+      completed += 1;
+      options.onProgress?.({ stage: "extract", completed, total, chunkId: chunk.id });
       return { chunkId: chunk.id, output: result.output as RawChunkFacts, usage: result.usage };
     },
   );
   return {
-    ...normalizeFacts(options.schema, extractions, options.conflicts),
+    ...normalizeFacts(options.schema, extractions, options.conflicts, onInvalidFact),
     usage: extractions.reduce((usage, item) => Usage.add(usage, item.usage), Usage.empty()),
   };
 }
@@ -141,83 +151,113 @@ function normalizeFacts<Schema extends GraphSchemaLike>(
   schema: Schema,
   extractions: readonly ChunkExtraction[],
   conflicts: ExtractGraphFactsOptions<Schema, import("@anvia/core").CompletionModel>["conflicts"],
+  onInvalidFact: "throw" | "warn",
 ): Readonly<{ output: GraphFacts<Schema>; warnings: readonly GraphExtractionWarning[] }> {
   const entityCandidates = new Map<string, EntityCandidate[]>();
   const relationshipCandidates = new Map<string, RelationshipCandidate[]>();
   const mentions = new Map<string, GraphMention>();
+  const warnings: GraphExtractionWarning[] = [];
+
+  const handleInvalid = (
+    kind: "entity" | "relationship",
+    chunkId: string,
+    type: string,
+    error: unknown,
+  ): void => {
+    const reason = error instanceof Error ? error.message : String(error);
+
+    if (onInvalidFact === "throw") {
+      throw error;
+    }
+
+    warnings.push({
+      code: "GRAPH_FACT_INVALID_SKIPPED",
+      kind,
+      chunkId,
+      type,
+      reason,
+    });
+  };
 
   for (const extraction of extractions) {
     const refs = new Map<string, EntityCandidate>();
     for (const raw of extraction.output.entities) {
-      if (refs.has(raw.ref)) {
-        throw new TypeError(`Duplicate entity ref ${raw.ref} in chunk ${extraction.chunkId}.`);
+      try {
+        if (refs.has(raw.ref)) {
+          throw new TypeError(`Duplicate entity ref ${raw.ref} in chunk ${extraction.chunkId}.`);
+        }
+
+        const definition = schema.nodes[raw.type];
+
+        if (definition === undefined) throw new TypeError(`Unknown graph entity type: ${raw.type}`);
+
+        const properties = parseGraphProperties(
+          definition.properties.parse(raw.properties),
+          `entity ${raw.type}`,
+        );
+        const identity = identityFromProperties(definition.identity, properties, raw.type);
+        const key = `${raw.type}:${stableObject(identity)}`;
+        const candidate: EntityCandidate = {
+          key,
+          type: raw.type,
+          identity,
+          properties,
+          chunkId: extraction.chunkId,
+        };
+        appendCandidate(entityCandidates, key, candidate);
+        refs.set(raw.ref, candidate);
+        mentions.set(`${extraction.chunkId}\u0000${key}`, {
+          chunkId: extraction.chunkId,
+          entityKey: key,
+        });
+      } catch (error) {
+        handleInvalid("entity", extraction.chunkId, raw.type, error);
       }
-
-      const definition = schema.nodes[raw.type];
-
-      if (definition === undefined) throw new TypeError(`Unknown graph entity type: ${raw.type}`);
-
-      const properties = parseGraphProperties(
-        definition.properties.parse(raw.properties),
-        `entity ${raw.type}`,
-      );
-      const identity = identityFromProperties(definition.identity, properties, raw.type);
-      const key = `${raw.type}:${stableObject(identity)}`;
-      const candidate: EntityCandidate = {
-        key,
-        type: raw.type,
-        identity,
-        properties,
-        chunkId: extraction.chunkId,
-      };
-      appendCandidate(entityCandidates, key, candidate);
-      refs.set(raw.ref, candidate);
-      mentions.set(`${extraction.chunkId}\u0000${key}`, {
-        chunkId: extraction.chunkId,
-        entityKey: key,
-      });
     }
 
     for (const raw of extraction.output.relationships) {
-      const definition = schema.relationships[raw.type];
+      try {
+        const definition = schema.relationships[raw.type];
 
-      if (definition === undefined) {
-        throw new TypeError(`Unknown graph relationship type: ${raw.type}`);
-      }
+        if (definition === undefined) {
+          throw new TypeError(`Unknown graph relationship type: ${raw.type}`);
+        }
 
-      const from = refs.get(raw.from);
-      const to = refs.get(raw.to);
+        const from = refs.get(raw.from);
+        const to = refs.get(raw.to);
 
-      if (from === undefined || to === undefined) {
-        throw new TypeError(
-          `Relationship ${raw.type} in chunk ${extraction.chunkId} references an unknown entity ref.`,
+        if (from === undefined || to === undefined) {
+          throw new TypeError(
+            `Relationship ${raw.type} in chunk ${extraction.chunkId} references an unknown entity ref.`,
+          );
+        }
+
+        if (from.type !== definition.from || to.type !== definition.to) {
+          throw new TypeError(
+            `Relationship ${raw.type} has invalid endpoint types ${from.type} -> ${to.type}.`,
+          );
+        }
+
+        const properties = parseGraphProperties(
+          definition.properties.parse(raw.properties),
+          `relationship ${raw.type}`,
         );
+        const identity = identityFromProperties(definition.identity ?? [], properties, raw.type);
+        const key = `${raw.type}:${from.key}->${to.key}:${stableObject(identity)}`;
+        appendCandidate(relationshipCandidates, key, {
+          key,
+          type: raw.type,
+          from: from.key,
+          to: to.key,
+          identity,
+          properties,
+          chunkId: extraction.chunkId,
+        });
+      } catch (error) {
+        handleInvalid("relationship", extraction.chunkId, raw.type, error);
       }
-
-      if (from.type !== definition.from || to.type !== definition.to) {
-        throw new TypeError(
-          `Relationship ${raw.type} has invalid endpoint types ${from.type} -> ${to.type}.`,
-        );
-      }
-
-      const properties = parseGraphProperties(
-        definition.properties.parse(raw.properties),
-        `relationship ${raw.type}`,
-      );
-      const identity = identityFromProperties(definition.identity ?? [], properties, raw.type);
-      const key = `${raw.type}:${from.key}->${to.key}:${stableObject(identity)}`;
-      appendCandidate(relationshipCandidates, key, {
-        key,
-        type: raw.type,
-        from: from.key,
-        to: to.key,
-        identity,
-        properties,
-        chunkId: extraction.chunkId,
-      });
     }
   }
-  const warnings: GraphExtractionWarning[] = [];
   const entities = [...entityCandidates.values()].map((candidates) => {
     const first = requiredCandidate(candidates);
     const definition = schema.nodes[first.type];

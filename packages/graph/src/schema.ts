@@ -1,19 +1,72 @@
 import { z } from "zod";
 import type {
+  GraphNodeDefinition,
   GraphProperties,
   GraphPropertyPrimitive,
   GraphPropertyValue,
+  GraphRelationshipDefinition,
+  GraphRelationshipDefinitionInput,
   GraphSchema,
+  GraphSchemaInput,
   GraphSchemaOptions,
+  NormalizedGraphRelationships,
 } from "./types.js";
 
 export const graphReservedPropertyPrefix = "__anvia_";
 
-export function defineGraphSchema<const Options extends GraphSchemaOptions>(
-  options: Options,
-): GraphSchema<Options> {
-  validateGraphSchemaOptions(options);
-  return freezeGraphSchema(options, "graph-schema");
+type ValidateNodeDefinitions<Nodes extends Readonly<Record<string, GraphNodeDefinition>>> = {
+  [Name in keyof Nodes]: Nodes[Name] extends { properties: z.ZodObject<infer Shape> }
+    ? Readonly<{
+        description: string;
+        identity: readonly (keyof Shape & string)[];
+        properties: z.ZodObject<Shape>;
+      }>
+    : Nodes[Name];
+};
+
+type ValidateRelationshipDefinitions<
+  NodeNames extends string,
+  Relationships extends Readonly<Record<string, GraphRelationshipDefinitionInput<NodeNames>>>,
+> = {
+  [Name in keyof Relationships]: Relationships[Name] extends {
+    properties: z.ZodObject<infer Shape>;
+  }
+    ? Readonly<{
+        description: string;
+        from: NodeNames;
+        to: NodeNames;
+        identity?: readonly (keyof Shape & string)[] | undefined;
+        properties: z.ZodObject<Shape>;
+      }>
+    : Readonly<{
+        description: string;
+        from: NodeNames;
+        to: NodeNames;
+        identity?: readonly never[] | undefined;
+        properties?: undefined;
+      }>;
+};
+
+export function defineGraphSchema<
+  const Nodes extends Readonly<Record<string, GraphNodeDefinition>>,
+  const Relationships extends Readonly<
+    Record<string, GraphRelationshipDefinitionInput<keyof Nodes & string>>
+  > = Readonly<Record<never, never>>,
+>(options: {
+  readonly nodes: Nodes & ValidateNodeDefinitions<Nodes>;
+  readonly relationships?:
+    | (Relationships & ValidateRelationshipDefinitions<keyof Nodes & string, Relationships>)
+    | undefined;
+}): GraphSchema<{
+  readonly nodes: Nodes;
+  readonly relationships: NormalizedGraphRelationships<Relationships>;
+}> {
+  const normalized = normalizeSchemaInput(options as GraphSchemaInput);
+  validateGraphSchemaOptions(normalized);
+  return freezeGraphSchema(normalized, "graph-schema") as unknown as GraphSchema<{
+    readonly nodes: Nodes;
+    readonly relationships: NormalizedGraphRelationships<Relationships>;
+  }>;
 }
 
 export function validateGraphSchemaOptions(options: GraphSchemaOptions): void {
@@ -165,6 +218,48 @@ export function assertGraphPropertyName(value: string): void {
       `Graph property names beginning with ${graphReservedPropertyPrefix} are reserved.`,
     );
   }
+}
+
+function normalizeSchemaInput(options: GraphSchemaInput): GraphSchemaOptions {
+  const nodes: Record<string, GraphNodeDefinition> = {};
+  for (const [type, definition] of Object.entries(options.nodes)) {
+    nodes[type] = {
+      ...definition,
+      properties: normalizeStrictObject(definition.properties, `node ${type}`),
+    };
+  }
+  const relationships: Record<string, GraphRelationshipDefinition> = {};
+  for (const [type, definition] of Object.entries(options.relationships ?? {})) {
+    relationships[type] = {
+      ...definition,
+      properties:
+        definition.properties === undefined
+          ? z.strictObject({})
+          : normalizeStrictObject(definition.properties, `relationship ${type}`),
+    };
+  }
+  return { nodes, relationships };
+}
+
+function normalizeStrictObject(
+  schema: z.ZodObject<z.ZodRawShape>,
+  label: string,
+): z.ZodObject<z.ZodRawShape> {
+  if (!(schema instanceof z.ZodObject)) {
+    throw new TypeError(`Properties for ${label} must be a Zod object schema.`);
+  }
+
+  const catchall = schema._zod.def.catchall;
+
+  if (catchall instanceof z.ZodNever) {
+    return schema;
+  }
+
+  if (catchall === undefined) {
+    return schema.strict();
+  }
+
+  throw new TypeError(`${label} properties must use a strict Zod object schema.`);
 }
 
 function parsePrimitive(value: unknown, label: string): GraphPropertyPrimitive {

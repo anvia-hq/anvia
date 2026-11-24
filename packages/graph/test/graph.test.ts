@@ -6,12 +6,17 @@ const extractMock = vi.hoisted(() => vi.fn());
 vi.mock("@anvia/core/extractor", () => ({ extract: extractMock }));
 
 import {
+  createGraphContext,
+  createGraphSearchTool,
+  createKnowledgeGraph,
   defineGraphSchema,
   extractGraphFacts,
+  formatGraphContext,
   ingestGraphText,
   ingestGraphTextToStores,
   prepareGraphDocuments,
   resolveGraphExploreOptions,
+  resolveGraphRetrieveOptions,
 } from "../src/index.js";
 
 describe("provider-neutral graph primitives", () => {
@@ -36,13 +41,214 @@ describe("provider-neutral graph primitives", () => {
         nodes: {
           Product: {
             description: "A product.",
-            identity: ["missing"],
+            identity: ["missing"] as never,
             properties: z.strictObject({ id: z.string() }),
           },
         },
         relationships: {},
       }),
     ).toThrow("not declared");
+  });
+
+  it("auto-strictens plain z.object schemas and allows omitting relationships or empty relationship properties", () => {
+    const simple = defineGraphSchema({
+      nodes: {
+        Product: {
+          description: "A product.",
+          identity: ["id"],
+          properties: z.object({ id: z.string(), name: z.string() }),
+        },
+      },
+    });
+    expect(simple.relationships).toEqual({});
+    expect(() =>
+      simple.nodes.Product.properties.parse({ id: "1", name: "a", extra: true }),
+    ).toThrow();
+
+    const withEdge = defineGraphSchema({
+      nodes: {
+        Product: {
+          description: "A product.",
+          identity: ["id"],
+          properties: z.object({ id: z.string() }),
+        },
+      },
+      relationships: {
+        DEPENDS_ON: {
+          description: "Product dependency.",
+          from: "Product",
+          to: "Product",
+        },
+      },
+    });
+    expect(withEdge.relationships.DEPENDS_ON.properties.parse({})).toEqual({});
+    expect(() =>
+      defineGraphSchema({
+        nodes: {
+          Product: {
+            description: "A product.",
+            identity: ["id"],
+            properties: z.looseObject({ id: z.string() }),
+          },
+        },
+      }),
+    ).toThrow("strict Zod object schema");
+  });
+
+  it("supports warn mode for invalid extracted facts and reports extraction progress", async () => {
+    const relSchema = defineGraphSchema({
+      nodes: {
+        Product: {
+          description: "A product.",
+          identity: ["id"],
+          properties: z.object({ id: z.string() }),
+        },
+      },
+      relationships: {
+        DEPENDS_ON: {
+          description: "Dependency.",
+          from: "Product",
+          to: "Product",
+        },
+      },
+    });
+    extractMock.mockResolvedValue({
+      output: {
+        entities: [{ ref: "p", type: "Product", properties: { id: "one" } }],
+        relationships: [{ type: "DEPENDS_ON", from: "p", to: "missing-ref", properties: {} }],
+      },
+      usage: Usage.empty(),
+    });
+    const events: unknown[] = [];
+    const result = await extractGraphFacts({
+      model: {} as never,
+      schema: relSchema,
+      chunks: [{ id: "chunk-1", documentId: "doc", index: 0, text: "Product one" }],
+      onInvalidFact: "warn",
+      onProgress: (event) => events.push(event),
+    });
+
+    expect(result.output.entities).toHaveLength(1);
+    expect(result.output.relationships).toEqual([]);
+    expect(result.warnings).toEqual([
+      expect.objectContaining({
+        code: "GRAPH_FACT_INVALID_SKIPPED",
+        kind: "relationship",
+        chunkId: "chunk-1",
+        type: "DEPENDS_ON",
+      }),
+    ]);
+    expect(events).toEqual([{ stage: "extract", completed: 1, total: 1, chunkId: "chunk-1" }]);
+  });
+
+  it("defaults ingestion policies, retrieval options, search tool, graph context, and facade", async () => {
+    extractMock.mockResolvedValue({
+      output: {
+        entities: [{ ref: "p", type: "Product", properties: { id: "one", name: "One" } }],
+        relationships: [],
+      },
+      usage: Usage.empty(),
+    });
+    const embeddingModel = {
+      provider: "test",
+      modelId: "test",
+      async embedTexts(texts: string[]) {
+        return texts.map((document) => ({ document, vector: [1, 0] }));
+      },
+    };
+    const sampleContext = {
+      seeds: [
+        {
+          key: 'Product:{"id":"one"}',
+          type: "Product",
+          score: 0.9,
+          properties: { id: "one", name: "One" },
+          sourceChunkIds: ["doc:chunk:0"],
+        },
+      ],
+      nodes: [
+        {
+          key: 'Product:{"id":"one"}',
+          type: "Product",
+          identity: { id: "one" },
+          properties: { id: "one", name: "One" },
+          sourceChunkIds: ["doc:chunk:0"],
+        },
+      ],
+      relationships: [],
+      evidence: [
+        {
+          chunkId: "doc:chunk:0",
+          documentId: "doc",
+          index: 0,
+          text: "Product One",
+          metadata: {},
+        },
+      ],
+    };
+    const replaceDocuments = vi.fn(async () => ({
+      documents: { created: 1, updated: 0, deleted: 0, unchanged: 0 },
+      chunks: { created: 1, updated: 0, deleted: 0, unchanged: 0 },
+      entities: { created: 1, updated: 0, deleted: 0, unchanged: 0 },
+      relationships: { created: 0, updated: 0, deleted: 0, unchanged: 0 },
+      mentions: { created: 1, updated: 0, deleted: 0, unchanged: 0 },
+    }));
+    const retrieve = vi.fn(async () => sampleContext);
+    const graph = {
+      schema,
+      evidenceCapability: "chunks" as const,
+      replaceDocuments,
+      retrieve,
+    };
+
+    const resolved = resolveGraphRetrieveOptions({
+      schema,
+      evidenceCapability: "chunks",
+      availableSeeds: ["chunks", "entities"],
+    });
+    expect(resolved).toEqual({
+      search: { type: "vector", seeds: ["entities"], topK: 8 },
+      traversal: {
+        relationships: [],
+        direction: "both",
+        maxDepth: 2,
+        maxNodes: 40,
+        maxRelationships: 80,
+      },
+      evidence: { type: "chunks", maxChunks: 12 },
+    });
+
+    const kg = createKnowledgeGraph({
+      graph,
+      embeddingModel,
+      extractionModel: {} as never,
+    });
+    await kg.ingest("Product One");
+    expect(replaceDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({ conflict: "overwrite", orphanEntities: "delete" }),
+    );
+
+    const textTool = createGraphSearchTool({
+      name: "search_graph",
+      graph,
+      model: embeddingModel,
+      format: formatGraphContext,
+    });
+    const formatted = await textTool.call({ query: "One", topK: 3 });
+    expect(formatted).toContain("[Product]");
+    expect(formatted).toContain("Product One");
+    expect(retrieve).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: "One", search: { topK: 3 } }),
+    );
+
+    const ctx = createGraphContext({ graph, model: embeddingModel });
+    const docs = await ctx.retrieve({ query: "One" });
+    expect(docs).toHaveLength(1);
+    expect(docs[0]?.text).toContain("Entities:");
+
+    const kgTool = kg.asTool({ name: "kg_search" });
+    expect(await kgTool.call({ query: "One" })).toEqual(sampleContext);
+    expect(await kg.asContext().retrieve({ query: "One" })).toHaveLength(1);
   });
 
   it("extracts deterministic facts independently of a database provider", async () => {

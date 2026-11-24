@@ -26,9 +26,50 @@ export type GraphRelationshipDefinition = Readonly<{
   properties: z.ZodObject<z.ZodRawShape>;
 }>;
 
+export type GraphNodeDefinitionInput<Shape extends z.ZodRawShape = z.ZodRawShape> = Readonly<{
+  description: string;
+  identity: readonly (keyof Shape & string)[];
+  properties: z.ZodObject<Shape>;
+}>;
+
+export type GraphRelationshipDefinitionInput<
+  NodeName extends string = string,
+  Shape extends z.ZodRawShape = z.ZodRawShape,
+> = Readonly<{
+  description: string;
+  from: NodeName;
+  to: NodeName;
+  identity?: readonly (keyof Shape & string)[] | undefined;
+  properties?: z.ZodObject<Shape> | undefined;
+}>;
+
 export type GraphSchemaOptions = Readonly<{
   nodes: Readonly<Record<string, GraphNodeDefinition>>;
   relationships: Readonly<Record<string, GraphRelationshipDefinition>>;
+}>;
+
+export type GraphSchemaInput<
+  Nodes extends Readonly<Record<string, GraphNodeDefinition>> = Readonly<
+    Record<string, GraphNodeDefinition>
+  >,
+  Relationships extends Readonly<
+    Record<string, GraphRelationshipDefinitionInput<keyof Nodes & string>>
+  > = Readonly<Record<string, GraphRelationshipDefinitionInput<keyof Nodes & string>>>,
+> = Readonly<{
+  nodes: Nodes;
+  relationships?: Relationships | undefined;
+}>;
+
+export type NormalizedGraphRelationships<
+  Relationships extends Readonly<Record<string, GraphRelationshipDefinitionInput>>,
+> = Readonly<{
+  [Type in keyof Relationships]: Relationships[Type] extends {
+    properties: z.ZodObject<infer Shape>;
+  }
+    ? Readonly<Omit<Relationships[Type], "properties"> & { properties: z.ZodObject<Shape> }>
+    : Readonly<
+        Omit<Relationships[Type], "properties"> & { properties: z.ZodObject<Record<never, never>> }
+      >;
 }>;
 
 export type GraphSchema<Options extends GraphSchemaOptions = GraphSchemaOptions> = Readonly<
@@ -123,7 +164,24 @@ export type GraphFactConflictWarning = Omit<GraphFactPropertyConflict, "code"> &
     resolvedValue: GraphPropertyValue | undefined;
   }>;
 
-export type GraphExtractionWarning = GraphFactConflictWarning;
+export type GraphInvalidFactWarning = Readonly<{
+  code: "GRAPH_FACT_INVALID_SKIPPED";
+  kind: GraphFactKind;
+  chunkId: string;
+  type: string;
+  reason: string;
+}>;
+
+export type GraphExtractionWarning = GraphFactConflictWarning | GraphInvalidFactWarning;
+
+export type GraphInvalidFactPolicy = "throw" | "warn";
+
+export type GraphExtractionProgressEvent = Readonly<{
+  stage: "extract";
+  completed: number;
+  total: number;
+  chunkId: string;
+}>;
 
 export type GraphChunk<Metadata extends GraphProperties = GraphProperties> = Readonly<{
   id: string;
@@ -150,6 +208,8 @@ export type ExtractGraphFactsOptions<
   concurrency?: number | undefined;
   abortSignal?: AbortSignal | undefined;
   conflicts?: GraphFactConflictOptions | undefined;
+  onInvalidFact?: GraphInvalidFactPolicy | undefined;
+  onProgress?: ((event: GraphExtractionProgressEvent) => void) | undefined;
 }>;
 
 export type ExtractGraphFactsResult<Schema extends GraphSchemaLike> = Readonly<{
@@ -174,6 +234,24 @@ export type GraphHybridSearchOptions = Readonly<{
 }>;
 
 export type GraphSearchOptions = GraphVectorSearchOptions | GraphHybridSearchOptions;
+
+export type GraphVectorSearchInput = Readonly<{
+  type?: "vector" | undefined;
+  seeds?: readonly string[] | undefined;
+  topK?: number | undefined;
+  minScore?: number | undefined;
+}>;
+
+export type GraphHybridSearchInput = Readonly<{
+  type: "hybrid";
+  seeds?: readonly string[] | undefined;
+  topK?: number | undefined;
+  candidatesPerSeed?: number | undefined;
+  rrfK?: number | undefined;
+}>;
+
+export type GraphSearchInput = GraphVectorSearchInput | GraphHybridSearchInput;
+
 export type GraphEvidenceOptions =
   | Readonly<{ type: "none" }>
   | Readonly<{ type: "chunks"; maxChunks: number }>;
@@ -184,6 +262,14 @@ export type GraphTraversalOptions<Schema extends GraphSchemaLike = GraphSchemaLi
   maxDepth: number;
   maxNodes: number;
   maxRelationships: number;
+}>;
+
+export type GraphTraversalInput<Schema extends GraphSchemaLike = GraphSchemaLike> = Readonly<{
+  relationships?: readonly (keyof Schema["relationships"] & string)[] | undefined;
+  direction?: "outgoing" | "incoming" | "both" | undefined;
+  maxDepth?: number | undefined;
+  maxNodes?: number | undefined;
+  maxRelationships?: number | undefined;
 }>;
 
 export type GraphContextSeed = Readonly<{
@@ -232,15 +318,21 @@ export type GraphEvidenceFor<Capability extends GraphEvidenceCapability> =
   | Extract<GraphEvidenceOptions, { type: "none" }>
   | (Capability extends "chunks" ? Extract<GraphEvidenceOptions, { type: "chunks" }> : never);
 
+export type GraphEvidenceInputFor<Capability extends GraphEvidenceCapability> =
+  | Readonly<{ type: "none" }>
+  | (Capability extends "chunks"
+      ? Readonly<{ type: "chunks"; maxChunks?: number | undefined }>
+      : never);
+
 export type GraphRetrieveOptions<
   Schema extends GraphSchemaLike,
   Evidence extends GraphEvidenceCapability = GraphEvidenceCapability,
 > = Readonly<{
   model: EmbeddingModel;
   query: string;
-  search: GraphSearchOptions;
-  traversal: GraphTraversalOptions<Schema>;
-  evidence: GraphEvidenceFor<Evidence>;
+  search?: GraphSearchInput | undefined;
+  traversal?: GraphTraversalInput<Schema> | undefined;
+  evidence?: GraphEvidenceInputFor<Evidence> | undefined;
   retries?: RetrySetting | undefined;
   abortSignal?: AbortSignal | undefined;
 }>;
@@ -249,6 +341,7 @@ export interface GraphContextRetriever<
   Schema extends GraphSchemaLike = GraphSchemaLike,
   Evidence extends GraphEvidenceCapability = GraphEvidenceCapability,
 > {
+  readonly schema?: Schema | undefined;
   readonly evidenceCapability: Evidence;
   retrieve(options: GraphRetrieveOptions<Schema, Evidence>): Promise<GraphContext>;
 }
@@ -320,18 +413,20 @@ export interface GraphExplorer<Schema extends GraphSchemaLike = GraphSchemaLike>
 export type CreateGraphSearchToolOptions<
   Schema extends GraphSchemaLike,
   Retriever extends GraphContextRetriever<Schema> = GraphContextRetriever<Schema>,
+  Formatted = GraphContext,
 > = Readonly<{
   name: string;
-  description: string;
+  description?: string | undefined;
   graph: Retriever;
   model: EmbeddingModel;
-  search: GraphSearchOptions;
-  traversal: GraphTraversalOptions<Schema>;
-  evidence: GraphEvidenceFor<Retriever["evidenceCapability"]>;
+  search?: GraphSearchInput | undefined;
+  traversal?: GraphTraversalInput<Schema> | undefined;
+  evidence?: GraphEvidenceInputFor<Retriever["evidenceCapability"]> | undefined;
   retries?: RetrySetting | undefined;
+  format?: ((context: GraphContext) => Formatted) | undefined;
 }>;
 
-export type GraphSearchTool = Tool<{ query: string }, GraphContext>;
+export type GraphSearchTool<Output = GraphContext> = Tool<{ query: string; topK?: number }, Output>;
 
 export type GraphChangeCounts = Readonly<{
   created: number;

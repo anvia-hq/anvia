@@ -14,8 +14,10 @@ import type {
   GraphDocument,
   GraphDocumentWriter,
   GraphEntity,
+  GraphExtractionProgressEvent,
   GraphExtractionWarning,
   GraphFactConflictOptions,
+  GraphInvalidFactPolicy,
   GraphMention,
   GraphOrphanEntityPolicy,
   GraphProperties,
@@ -24,6 +26,13 @@ import type {
   GraphWriteConflict,
   GraphWriteResult,
 } from "./types.js";
+
+export type GraphIngestionProgressEvent =
+  | GraphExtractionProgressEvent
+  | Readonly<{
+      stage: "chunk" | "embed-chunks" | "embed-entities" | "write-graph" | "write-vector";
+      count: number;
+    }>;
 
 type GraphPreparationOptions<
   Schema extends GraphSchemaLike,
@@ -47,6 +56,8 @@ type GraphPreparationOptions<
   concurrency?: number | undefined;
   abortSignal?: AbortSignal | undefined;
   factConflicts?: GraphFactConflictOptions | undefined;
+  onInvalidFact?: GraphInvalidFactPolicy | undefined;
+  onProgress?: ((event: GraphIngestionProgressEvent) => void) | undefined;
   revision?: string | undefined;
 }>;
 
@@ -61,8 +72,8 @@ export type IngestGraphDocumentsOptions<
 > = Omit<GraphPreparationOptions<Schema, ExtractionModel>, "graph"> &
   Readonly<{
     graph: GraphDocumentWriter<Schema>;
-    conflict: GraphWriteConflict;
-    orphanEntities: GraphOrphanEntityPolicy;
+    conflict?: GraphWriteConflict | undefined;
+    orphanEntities?: GraphOrphanEntityPolicy | undefined;
   }>;
 
 export type IngestGraphTextOptions<
@@ -154,6 +165,8 @@ export async function ingestGraphText<
     concurrency: options.concurrency,
     abortSignal: options.abortSignal,
     factConflicts: options.factConflicts,
+    onInvalidFact: options.onInvalidFact,
+    onProgress: options.onProgress,
     revision: options.revision,
     conflict: options.conflict,
     orphanEntities: options.orphanEntities,
@@ -173,10 +186,11 @@ export async function ingestGraphDocuments<
     entities: prepared.entities,
     relationships: prepared.relationships,
     mentions: prepared.mentions,
-    conflict: options.conflict,
-    orphanEntities: options.orphanEntities,
+    conflict: options.conflict ?? "overwrite",
+    orphanEntities: options.orphanEntities ?? "delete",
     abortSignal: options.abortSignal,
   });
+  options.onProgress?.({ stage: "write-graph", count: prepared.documents.length });
   return {
     ...prepared,
     write,
@@ -205,6 +219,7 @@ export async function ingestGraphDocumentsToStores<
       documents: [...result.vectorDocuments],
       providerOptions: options.vectorProviderOptions,
     });
+    options.onProgress?.({ stage: "write-vector", count: result.vectorDocuments.length });
   } catch (error) {
     throw new GraphIngestionStageError(
       { ...result.receipt, vectorWrite: { status: "failed" } },
@@ -239,6 +254,7 @@ export async function prepareGraphDocuments<
     documents: options.documents,
     chunking: options.chunking,
   });
+  options.onProgress?.({ stage: "chunk", count: chunks.length });
   const graphChunks: GraphChunk<TextDocumentMetadata>[] = chunks.map((chunk) => graphChunk(chunk));
   const entityText = options.entityText ?? defaultGraphEntityText;
   const maxEntityTextLength = options.maxEntityTextLength;
@@ -256,6 +272,8 @@ export async function prepareGraphDocuments<
       concurrency: options.concurrency,
       abortSignal: options.abortSignal,
       conflicts: options.factConflicts,
+      onInvalidFact: options.onInvalidFact,
+      onProgress: options.onProgress,
     }),
     embedDocuments({
       model: options.embeddingModel,
@@ -268,6 +286,7 @@ export async function prepareGraphDocuments<
       abortSignal: options.abortSignal,
     }),
   ]);
+  options.onProgress?.({ stage: "embed-chunks", count: embeddedChunks.documents.length });
   const embeddedEntities = await embedDocuments({
     model: options.embeddingModel,
     documents: [...facts.output.entities],
@@ -277,6 +296,7 @@ export async function prepareGraphDocuments<
     concurrency: options.concurrency,
     abortSignal: options.abortSignal,
   });
+  options.onProgress?.({ stage: "embed-entities", count: embeddedEntities.documents.length });
   const vectorDocuments = groupVectorDocuments(options.documents, embeddedChunks.documents);
   return {
     documents: options.documents.map((document) => graphDocument(document)),

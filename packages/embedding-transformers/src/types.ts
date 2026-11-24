@@ -22,7 +22,11 @@ export type TransformersEmbeddingRuntimeOptions = {
   maxBatchSize?: number | undefined;
 };
 
-export type LoadTransformersEmbeddingModelOptions = TransformersEmbeddingRuntimeOptions & {
+export type LoadTransformersEmbeddingModelOptions = Omit<
+  TransformersEmbeddingRuntimeOptions,
+  "modelId"
+> & {
+  modelId?: string | undefined;
   device?: string | Record<string, string> | undefined;
   dtype?: string | Record<string, string> | undefined;
   cacheDir?: string | undefined;

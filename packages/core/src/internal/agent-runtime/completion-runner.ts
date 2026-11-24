@@ -57,6 +57,7 @@ export type CompletionRunnerContext<Output> = {
   abortSignal: AbortSignal;
   throwIfCancelled: () => void;
   getTurnContext: (turn: number) => ContextBreakdown | undefined;
+  setTurnContext: (turn: number, context: ContextBreakdown) => void;
   setValidatedStructuredOutput: (validated: { text: string; output: Output } | undefined) => void;
   getValidatedStructuredOutput: () => { text: string; output: Output } | undefined;
   recordFailedAttemptUsage: (usage: Usage) => void;
@@ -398,10 +399,19 @@ export async function runUncachedCompletion<Output>(
       const finalResponse = Usage.isEmpty(failedAttemptUsage)
         ? response
         : { ...response, usage: cumulativeUsage };
+      const reported = reportedGenerationContext(
+        context.getTurnContext(args.turn),
+        response.usage.inputTokens,
+      );
+
+      if (reported.context !== undefined) {
+        context.setTurnContext(args.turn, reported.context);
+      }
+
       await generationObservers.end({
         turn: args.turn,
         response: finalResponse,
-        ...reportedGenerationContext(context.getTurnContext(args.turn), response.usage.inputTokens),
+        ...reported,
       });
       context.recordFailedAttemptUsage(Usage.empty());
       return finalResponse;

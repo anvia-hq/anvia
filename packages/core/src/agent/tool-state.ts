@@ -7,6 +7,7 @@ export type AgentToolState = {
   staticTools: readonly AnyTool[];
   providerTools: readonly ProviderTool[];
   toolIndexes: readonly ToolIndex[];
+  skillInstructions?: string | undefined;
 };
 
 type StoredAgentToolState = {

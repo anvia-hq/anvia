@@ -327,7 +327,7 @@ describe("guardrails", () => {
     expect(result.output).toBe("[redacted] token");
     const assistantMessage = result.messages.at(-1);
     expect(assistantMessage).toMatchObject(Message.assistant("[redacted] token"));
-    expect(assistantMessage && getAssistantGenerationMetadata(assistantMessage)).toEqual({
+    expect(assistantMessage && getAssistantGenerationMetadata(assistantMessage)).toMatchObject({
       provider: "test",
       modelId: "test",
       usage: Usage.empty(),

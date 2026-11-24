@@ -58,7 +58,11 @@ export function resolveAgentOptions<Output, M extends CompletionModel, ContextDo
   }
 
   const memory = resolveAgentMemory(options);
-  const instructions = [options.instructions, options.skills?.instructions]
+  const skillInstructions =
+    options.skills?.instructions !== undefined && options.skills.instructions.length > 0
+      ? options.skills.instructions
+      : undefined;
+  const instructions = [options.instructions, skillInstructions]
     .filter((part): part is string => part !== undefined && part.length > 0)
     .join("\n\n");
 
@@ -68,6 +72,7 @@ export function resolveAgentOptions<Output, M extends CompletionModel, ContextDo
     description: options.description,
     model: options.model,
     instructions: instructions.length === 0 ? undefined : instructions,
+    skillInstructions,
     context: [...(options.context ?? [])],
     temperature: options.temperature,
     maxTokens: options.maxTokens,

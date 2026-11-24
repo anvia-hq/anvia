@@ -17,6 +17,7 @@ import type {
   UserMessage,
   CompletionModelControls,
 } from "../completion/index";
+import type { ContextBreakdown } from "../context/breakdown";
 import type { GuardrailDecisionRecord, GuardrailPolicyInput } from "../guardrails";
 import type { MemoryCompactionInfo, MemoryScope } from "../memory";
 import type {
@@ -121,6 +122,7 @@ export type AgentOutcomeBase = {
   finishReason?: CompletionFinishReason | undefined;
   providerFinishReason?: string | undefined;
   contextUsage?: ContextUsage | undefined;
+  contextBreakdown?: ContextBreakdown | undefined;
   /** The full message history produced by the run, ready to replay. */
   messages: MessageType[];
   trace?: AgentTraceInfo | undefined;
@@ -307,6 +309,7 @@ type AgentChildStreamEventBase<Output = string, RawResponse = unknown> =
       turn: number;
       response: CompletionResponse<RawResponse>;
       firstDeltaMs?: number | undefined;
+      contextBreakdown?: ContextBreakdown | undefined;
     }
   | {
       type: "guardrail_decision";

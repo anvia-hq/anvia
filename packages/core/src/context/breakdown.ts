@@ -3,6 +3,7 @@ import type { CompletionRequest, Document, ProviderTool } from "../completion/ty
 /** What a piece of the input context is: the parts of a request that spend input tokens. */
 export type ContextSegmentId =
   | "instructions"
+  | "skills"
   | "messages"
   | "toolResults"
   | "documents"
@@ -12,8 +13,9 @@ export type ContextSegmentId =
   | "outputSchema";
 
 /** Order segments are reported in, from the prompt outward. */
-const SEGMENT_ORDER: readonly ContextSegmentId[] = [
+export const CONTEXT_SEGMENT_IDS: readonly ContextSegmentId[] = Object.freeze([
   "instructions",
+  "skills",
   "messages",
   "toolResults",
   "documents",
@@ -21,7 +23,9 @@ const SEGMENT_ORDER: readonly ContextSegmentId[] = [
   "mcpTools",
   "providerTools",
   "outputSchema",
-];
+]);
+
+const CONTEXT_SEGMENT_ID_SET: ReadonlySet<string> = new Set(CONTEXT_SEGMENT_IDS);
 
 /** One bucket of a context breakdown. */
 export type ContextSegment = Readonly<{
@@ -30,7 +34,7 @@ export type ContextSegment = Readonly<{
   tokens: number;
   /** Serialized characters counted for this bucket, after any media bounding. */
   characters: number;
-  /** Contributions counted: messages, tool results, documents, tools, or schemas. */
+  /** Contributions counted: messages, tool results, documents, tools, skills, or schemas. */
   items: number;
 }>;
 
@@ -55,6 +59,16 @@ export type ContextBreakdownSource = Pick<
 export type ContextBreakdownOptions = {
   /** Names of tool definitions served by MCP servers, reported as their own segment. */
   mcpToolNames?: Iterable<string> | undefined;
+  /**
+   * Skill catalog instructions appended to `source.instructions`, attributed to the `skills`
+   * segment when present in `source.instructions`.
+   */
+  skillInstructions?: string | undefined;
+  /**
+   * Names of skill tools (such as `get_skill_instructions` and `get_skill_reference`).
+   * Their tool definitions and tool result messages are attributed to the `skills` segment.
+   */
+  skillToolNames?: Iterable<string> | undefined;
   /** Counts tokens for serialized content; defaults to a provider-neutral estimate. */
   tokenCounter?: ((value: string) => number) | undefined;
 };
@@ -86,10 +100,70 @@ export function estimateContextTextTokens(value: string): number {
   return value.length === 0 ? 0 : Math.ceil(value.length / 4);
 }
 
+/** Runtime type guard for a {@link ContextBreakdown} payload. */
+export function isContextBreakdown(value: unknown): value is ContextBreakdown {
+  if (!isPlainRecord(value)) return false;
+
+  for (const key of Object.keys(value)) {
+    if (key !== "segments" && key !== "estimatedTokens" && key !== "reportedInputTokens") {
+      return false;
+    }
+  }
+
+  if (
+    !Array.isArray(value.segments) ||
+    !isNonnegativeFiniteNumber(value.estimatedTokens) ||
+    (value.reportedInputTokens !== undefined &&
+      !isNonnegativeFiniteNumber(value.reportedInputTokens))
+  ) {
+    return false;
+  }
+
+  const seen = new Set<string>();
+  for (const segment of value.segments) {
+    if (!isContextSegment(segment) || seen.has(segment.id)) return false;
+
+    seen.add(segment.id);
+  }
+  return true;
+}
+
+function isContextSegment(value: unknown): value is ContextSegment {
+  if (!isPlainRecord(value)) return false;
+
+  for (const key of Object.keys(value)) {
+    if (key !== "id" && key !== "tokens" && key !== "characters" && key !== "items") {
+      return false;
+    }
+  }
+
+  return (
+    typeof value.id === "string" &&
+    CONTEXT_SEGMENT_ID_SET.has(value.id) &&
+    isNonnegativeFiniteNumber(value.tokens) &&
+    isNonnegativeFiniteNumber(value.characters) &&
+    Number.isSafeInteger(value.characters) &&
+    isNonnegativeFiniteNumber(value.items) &&
+    Number.isSafeInteger(value.items)
+  );
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function isNonnegativeFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
 /**
- * Splits a request into the buckets that spend input tokens: instructions, conversation
- * messages, tool results, retrieved documents, tool definitions (MCP tools separately),
- * provider tools, and the output schema.
+ * Splits a request into the buckets that spend input tokens: instructions, skills (catalog
+ * instructions, skill tool definitions, and loaded skill tool results), conversation messages,
+ * tool results, retrieved documents, tool definitions (MCP tools separately), provider tools,
+ * and the output schema.
  */
 export function estimateContextBreakdown(
   source: ContextBreakdownSource,
@@ -97,6 +171,9 @@ export function estimateContextBreakdown(
 ): ContextBreakdown {
   const counter = options.tokenCounter ?? estimateContextTextTokens;
   const mcpToolNames = new Set(options.mcpToolNames ?? []);
+  const skillToolNames = new Set(
+    [...(options.skillToolNames ?? [])].filter((name) => !mcpToolNames.has(name)),
+  );
   const buckets = new Map<ContextSegmentId, string[]>();
   const add = (id: ContextSegmentId, content: string): void => {
     const parts = buckets.get(id);
@@ -106,14 +183,39 @@ export function estimateContextBreakdown(
   };
 
   if (source.instructions !== undefined && source.instructions.length > 0) {
-    add("instructions", source.instructions);
+    const split = splitInstructions(source.instructions, options.skillInstructions);
+
+    if (split.base !== undefined) add("instructions", split.base);
+
+    if (split.skills !== undefined) add("skills", split.skills);
   }
 
   for (const message of source.chatHistory) {
-    add(
-      message.role === "tool" ? "toolResults" : "messages",
-      serializedContent({ role: message.role, content: message.content }),
-    );
+    if (message.role !== "tool") {
+      add("messages", serializedContent({ role: message.role, content: message.content }));
+      continue;
+    }
+
+    if (skillToolNames.size === 0 || !Array.isArray(message.content)) {
+      add("toolResults", serializedContent({ role: message.role, content: message.content }));
+      continue;
+    }
+
+    const skillParts: unknown[] = [];
+    const otherParts: unknown[] = [];
+    for (const part of message.content) {
+      if (isSkillToolResultPart(part, skillToolNames)) skillParts.push(part);
+      else otherParts.push(part);
+    }
+
+    if (skillParts.length === 0) {
+      add("toolResults", serializedContent({ role: message.role, content: message.content }));
+    } else if (otherParts.length === 0) {
+      add("skills", serializedContent({ role: message.role, content: message.content }));
+    } else {
+      add("skills", serializedContent({ role: message.role, content: skillParts }));
+      add("toolResults", serializedContent({ role: message.role, content: otherParts }));
+    }
   }
 
   for (const document of source.documents) {
@@ -121,7 +223,12 @@ export function estimateContextBreakdown(
   }
 
   for (const tool of source.tools) {
-    add(mcpToolNames.has(tool.name) ? "mcpTools" : "tools", serializedContent(tool));
+    let segment: ContextSegmentId = "tools";
+
+    if (mcpToolNames.has(tool.name)) segment = "mcpTools";
+    else if (skillToolNames.has(tool.name)) segment = "skills";
+
+    add(segment, serializedContent(tool));
   }
 
   for (const tool of source.providerTools ?? []) {
@@ -133,7 +240,7 @@ export function estimateContextBreakdown(
   }
 
   const segments: ContextSegment[] = [];
-  for (const id of SEGMENT_ORDER) {
+  for (const id of CONTEXT_SEGMENT_IDS) {
     const parts = buckets.get(id);
 
     if (parts === undefined || parts.length === 0) continue;
@@ -147,6 +254,38 @@ export function estimateContextBreakdown(
     });
   }
   return { segments, estimatedTokens: segments.reduce((total, part) => total + part.tokens, 0) };
+}
+
+function splitInstructions(
+  instructions: string,
+  skillInstructions: string | undefined,
+): { base?: string; skills?: string } {
+  if (skillInstructions === undefined || skillInstructions.length === 0) {
+    return { base: instructions };
+  }
+
+  const index = instructions.lastIndexOf(skillInstructions);
+
+  if (index === -1) {
+    return { base: instructions };
+  }
+
+  const before = instructions.slice(0, index).replace(/\n+$/, "");
+  const after = instructions.slice(index + skillInstructions.length).replace(/^\n+/, "");
+  const remainder =
+    before.length > 0 && after.length > 0 ? `${before}\n\n${after}` : `${before}${after}`;
+  return remainder.trim().length === 0
+    ? { skills: skillInstructions }
+    : { base: remainder, skills: skillInstructions };
+}
+
+function isSkillToolResultPart(part: unknown, skillToolNames: ReadonlySet<string>): boolean {
+  return (
+    isPlainRecord(part) &&
+    part.type === "tool-result" &&
+    typeof part.toolName === "string" &&
+    skillToolNames.has(part.toolName)
+  );
 }
 
 function documentContent(document: Document): string {

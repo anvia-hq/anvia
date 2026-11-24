@@ -22,26 +22,16 @@ exposing retrieval to an agent as a search tool.
 ## Minimal slice
 
 ```ts
-import { embedDocuments } from "@anvia/core/embeddings";
-import { InMemoryVectorStore, retrieveDocuments } from "@anvia/core/vector-store";
+import { createVectorIndex } from "@anvia/core/vector-store";
 import { loadTransformersEmbeddingModel } from "@anvia/transformers";
 
-const embeddingModel = await loadTransformersEmbeddingModel({ modelId: "Xenova/all-MiniLM-L6-v2" });
-const { documents: embedded } = await embedDocuments({
-  model: embeddingModel,
-  documents: notes,
-  id: (note) => note.id,
-  content: (note) => `${note.title}\n${note.body}`,
-  metadata: (note) => ({ topic: note.topic }),
+const model = await loadTransformersEmbeddingModel();
+const kb = createVectorIndex({
+  model,
+  chunking: { maxSize: 1_000, overlap: 100 },
 });
-
-const store = InMemoryVectorStore.fromDocuments({ documents: embedded });
-const results = await retrieveDocuments({
-  store,
-  model: embeddingModel,
-  query: "market risk",
-  topK: 1,
-});
+await kb.ingest(notes);
+const results = await kb.retrieve("market risk", { topK: 3, filter: { topic: "finance" } });
 ```
 
 ## Output

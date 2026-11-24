@@ -62,6 +62,20 @@ describe("Transformers embedding models", () => {
     expect(runtime).not.toHaveBeenCalled();
   });
 
+  it("defaults loadTransformersEmbeddingModel() to DEFAULT_TRANSFORMERS_EMBEDDING_MODEL", async () => {
+    const runtime = runtimeReturning([[1, 0]]);
+    pipelineMock.mockResolvedValueOnce(runtime);
+
+    const model = await loadTransformersEmbeddingModel();
+    expect(model.modelId).toBe(DEFAULT_TRANSFORMERS_EMBEDDING_MODEL);
+    expect(pipelineMock).toHaveBeenCalledWith(
+      "feature-extraction",
+      DEFAULT_TRANSFORMERS_EMBEDDING_MODEL,
+      {},
+    );
+    await model.close();
+  });
+
   it("loads a model eagerly and disposes every output tensor", async () => {
     const output = tensor([[1, 0]]);
     const runtime = runtimeReturning(output);

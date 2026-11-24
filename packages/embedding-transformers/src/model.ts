@@ -118,9 +118,12 @@ class OwnedTransformersEmbeddingModel
 }
 
 export async function loadTransformersEmbeddingModel(
-  options: LoadTransformersEmbeddingModelOptions,
+  options: LoadTransformersEmbeddingModelOptions = {},
 ): Promise<LoadedTransformersEmbeddingModel> {
-  const normalized = normalizeRuntimeOptions(options);
+  const normalized = normalizeRuntimeOptions({
+    ...options,
+    modelId: options.modelId ?? DEFAULT_TRANSFORMERS_EMBEDDING_MODEL,
+  });
   let runtime: TransformersFeatureExtractionPipeline | undefined;
   try {
     const runtimeOptions: Record<string, unknown> = {};

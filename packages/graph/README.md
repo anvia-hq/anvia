@@ -25,10 +25,9 @@ const schema = defineGraphSchema({
     Product: {
       description: "A product or service.",
       identity: ["id"],
-      properties: z.strictObject({ id: z.string(), name: z.string() }),
+      properties: z.object({ id: z.string(), name: z.string() }),
     },
   },
-  relationships: {},
 });
 const client = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY! });
 const facts = await extractGraphFacts({
@@ -55,7 +54,7 @@ console.log(facts.output.entities);
 
 Persistence and provisioning belong to [Neo4j](https://github.com/anvia-hq/anvia/blob/main/packages/graph-neo4j/README.md)
 and [Memgraph](https://github.com/anvia-hq/anvia/blob/main/packages/graph-memgraph/README.md).
-Property schemas must use `z.strictObject()` and preserve input values without transforms or defaults.
+Plain `z.object()` schemas are automatically tightened to strict objects and must preserve input values without transforms or defaults.
 
 ## Learn more
 

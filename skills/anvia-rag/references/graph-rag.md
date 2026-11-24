@@ -18,7 +18,12 @@ const schema = defineGraphSchema({
     Product: {
       description: "A product or service.",
       identity: ["id"],
-      properties: z.strictObject({ id: z.string(), name: z.string() }),
+      properties: z.object({ id: z.string(), name: z.string() }),
+    },
+    Incident: {
+      description: "An operational incident.",
+      identity: ["id"],
+      properties: z.object({ id: z.string(), title: z.string() }),
     },
   },
   relationships: {
@@ -26,7 +31,7 @@ const schema = defineGraphSchema({
       description: "An incident affects a product.",
       from: "Incident",
       to: "Product",
-      properties: z.strictObject({ severity: z.enum(["low", "medium", "high"]) }),
+      properties: z.object({ severity: z.enum(["low", "medium", "high"]) }),
     },
   },
 });
@@ -34,6 +39,8 @@ const schema = defineGraphSchema({
 
 Design the schema from the questions, not the source tables. `identity` fields
 are how facts merge — wrong identity modeling duplicates entities forever.
+Plain `z.object()` schemas are automatically tightened to strict objects;
+`relationships` and relationship `properties` can be omitted when empty.
 
 ## Ingestion
 
@@ -45,14 +52,7 @@ const ingestion = await ingestGraphText({
   document: { id: "incident-42", text, metadata: { tenant: "acme" } },
   extractionModel,
   embeddingModel,
-  chunking: {
-    strategy: "recursive",
-    maxSize: 1_000,
-    overlap: 100,
-    separators: ["\n\n", "\n", " "],
-  },
-  conflict: "error",
-  orphanEntities: "delete",
+  chunking: { maxSize: 1_000, overlap: 100 },
   factConflicts: {
     entity: { properties: { summary: "prefer-longest", aliases: "union", confidence: "max" } },
   },
@@ -60,48 +60,47 @@ const ingestion = await ingestGraphText({
 ```
 
 - Managed graphs accept the same raw-text shape as vector ingestion, so reuse
-  your chunking settings. `ingestGraphDocuments()` batches; `ingestGraphTextToStores()`
-  writes graph + vector store in one call.
+  your chunking settings. `conflict` defaults to `"overwrite"` and
+  `orphanEntities` defaults to `"delete"` (pass explicit overrides when needed).
+  `ingestGraphDocuments()` batches; `ingestGraphTextToStores()` writes graph +
+  vector store in one call; `createKnowledgeGraph()` binds models and defaults
+  for repeated `ingest()`, `retrieve()`, `asTool()`, and `asContext()` calls.
 - Two conflict policies: `factConflicts` (disagreements between chunks, rejected
   by default — strategies like `prefer-longest`, `union`, `max`), and `conflict`
-  (collisions with already-stored facts). Read both errors; they carry fact
-  type, stable key, identity, and source chunk IDs.
+  (collisions with already-stored facts). Set `onInvalidFact: "warn"` to skip
+  malformed LLM facts with structured warnings instead of aborting a batch.
 - Graph and vector writes are separate transactions. On partial failure
   (`GraphIngestionStageError`) reconcile from the returned `receipt` — persist
   ingestion status and retry the incomplete stage yourself.
 - Reuse `ingestion.vectorDocuments` for the vector upsert instead of
   re-embedding. Existing graph registrations are read-only ingestion targets.
 
-## Search tool
+## Search tool & agent context
 
 ```ts
-import { createGraphSearchTool } from "@anvia/graph";
+import { createGraphContext, createGraphSearchTool, formatGraphContext } from "@anvia/graph";
 
 const searchGraph = createGraphSearchTool({
   name: "search_graph",
-  description: "Search connected entities and supporting evidence.", // required — no default
+  description: "Search connected entities and supporting evidence.",
   graph,
   model: embeddingModel,
-  search: { type: "vector", seeds: ["entities"], topK: 8 },
-  traversal: {
-    relationships: ["AFFECTS"],
-    direction: "both",
-    maxDepth: 2,
-    maxNodes: 40,
-    maxRelationships: 80,
-  },
-  evidence: { type: "chunks", maxChunks: 12 },
+  format: formatGraphContext, // optional concise text output for LLMs
 });
+
+// Or attach directly to Agent.context:
+const graphContext = createGraphContext({ graph, model: embeddingModel });
 ```
 
-- `search` has two modes: `{ type: "vector", seeds, topK }` and
-  `{ type: "hybrid", seeds, topK, candidatesPerSeed, rrfK }` — hybrid fuses
-  vector similarity with per-seed graph matches. Prefer it when seed names
-  alone miss paraphrased entities.
-- Bound everything: `maxDepth`, `maxNodes`, `maxRelationships`, `maxChunks`.
-  Unbounded traversal is the graph equivalent of `topK: 1000`.
+- `search`, `traversal`, and `evidence` all default to safe bounded limits
+  (vector search `topK: 8`, all schema relationships, `maxDepth: 2`,
+  `maxNodes: 40`, `maxRelationships: 80`, chunk evidence `maxChunks: 12` on
+  managed graphs). Override any bound explicitly as needed.
+- `search` supports `{ type: "vector", seeds?, topK?, minScore? }` and
+  `{ type: "hybrid", seeds?, topK?, candidatesPerSeed?, rrfK? }` (default
+  `rrfK: 60`).
 - Evidence modes depend on the registration: managed graphs hydrate stored
-  chunks, existing-graph registrations use `{ type: "none" }`.
+  chunks by default, existing-graph registrations default to `{ type: "none" }`.
 - One search tool per question shape, as with vector tools — graph and vector
   tools coexist on the same agent when some questions are relational and some
   are textual.

@@ -26,10 +26,9 @@ const schema = defineGraphSchema({
     Product: {
       description: "A product or service.",
       identity: ["id"],
-      properties: z.strictObject({ id: z.string(), name: z.string() }),
+      properties: z.object({ id: z.string(), name: z.string() }),
     },
   },
-  relationships: {},
 });
 const models = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY! });
 const client = new Neo4jClient({
@@ -42,24 +41,16 @@ const client = new Neo4jClient({
 const graph = client.managedKnowledgeGraph({
   name: "support",
   schema,
-  resources: {
-    labels: { document: "SupportDocument", chunk: "SupportChunk", entity: "SupportEntity" },
-    indexes: {
-      chunks: { vector: { name: "support_chunks", dimensions: 1536, similarity: "cosine" } },
-      entities: { vector: { name: "support_entities", dimensions: 1536, similarity: "cosine" } },
-    },
-  },
+  dimensions: 1536,
 });
 
 try {
-  await graph.ensure({ indexTimeoutMs: 60_000 });
+  await graph.ensure();
   const result = await ingestGraphText({
     graph,
     document: { id: "products", text: "The product with ID anvia is named Anvia." },
     extractionModel: models.completionModel({ modelId: "gpt-5.6", api: "responses" }),
     embeddingModel: models.embeddingModel({ modelId: "text-embedding-3-small" }),
-    conflict: "error",
-    orphanEntities: "delete",
   });
   console.log(result.write);
 } finally {

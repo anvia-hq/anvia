@@ -14,29 +14,16 @@ pnpm add @anvia/transformers @anvia/core
 The first load may download model files. Subsequent loads can reuse the local cache.
 
 ```ts
-import { embedDocuments } from "@anvia/core/embeddings";
-import { InMemoryVectorStore, retrieveDocuments } from "@anvia/core/vector-store";
+import { createVectorIndex } from "@anvia/core/vector-store";
 import { loadTransformersEmbeddingModel } from "@anvia/transformers";
 
-const model = await loadTransformersEmbeddingModel({
-  modelId: "Xenova/all-MiniLM-L6-v2",
-});
+const model = await loadTransformersEmbeddingModel();
 
 try {
-  const { documents } = await embedDocuments({
-    model,
-    documents: [{ id: "password-reset", text: "Reset links expire after 30 minutes." }],
-    id: (document) => document.id,
-    content: (document) => document.text,
-  });
-  const store = InMemoryVectorStore.fromDocuments({ documents });
+  const index = createVectorIndex({ model });
+  await index.ingest({ id: "password-reset", text: "Reset links expire after 30 minutes." });
 
-  const results = await retrieveDocuments({
-    store,
-    model,
-    query: "How long does a reset link last?",
-    topK: 3,
-  });
+  const results = await index.retrieve("How long does a reset link last?", { topK: 3 });
   console.log(results);
 } finally {
   await model.close();

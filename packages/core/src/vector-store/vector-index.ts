@@ -3,6 +3,7 @@ import { createVectorContext, type VectorContext } from "../agent/vector-context
 import type { Document, JsonObject } from "../completion";
 import type { TextDocument, TextDocumentChunkingOptions } from "../documents";
 import type { EmbeddingModel, SparseEmbeddingModel, VectorMetadata } from "../embeddings";
+import { throwIfAborted } from "../internal/abort";
 import type { RetrySetting } from "../retry";
 import type { Tool } from "../tool/tool";
 import {
@@ -114,10 +115,25 @@ export interface VectorIndex<Metadata extends VectorMetadata = VectorMetadata> {
   readonly store: VectorStore<TextDocument<Metadata>, Metadata>;
   ensure(): Promise<void>;
   validate(): Promise<void>;
+  /**
+   * Ingest one or more documents into the vector index.
+   *
+   * Plain-string inputs and objects without an explicit `id` derive a deterministic
+   * content-hash id, so pass an explicit `{ id, text }` if you plan to replace or
+   * delete the document by id later.
+   */
   ingest(
     input: VectorIndexIngestInput<Metadata>,
     options?: VectorIndexIngestOptions,
   ): Promise<IngestVectorDocumentsResult<Metadata>>;
+  /**
+   * Delete documents by id from the underlying store.
+   *
+   * When the index uses `granularity: "chunk"`, document ids are resolved to their
+   * stored chunk record ids via `store.inspect()`. Chunk-granularity deletion requires
+   * a store that implements `inspect()`; otherwise call `store.delete()` directly with
+   * chunk record ids.
+   */
   delete(
     documentIds: string | readonly string[],
     options?: Omit<VectorStoreDeleteOptions, "documentIds">,
@@ -149,6 +165,7 @@ export function buildVectorIndex<Metadata extends VectorMetadata = VectorMetadat
 ): VectorIndex<Metadata> {
   const store = options.store ?? deps.createDefaultStore<Metadata>();
   const isHybrid = "models" in options && options.models !== undefined;
+  let usesChunkGranularity = options.granularity === "chunk";
 
   return {
     store,
@@ -156,11 +173,17 @@ export function buildVectorIndex<Metadata extends VectorMetadata = VectorMetadat
     validate: () => store.validate(),
     ingest: (input, ingestOptions = {}) => {
       const documents = normalizeIngestDocuments(input);
+      const granularity = ingestOptions.granularity ?? options.granularity;
+
+      if (granularity === "chunk") {
+        usesChunkGranularity = true;
+      }
+
       const shared = {
         store,
         documents,
         chunking: ingestOptions.chunking ?? options.chunking,
-        granularity: ingestOptions.granularity ?? options.granularity,
+        granularity,
         retries: ingestOptions.retries ?? options.retries,
         concurrency: ingestOptions.concurrency ?? options.concurrency,
         providerOptions: ingestOptions.providerOptions,
@@ -175,9 +198,29 @@ export function buildVectorIndex<Metadata extends VectorMetadata = VectorMetadat
         throw new TypeError("The configured vector store does not support delete().");
       }
 
-      const ids = Array.isArray(documentIds) ? documentIds : [documentIds];
+      throwIfAborted(deleteOptions.abortSignal);
+      const rawIds = Array.isArray(documentIds) ? documentIds : [documentIds];
+      const ids = [...new Set(rawIds)];
+
+      if (ids.length === 0) {
+        return;
+      }
+
+      let recordIds: readonly string[] = ids;
+
+      if (usesChunkGranularity) {
+        if (store.inspect === undefined) {
+          throw new TypeError(
+            "Deleting by document id on a chunk-granularity vector index requires a store that implements inspect(); call store.delete() directly with chunk record ids instead.",
+          );
+        }
+
+        const chunkIds = await collectChunkRecordIds(store, ids, deleteOptions);
+        recordIds = [...new Set([...ids, ...chunkIds])];
+      }
+
       await store.delete({
-        documentIds: ids,
+        documentIds: recordIds,
         providerOptions: deleteOptions.providerOptions,
         abortSignal: deleteOptions.abortSignal,
       });
@@ -266,23 +309,92 @@ export function buildVectorIndex<Metadata extends VectorMetadata = VectorMetadat
   };
 }
 
+const INSPECT_DELETE_BATCH_SIZE = 500;
+const INSPECT_DELETE_PAGE_SIZE = 1000;
+
+async function collectChunkRecordIds<Metadata extends VectorMetadata>(
+  store: VectorStore<TextDocument<Metadata>, Metadata>,
+  documentIds: readonly string[],
+  options: Omit<VectorStoreDeleteOptions, "documentIds">,
+): Promise<string[]> {
+  const inspect = store.inspect;
+
+  if (inspect === undefined) {
+    return [];
+  }
+
+  const chunkIds: string[] = [];
+  for (let start = 0; start < documentIds.length; start += INSPECT_DELETE_BATCH_SIZE) {
+    const batch = documentIds.slice(start, start + INSPECT_DELETE_BATCH_SIZE);
+    let cursor: string | undefined;
+    const seenCursors = new Set<string>();
+
+    do {
+      throwIfAborted(options.abortSignal);
+      const page = await inspect.call(store, {
+        limit: INSPECT_DELETE_PAGE_SIZE,
+        cursor,
+        filter: { type: "in", key: "documentId", values: batch },
+        providerOptions: options.providerOptions,
+        abortSignal: options.abortSignal,
+      });
+      for (const item of page.items) {
+        chunkIds.push(item.id);
+      }
+
+      if (page.nextCursor === undefined) {
+        break;
+      }
+
+      if (seenCursors.has(page.nextCursor)) {
+        throw new Error(
+          `Vector store inspect() returned a repeated cursor (${page.nextCursor}) while resolving chunk ids for deletion.`,
+        );
+      }
+
+      seenCursors.add(page.nextCursor);
+      cursor = page.nextCursor;
+    } while (cursor !== undefined);
+  }
+  return chunkIds;
+}
+
 function normalizeIngestDocuments<Metadata extends VectorMetadata>(
   input: VectorIndexIngestInput<Metadata>,
 ): TextDocument<Metadata>[] {
   const items = Array.isArray(input) ? input : [input];
-  return items.map((item) => {
+  const documents: TextDocument<Metadata>[] = [];
+  const autoDerivedIndexById = new Map<string, number>();
+
+  for (const item of items) {
+    const isAutoId = typeof item === "string" || item.id === undefined;
+    let doc: TextDocument<Metadata>;
+
     if (typeof item === "string") {
-      return { id: stableTextId(item), text: item };
+      doc = { id: stableTextId(item), text: item };
+    } else {
+      const id = item.id ?? stableTextId(item.text);
+      doc =
+        item.metadata === undefined
+          ? { id, text: item.text }
+          : { id, text: item.text, metadata: item.metadata };
     }
 
-    const id = item.id ?? stableTextId(item.text);
+    if (isAutoId) {
+      const existingIndex = autoDerivedIndexById.get(doc.id);
 
-    if (item.metadata === undefined) {
-      return { id, text: item.text };
+      if (existingIndex !== undefined) {
+        documents[existingIndex] = doc;
+        continue;
+      }
+
+      autoDerivedIndexById.set(doc.id, documents.length);
     }
 
-    return { id, text: item.text, metadata: item.metadata };
-  });
+    documents.push(doc);
+  }
+
+  return documents;
 }
 
 function stableTextId(text: string): string {

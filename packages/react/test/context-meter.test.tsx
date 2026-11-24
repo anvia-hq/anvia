@@ -32,6 +32,22 @@ describe("ContextMeter", () => {
 
     rerender(<ContextMeter usage={usage}>{(value) => `${value.usedTokens} tokens`}</ContextMeter>);
     expect(screen.getByText("100000 tokens")).toBeTruthy();
+
+    const breakdown = {
+      segments: [
+        { id: "instructions" as const, tokens: 20_000, characters: 80_000, items: 1 },
+        { id: "skills" as const, tokens: 30_000, characters: 120_000, items: 3 },
+        { id: "mcpTools" as const, tokens: 50_000, characters: 200_000, items: 8 },
+      ],
+      estimatedTokens: 100_000,
+      reportedInputTokens: 100_000,
+    };
+    rerender(
+      <ContextMeter usage={usage} breakdown={breakdown}>
+        {(value, split) => `${value.remainingTokens} free / ${split?.segments.length ?? 0} buckets`}
+      </ContextMeter>,
+    );
+    expect(screen.getByText("300000 free / 3 buckets")).toBeTruthy();
   });
 
   it("renders nothing when usage is unavailable", () => {

@@ -112,7 +112,9 @@ function shorthandToVectorFilter(shorthand: VectorFilterShorthand): VectorFilter
 
   const clauses: VectorFilter[] = [];
   for (const [key, condition] of Object.entries(shorthand)) {
-    if (condition === undefined) continue;
+    if (condition === undefined) {
+      throw new TypeError(`Vector filter condition for key "${key}" must not be undefined.`);
+    }
 
     if (isMetadataValue(condition)) {
       clauses.push(vectorFilter.eq(key, condition));
@@ -124,8 +126,20 @@ function shorthandToVectorFilter(shorthand: VectorFilterShorthand): VectorFilter
     }
 
     const operators = condition as VectorFilterFieldOperators;
-    for (const [operator, value] of Object.entries(operators)) {
-      if (value === undefined) continue;
+    const operatorEntries = Object.entries(operators);
+
+    if (operatorEntries.length === 0) {
+      throw new TypeError(
+        `Vector filter condition for key "${key}" must specify at least one operator.`,
+      );
+    }
+
+    for (const [operator, value] of operatorEntries) {
+      if (value === undefined) {
+        throw new TypeError(
+          `Vector filter operator "${operator}" for key "${key}" must not be undefined.`,
+        );
+      }
 
       if (!FIELD_OPERATOR_KEYS.has(operator)) {
         throw new TypeError(`Unsupported vector filter operator "${operator}" for key "${key}".`);

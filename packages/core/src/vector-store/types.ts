@@ -28,17 +28,17 @@ export type VectorFilter =
   | { type: "or"; filters: VectorFilterList };
 
 export type VectorFilterFieldOperators = Readonly<{
-  eq?: VectorMetadataValue | undefined;
-  ne?: VectorMetadataValue | undefined;
-  gt?: VectorMetadataValue | undefined;
-  gte?: VectorMetadataValue | undefined;
-  lt?: VectorMetadataValue | undefined;
-  lte?: VectorMetadataValue | undefined;
-  in?: readonly VectorMetadataValue[] | undefined;
+  eq?: VectorMetadataValue;
+  ne?: VectorMetadataValue;
+  gt?: VectorMetadataValue;
+  gte?: VectorMetadataValue;
+  lt?: VectorMetadataValue;
+  lte?: VectorMetadataValue;
+  in?: readonly VectorMetadataValue[];
 }>;
 
 export type VectorFilterShorthand = Readonly<
-  Record<string, VectorMetadataValue | VectorFilterFieldOperators | undefined>
+  Record<string, VectorMetadataValue | VectorFilterFieldOperators>
 >;
 
 export type VectorFilterInput = VectorFilter | VectorFilterShorthand;

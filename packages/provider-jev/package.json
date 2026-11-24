@@ -1,6 +1,6 @@
 {
   "name": "@anvia/jev",
-  "version": "0.3.1",
+  "version": "1.0.0",
   "description": "Jev decision model adapter for Anvia.",
   "author": "anvia",
   "license": "MIT",

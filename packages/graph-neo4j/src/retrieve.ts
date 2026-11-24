@@ -1,13 +1,8 @@
 import { embedText } from "@anvia/core/embeddings";
+import { resolveGraphRetrieveOptions, type GraphTraversalOptions } from "@anvia/graph";
 import { int, isInt, type Record as Neo4jRecord } from "neo4j-driver";
 import { ManagedNeo4jKnowledgeGraph, Neo4jKnowledgeGraphBase } from "./graph.js";
-import {
-  finiteScore,
-  positiveInteger,
-  quoteIdentifier,
-  strictProperties,
-  throwIfAborted,
-} from "./helpers.js";
+import { quoteIdentifier, strictProperties, throwIfAborted } from "./helpers.js";
 import {
   managedPathPredicate,
   managedScopeParameters,
@@ -45,12 +40,26 @@ export async function retrieveGraphContext<Schema extends Neo4jGraphSchema>(
     throw new TypeError("Graph retrieval query must be a non-empty string.");
   }
 
-  validateSearch(options.search);
-  validateTraversal(options.graph.schema, options.traversal);
-  validateEvidence(options.graph.evidenceCapability, options.evidence);
-  throwIfAborted(options.abortSignal);
   const graph = options.graph as Neo4jKnowledgeGraphBase<Schema>;
-  const selectedSeeds = options.search.seeds.map((name) => ({ name, seed: graph.seed(name) }));
+  const availableSeeds = Object.keys(graph.seeds);
+  const hybridSeeds = Object.entries(graph.seeds)
+    .filter(([, seed]) => seed.fulltextIndex !== undefined)
+    .map(([name]) => name);
+  const resolved = resolveGraphRetrieveOptions(
+    {
+      schema: graph.schema,
+      evidenceCapability: graph.evidenceCapability,
+      availableSeeds,
+      hybridSeeds,
+    },
+    {
+      search: options.search,
+      traversal: options.traversal,
+      evidence: options.evidence,
+    },
+  );
+  throwIfAborted(options.abortSignal);
+  const selectedSeeds = resolved.search.seeds.map((name) => ({ name, seed: graph.seed(name) }));
   const expectedDimensions = selectedSeeds[0]?.seed.vectorIndex.dimensions;
 
   if (
@@ -66,7 +75,7 @@ export async function retrieveGraphContext<Schema extends Neo4jGraphSchema>(
     );
   }
 
-  if (options.search.type === "hybrid") {
+  if (resolved.search.type === "hybrid") {
     for (const { name, seed } of selectedSeeds) {
       if (seed.fulltextIndex === undefined) {
         throw new TypeError(`Neo4j graph seed ${name} does not declare a full-text index.`);
@@ -90,7 +99,7 @@ export async function retrieveGraphContext<Schema extends Neo4jGraphSchema>(
   const resultLists: SearchHit[][] = [];
   for (const { seed } of selectedSeeds) {
     const limit =
-      options.search.type === "hybrid" ? options.search.candidatesPerSeed : options.search.topK;
+      resolved.search.type === "hybrid" ? resolved.search.candidatesPerSeed : resolved.search.topK;
     resultLists.push(
       await vectorSearch(
         graph,
@@ -103,7 +112,7 @@ export async function retrieveGraphContext<Schema extends Neo4jGraphSchema>(
       ),
     );
 
-    if (options.search.type === "hybrid") {
+    if (resolved.search.type === "hybrid") {
       const fulltextIndex = seed.fulltextIndex;
 
       if (fulltextIndex === undefined) {
@@ -124,17 +133,17 @@ export async function retrieveGraphContext<Schema extends Neo4jGraphSchema>(
   }
 
   const hits =
-    options.search.type === "hybrid"
-      ? fuseResults(resultLists, options.search.topK, options.search.rrfK)
-      : vectorResults(resultLists[0] ?? [], options.search.topK, options.search.minScore);
+    resolved.search.type === "hybrid"
+      ? fuseResults(resultLists, resolved.search.topK, resolved.search.rrfK)
+      : vectorResults(resultLists[0] ?? [], resolved.search.topK, resolved.search.minScore);
   throwIfAborted(options.abortSignal);
   const seeds = hits.map((hit) => seedFromHit(hit, options.graph.schema));
   const traversed =
     hits.length === 0
       ? { nodes: [], relationships: [] }
-      : await traverse(graph, hits, options.traversal, options.abortSignal);
+      : await traverse(graph, hits, resolved.traversal, options.abortSignal);
   const context = { seeds, ...traversed };
-  const evidence = await hydrateEvidence(graph, context, options.evidence, options.abortSignal);
+  const evidence = await hydrateEvidence(graph, context, resolved.evidence, options.abortSignal);
   return { ...context, evidence };
 }
 
@@ -347,7 +356,7 @@ function vectorResults(
 async function traverse<Schema extends Neo4jGraphSchema>(
   graph: Neo4jKnowledgeGraphBase<Schema>,
   seeds: readonly SearchHit[],
-  options: RetrieveGraphContextOptions<Schema>["traversal"],
+  options: GraphTraversalOptions<Schema>,
   abortSignal?: AbortSignal,
 ): Promise<{ nodes: Neo4jGraphContextNode[]; relationships: Neo4jGraphContextRelationship[] }> {
   const traversalSeedIds = new Set(
@@ -387,21 +396,24 @@ RETURN {elementId: elementId(node), labels: labels(node), properties: properties
     managedQueryParameters(graph, { seedIds: limitedSeedIds }),
     abortSignal,
   );
-  const result = await graph.query(
-    `MATCH (seed) WHERE elementId(seed) IN $seedIds
+  const result =
+    options.relationships.length === 0
+      ? { records: [] }
+      : await graph.query(
+          `MATCH (seed) WHERE elementId(seed) IN $seedIds
   ${managedNodePredicate(graph, "seed", "AND")}
 MATCH path = ${pattern}
 WHERE all(rel IN relationships(path) WHERE type(rel) IN $relationshipTypes${managedRelationshipAndPredicate(graph, "rel")})${managedPathAndPredicate(graph)}
 RETURN [item IN nodes(path) | {elementId: elementId(item), labels: labels(item), properties: properties(item)}] AS nodes,
        [item IN relationships(path) | {elementId: elementId(item), type: type(item), properties: properties(item), from: elementId(startNode(item)), to: elementId(endNode(item))}] AS relationships
 LIMIT $pathLimit`,
-    managedQueryParameters(graph, {
-      seedIds: limitedSeedIds,
-      relationshipTypes: options.relationships,
-      pathLimit: int(pathLimit),
-    }),
-    abortSignal,
-  );
+          managedQueryParameters(graph, {
+            seedIds: limitedSeedIds,
+            relationshipTypes: options.relationships,
+            pathLimit: int(pathLimit),
+          }),
+          abortSignal,
+        );
   const nodes = new Map<string, Neo4jGraphContextNode>();
   const nodeKeysByElementId = new Map<string, string>();
   const relationships = new Map<string, Neo4jGraphContextRelationship>();
@@ -605,76 +617,6 @@ function fuseResults(lists: readonly SearchHit[][], topK: number, rrfK: number):
     });
   }
   return [...fused.values()].sort((left, right) => right.score - left.score).slice(0, topK);
-}
-
-function validateSearch(search: RetrieveGraphContextOptions<Neo4jGraphSchema>["search"]): void {
-  positiveInteger(search.topK, "Neo4j graph search topK");
-
-  if (search.seeds.length === 0 || new Set(search.seeds).size !== search.seeds.length) {
-    throw new TypeError("Neo4j graph search requires unique seed names.");
-  }
-
-  if (search.type === "vector") {
-    if (search.seeds.length !== 1)
-      throw new TypeError(
-        "Vector graph search accepts exactly one seed; use hybrid search to fuse multiple seeds.",
-      );
-
-    finiteScore(search.minScore, "Neo4j graph search minScore");
-  } else {
-    positiveInteger(search.candidatesPerSeed, "Neo4j hybrid candidatesPerSeed");
-    positiveInteger(search.rrfK, "Neo4j hybrid rrfK");
-  }
-}
-
-function validateEvidence(
-  capability: "none" | "chunks",
-  evidence: Neo4jGraphEvidenceOptions,
-): void {
-  if (typeof evidence !== "object" || evidence === null) {
-    throw new TypeError("Neo4j graph retrieval requires an explicit evidence mode.");
-  }
-
-  if (evidence.type === "none") return;
-
-  if (evidence.type !== "chunks") {
-    throw new TypeError("Unknown Neo4j graph evidence mode.");
-  }
-
-  positiveInteger(evidence.maxChunks, "Neo4j graph evidence maxChunks");
-
-  if (capability !== "chunks") {
-    throw new TypeError("Chunk evidence requires a managed Neo4j knowledge graph.");
-  }
-}
-
-function validateTraversal(
-  schema: Neo4jGraphSchema,
-  traversal: RetrieveGraphContextOptions<Neo4jGraphSchema>["traversal"],
-): void {
-  if (
-    traversal.direction !== "outgoing" &&
-    traversal.direction !== "incoming" &&
-    traversal.direction !== "both"
-  ) {
-    throw new TypeError("Neo4j traversal direction must be outgoing, incoming, or both.");
-  }
-
-  positiveInteger(traversal.maxDepth, "Neo4j traversal maxDepth", 8);
-  positiveInteger(traversal.maxNodes, "Neo4j traversal maxNodes");
-  positiveInteger(traversal.maxRelationships, "Neo4j traversal maxRelationships");
-
-  if (
-    traversal.relationships.length === 0 ||
-    new Set(traversal.relationships).size !== traversal.relationships.length
-  ) {
-    throw new TypeError("Neo4j traversal requires unique relationship types.");
-  }
-
-  for (const type of traversal.relationships) {
-    if (!(type in schema.relationships))
-      throw new TypeError(`Neo4j traversal references unknown relationship type ${type}.`);
-  }
 }
 
 function applicationProperties(value: Record<string, unknown>, label: string) {

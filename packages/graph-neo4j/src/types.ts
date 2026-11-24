@@ -1,5 +1,6 @@
-import type { CompletionModel, RetrySetting, Usage } from "@anvia/core";
+import type { RetrySetting } from "@anvia/core";
 import type { EmbeddedDocument } from "@anvia/core/embeddings";
+import type { GraphEvidenceInputFor, GraphSearchInput, GraphTraversalInput } from "@anvia/graph";
 import type { Driver } from "neo4j-driver";
 import type { z } from "zod";
 import type { ManagedNeo4jKnowledgeGraph, Neo4jKnowledgeGraph } from "./graph.js";
@@ -83,24 +84,6 @@ export type Neo4jGraphDocument<Properties extends Neo4jProperties = Neo4jPropert
   properties?: Properties | undefined;
 }>;
 
-export type ExtractGraphFactsOptions<
-  Schema extends Neo4jGraphSchema,
-  Model extends CompletionModel,
-> = Readonly<{
-  model: Model;
-  schema: Schema;
-  chunks: readonly Neo4jGraphChunk[];
-  instructions?: string | undefined;
-  retries?: RetrySetting | undefined;
-  concurrency?: number | undefined;
-  abortSignal?: AbortSignal | undefined;
-}>;
-
-export type ExtractGraphFactsResult<Schema extends Neo4jGraphSchema> = Readonly<{
-  output: Neo4jGraphFacts<Schema>;
-  usage: Usage;
-}>;
-
 export type Neo4jVectorIndex = Readonly<{
   name: string;
   dimensions: number;
@@ -112,17 +95,38 @@ export type Neo4jFulltextIndex = Readonly<{
   properties?: readonly string[] | undefined;
 }>;
 
-export type ManagedNeo4jKnowledgeGraphOptions<Schema extends Neo4jGraphSchema> = Readonly<{
-  name: string;
-  schema: Schema;
-  resources: {
-    labels: { document: string; chunk: string; entity: string };
-    indexes: {
-      chunks: { vector: Neo4jVectorIndex; fulltext?: Neo4jFulltextIndex | undefined };
-      entities: { vector: Neo4jVectorIndex; fulltext?: Neo4jFulltextIndex | undefined };
-    };
+export type ManagedNeo4jResources = Readonly<{
+  labels: { document: string; chunk: string; entity: string };
+  indexes: {
+    chunks: { vector: Neo4jVectorIndex; fulltext?: Neo4jFulltextIndex | undefined };
+    entities: { vector: Neo4jVectorIndex; fulltext?: Neo4jFulltextIndex | undefined };
   };
 }>;
+
+export type ManagedNeo4jFulltextShorthand =
+  | boolean
+  | Readonly<{
+      chunks?: boolean | Neo4jFulltextIndex | undefined;
+      entities?: boolean | readonly string[] | Neo4jFulltextIndex | undefined;
+    }>;
+
+export type ManagedNeo4jKnowledgeGraphOptions<Schema extends Neo4jGraphSchema> =
+  | Readonly<{
+      name: string;
+      schema: Schema;
+      resources: ManagedNeo4jResources;
+      dimensions?: never;
+      similarity?: never;
+      fulltext?: never;
+    }>
+  | Readonly<{
+      name: string;
+      schema: Schema;
+      dimensions: number;
+      similarity?: "cosine" | "euclidean" | undefined;
+      fulltext?: ManagedNeo4jFulltextShorthand | undefined;
+      resources?: undefined;
+    }>;
 
 export type ExistingNeo4jSeed = Readonly<{
   nodeTypes: readonly string[];
@@ -151,7 +155,7 @@ export type Neo4jClientOptions =
 
 export type Neo4jGraphValidateOptions = Readonly<{ abortSignal?: AbortSignal | undefined }>;
 export type Neo4jGraphEnsureOptions = Readonly<{
-  indexTimeoutMs: number;
+  indexTimeoutMs?: number | undefined;
   abortSignal?: AbortSignal | undefined;
 }>;
 
@@ -257,8 +261,8 @@ type AnyNeo4jKnowledgeGraph<Schema extends Neo4jGraphSchema> =
 type RetrieveGraphContextBase<Schema extends Neo4jGraphSchema> = Readonly<{
   model: import("@anvia/core/embeddings").EmbeddingModel;
   query: string;
-  search: Neo4jGraphSearchOptions;
-  traversal: Neo4jGraphTraversalOptions<Schema>;
+  search?: GraphSearchInput | undefined;
+  traversal?: GraphTraversalInput<Schema> | undefined;
   retries?: RetrySetting | undefined;
   abortSignal?: AbortSignal | undefined;
 }>;
@@ -267,12 +271,12 @@ export type RetrieveGraphContextOptions<Schema extends Neo4jGraphSchema> =
   | (RetrieveGraphContextBase<Schema> &
       Readonly<{
         graph: AnyNeo4jKnowledgeGraph<Schema>;
-        evidence: Readonly<{ type: "none" }>;
+        evidence?: GraphEvidenceInputFor<"none"> | undefined;
       }>)
   | (RetrieveGraphContextBase<Schema> &
       Readonly<{
         graph: ManagedNeo4jKnowledgeGraph<Schema>;
-        evidence: Readonly<{ type: "chunks"; maxChunks: number }>;
+        evidence?: GraphEvidenceInputFor<"chunks"> | undefined;
       }>);
 
 export type Neo4jGraphChangeCounts = Readonly<{

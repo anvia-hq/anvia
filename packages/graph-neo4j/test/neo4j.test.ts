@@ -301,7 +301,7 @@ describe("Neo4j schema and lifecycle", () => {
         nodes: {
           Product: {
             description: "Product",
-            identity: ["missing"],
+            identity: ["missing"] as never,
             properties: z.strictObject({ id: z.string() }),
           },
         },
@@ -335,7 +335,13 @@ describe("Neo4j schema and lifecycle", () => {
         relationships: {},
       });
 
-    expect(graphSchema(z.object({ id: z.string() }))).toThrow("strict Zod object");
+    expect(graphSchema(z.looseObject({ id: z.string() }))).toThrow("strict Zod object");
+    expect(() =>
+      graphSchema(z.object({ id: z.string() }))().nodes.Product.properties.parse({
+        id: "1",
+        extra: true,
+      }),
+    ).toThrow();
     expect(graphSchema(z.strictObject({ id: z.coerce.string() }))).toThrow("must not coerce");
     expect(graphSchema(z.strictObject({ id: z.string().default("unknown") }))).toThrow(
       "must not coerce",
@@ -1802,5 +1808,102 @@ describe("graph retrieval", () => {
       properties: { severity: "high" },
       provenance: { documentIds: ["article-1"], chunkIds: ["article-1:0"] },
     });
+  });
+
+  it("derives managed resources from name and dimensions and supports minimal retrieve with empty relationships", async () => {
+    const queries: string[] = [];
+    const driver = fakeDriver({
+      transactionRun: async (query) => {
+        queries.push(query);
+
+        if (query.includes("SEARCH seed")) {
+          return {
+            records: [
+              record({
+                elementId: "4:entity",
+                labels: ["SupportKbEntity", "Product"],
+                properties: {
+                  id: "checkout",
+                  name: "Checkout",
+                  __anvia_key: 'Product:{"id":"checkout"}',
+                  __anvia_source_chunk_ids: [],
+                },
+                score: 0.95,
+              }),
+            ],
+          };
+        }
+
+        if (query.includes("AS node")) {
+          return {
+            records: [
+              record({
+                node: {
+                  elementId: "4:entity",
+                  labels: ["SupportKbEntity", "Product"],
+                  properties: {
+                    id: "checkout",
+                    name: "Checkout",
+                    __anvia_key: 'Product:{"id":"checkout"}',
+                    __anvia_source_chunk_ids: [],
+                  },
+                },
+              }),
+            ],
+          };
+        }
+
+        return { records: [] };
+      },
+    });
+    const nodeOnlySchema = defineNeo4jGraphSchema({
+      nodes: {
+        Product: {
+          description: "Product",
+          identity: ["id"],
+          properties: z.object({ id: z.string(), name: z.string() }),
+        },
+      },
+    });
+    const client = new Neo4jClient({ driver: driver.value });
+    const graph = client.managedKnowledgeGraph({
+      name: "support-kb",
+      schema: nodeOnlySchema,
+      dimensions: 2,
+      fulltext: true,
+    });
+    expect(graph.resources).toEqual({
+      labels: {
+        document: "SupportKbDocument",
+        chunk: "SupportKbChunk",
+        entity: "SupportKbEntity",
+      },
+      indexes: {
+        chunks: {
+          vector: { name: "support_kb_chunks_vector", dimensions: 2, similarity: "cosine" },
+          fulltext: { name: "support_kb_chunks_fulltext" },
+        },
+        entities: {
+          vector: { name: "support_kb_entities_vector", dimensions: 2, similarity: "cosine" },
+          fulltext: { name: "support_kb_entities_fulltext", properties: ["id", "name"] },
+        },
+      },
+    });
+
+    const context = await graph.retrieve({
+      model: {
+        provider: "test",
+        modelId: "embed",
+        async embedTexts(texts: string[]) {
+          return texts.map((document) => ({ document, vector: [1, 0] }));
+        },
+      },
+      query: "checkout",
+    });
+    expect(context.seeds).toHaveLength(1);
+    expect(context.nodes).toHaveLength(1);
+    expect(context.relationships).toEqual([]);
+    expect(context.evidence).toEqual([]);
+    expect(queries.some((query) => query.includes("MATCH path ="))).toBe(false);
   });
 });

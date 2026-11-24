@@ -1176,7 +1176,7 @@ describe("Agent streaming", () => {
     }
 
     const assistantMessage = finalEvent.messages.at(-1);
-    expect(assistantMessage && getAssistantGenerationMetadata(assistantMessage)).toMatchObject({
+    expect(assistantMessage && getAssistantGenerationMetadata(assistantMessage)).toEqual({
       provider: "test",
       modelId: "test",
       usage: {
@@ -1186,6 +1186,7 @@ describe("Agent streaming", () => {
         cachedInputTokens: 0,
         cacheCreationInputTokens: 0,
       },
+      contextBreakdown: expect.any(Object),
     });
   });
 

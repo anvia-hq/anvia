@@ -518,11 +518,21 @@ describe("agent memory", () => {
         .filter((message) => message.role === "assistant")
         .map(getAssistantGenerationMetadata);
       const expected = [
-        { provider: "test", modelId: "test", usage: firstUsage },
-        { provider: "test", modelId: "test", usage: secondUsage },
+        {
+          provider: "test",
+          modelId: "test",
+          usage: firstUsage,
+          contextBreakdown: expect.any(Object),
+        },
+        {
+          provider: "test",
+          modelId: "test",
+          usage: secondUsage,
+          contextBreakdown: expect.any(Object),
+        },
       ];
 
-      expect(resultMetadata).toMatchObject(expected);
+      expect(resultMetadata).toEqual(expected);
       expect(persistedMetadata).toEqual(resultMetadata);
     },
   );

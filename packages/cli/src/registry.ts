@@ -94,7 +94,7 @@ export function createRegistryItem(
 
   const item: AnviaRegistryItem = {
     $schema: "https://ui.shadcn.com/schema/registry-item.json",
-    dependencies: [`@anvia/react-ui@${packageVersion}`],
+    dependencies: [`@anvia/react@${packageVersion}`],
     description: registryItemDescription(name),
     files,
     name,
@@ -425,11 +425,11 @@ function bundledRegistryDirectory(): string {
 }
 
 function registryPackageVersion(): string {
-  const manifestPath = join(bundledRegistryDirectory(), "react-ui.json");
+  const manifestPath = join(bundledRegistryDirectory(), "react.json");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { version?: unknown };
 
   if (typeof manifest.version !== "string") {
-    throw new Error(`Missing React UI version in ${manifestPath}.`);
+    throw new Error(`Missing React package version in ${manifestPath}.`);
   }
 
   return manifest.version;

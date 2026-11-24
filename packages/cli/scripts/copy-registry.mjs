@@ -10,10 +10,10 @@ for (const filename of readdirSync(source).filter((entry) => entry.endsWith(".ts
   cpSync(new URL(filename, source), new URL(filename, destination));
 }
 
-const reactUi = JSON.parse(
-  readFileSync(new URL("../../react-ui/package.json", import.meta.url), "utf8"),
+const reactPkg = JSON.parse(
+  readFileSync(new URL("../../react/package.json", import.meta.url), "utf8"),
 );
 writeFileSync(
-  new URL("react-ui.json", destination),
-  `${JSON.stringify({ version: reactUi.version })}\n`,
+  new URL("react.json", destination),
+  `${JSON.stringify({ version: reactPkg.version })}\n`,
 );

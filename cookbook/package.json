@@ -187,7 +187,6 @@
     "@anvia/pinecone": "workspace:*",
     "@anvia/qdrant": "workspace:*",
     "@anvia/react": "workspace:*",
-    "@anvia/react-ui": "workspace:*",
     "@anvia/sandbox": "workspace:*",
     "@anvia/server": "workspace:*",
     "@anvia/studio": "workspace:*",

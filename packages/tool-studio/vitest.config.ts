@@ -9,11 +9,8 @@ export default defineConfig({
         new URL("../client/src/transport/index.ts", import.meta.url),
       ),
       "@anvia/client": fileURLToPath(new URL("../client/src/index.ts", import.meta.url)),
-      "@anvia/react-ui/stream": fileURLToPath(
-        new URL("../react-ui/src/stream/index.ts", import.meta.url),
-      ),
-      "@anvia/react-ui/graph-explorer": fileURLToPath(
-        new URL("../react-ui/src/graph-explorer/index.ts", import.meta.url),
+      "@anvia/react/stream": fileURLToPath(
+        new URL("../react/src/stream/index.ts", import.meta.url),
       ),
       "@anvia/react/graph-explorer": fileURLToPath(
         new URL("../react/src/graph-explorer/index.ts", import.meta.url),

@@ -1,4 +1,4 @@
-import { SandboxDesktop, type SandboxDesktopControl } from "@anvia/react-ui/sandbox-desktop";
+import { SandboxDesktop, type SandboxDesktopControl } from "@anvia/react/sandbox-desktop";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 

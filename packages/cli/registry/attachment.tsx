@@ -1,6 +1,6 @@
 "use client";
 
-import { AttachmentPrimitive } from "@anvia/react-ui";
+import { AttachmentPrimitive } from "@anvia/react";
 import type { ComponentProps } from "react";
 
 export function Attachment({

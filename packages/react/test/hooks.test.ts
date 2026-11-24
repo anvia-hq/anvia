@@ -9,6 +9,7 @@ import {
   createDirectClientTransport,
 } from "@anvia/client";
 import type { Message } from "@anvia/core/completion";
+import type { ContextBreakdown } from "@anvia/core/context";
 import type { MemoryCompactionMessage } from "@anvia/core/memory";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -136,6 +137,203 @@ describe("public boundary", () => {
     const { result } = renderHook(() => useChat({ transport, initialMessages: stored }));
 
     expect(result.current.contextUsage).toBeUndefined();
+    expect(result.current.contextBreakdown).toBeUndefined();
+  });
+
+  it("tracks contextBreakdown from hydrated messages, stream events, and reset", async () => {
+    const initialBreakdown = {
+      segments: [{ id: "instructions" as const, tokens: 20, characters: 80, items: 1 }],
+      estimatedTokens: 20,
+      reportedInputTokens: 20,
+    };
+    const nextBreakdown = {
+      segments: [
+        { id: "instructions" as const, tokens: 20, characters: 80, items: 1 },
+        { id: "skills" as const, tokens: 30, characters: 120, items: 2 },
+        { id: "mcpTools" as const, tokens: 10, characters: 40, items: 1 },
+      ],
+      estimatedTokens: 60,
+      reportedInputTokens: 60,
+    };
+    const stored = publicReact.initialMessagesFromMemory([
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Earlier" }],
+        metadata: {
+          anvia: {
+            generation: {
+              provider: "test",
+              modelId: "test-model",
+              usage: {
+                inputTokens: 20,
+                outputTokens: 5,
+                totalTokens: 25,
+                cachedInputTokens: 0,
+                cacheCreationInputTokens: 0,
+              },
+              contextBreakdown: initialBreakdown,
+            },
+          },
+        },
+      },
+    ]);
+    const transport = createDirectClientTransport({
+      handler: () =>
+        events([
+          { type: "run_start", runId: "run_1", source: "agent" },
+          { type: "message_start", runId: "run_1", messageId: "msg_2", role: "assistant" },
+          { type: "text_delta", runId: "run_1", messageId: "msg_2", partId: "p_1", delta: "Ok" },
+          {
+            type: "message_end",
+            runId: "run_1",
+            messageId: "msg_2",
+            contextBreakdown: nextBreakdown,
+          },
+          {
+            type: "run_end",
+            runId: "run_1",
+            status: "completed",
+            contextBreakdown: nextBreakdown,
+          },
+        ]),
+    });
+    const { result } = renderHook(() => useChat({ transport, initialMessages: stored }));
+
+    expect(result.current.contextBreakdown).toEqual(initialBreakdown);
+
+    await act(async () => {
+      await result.current.sendMessage({ text: "Next" });
+    });
+
+    expect(result.current.contextBreakdown).toEqual(nextBreakdown);
+    expect(result.current.messages.at(-1)?.generation?.contextBreakdown).toEqual(nextBreakdown);
+
+    act(() => {
+      result.current.reset();
+    });
+
+    expect(result.current.contextBreakdown).toBeUndefined();
+  });
+
+  it("ignores scoped child agent events when tracking parent contextUsage and contextBreakdown", async () => {
+    const parentBreakdown: ContextBreakdown = {
+      segments: [{ id: "instructions", tokens: 80, characters: 320, items: 1 }],
+      estimatedTokens: 80,
+      reportedInputTokens: 80,
+    };
+    const childBreakdown: ContextBreakdown = {
+      segments: [{ id: "skills", tokens: 12, characters: 48, items: 1 }],
+      estimatedTokens: 12,
+      reportedInputTokens: 12,
+    };
+    const parentUsage = {
+      model: { modelId: "parent-model", context: { contextWindow: 1_000 } },
+      usedTokens: 80,
+      remainingTokens: 920,
+      usedPercent: 8,
+      remainingPercent: 92,
+    };
+    const childUsage = {
+      model: { modelId: "child-model", context: { contextWindow: 100 } },
+      usedTokens: 12,
+      remainingTokens: 88,
+      usedPercent: 12,
+      remainingPercent: 88,
+    };
+    const transport = createDirectClientTransport({
+      handler: () =>
+        events([
+          { type: "run_start", runId: "run_1", source: "agent" },
+          {
+            type: "message_start",
+            runId: "run_1",
+            messageId: "assistant_1",
+            role: "assistant",
+          },
+          {
+            type: "message_end",
+            runId: "run_1",
+            messageId: "assistant_1",
+            contextUsage: parentUsage,
+            contextBreakdown: parentBreakdown,
+          },
+          {
+            type: "message_end",
+            runId: "run_1",
+            messageId: "child_assistant_1",
+            scope: { parentToolCallId: "call_sub", agentId: "child" },
+            contextUsage: childUsage,
+            contextBreakdown: childBreakdown,
+          },
+          {
+            type: "run_end",
+            runId: "run_1",
+            status: "completed",
+            scope: { parentToolCallId: "call_sub", agentId: "child" },
+            contextUsage: childUsage,
+            contextBreakdown: childBreakdown,
+          },
+        ]),
+    });
+
+    const { result } = renderHook(() => useChat({ transport }));
+
+    await act(async () => {
+      await result.current.sendMessage({ text: "Delegate" });
+    });
+
+    expect(result.current.contextUsage).toEqual(parentUsage);
+    expect(result.current.contextBreakdown).toEqual(parentBreakdown);
+  });
+
+  it("preserves the last turn's contextBreakdown when a later turn ends in error", async () => {
+    const turn1Breakdown: ContextBreakdown = {
+      segments: [
+        { id: "instructions", tokens: 40, characters: 160, items: 1 },
+        { id: "skills", tokens: 60, characters: 240, items: 2 },
+      ],
+      estimatedTokens: 100,
+      reportedInputTokens: 100,
+    };
+    const transport = createDirectClientTransport({
+      handler: () =>
+        events([
+          { type: "run_start", runId: "run_1", source: "agent" },
+          {
+            type: "message_start",
+            runId: "run_1",
+            messageId: "assistant_1",
+            role: "assistant",
+          },
+          {
+            type: "message_end",
+            runId: "run_1",
+            messageId: "assistant_1",
+            contextBreakdown: turn1Breakdown,
+          },
+          {
+            type: "turn_end",
+            runId: "run_1",
+            turn: 1,
+            contextBreakdown: turn1Breakdown,
+          },
+          {
+            type: "error",
+            runId: "run_1",
+            error: { name: "Error", message: "Turn 2 failed", retryable: false },
+          },
+          { type: "run_end", runId: "run_1", status: "error" },
+        ]),
+    });
+
+    const { result } = renderHook(() => useChat({ transport }));
+
+    await act(async () => {
+      await result.current.sendMessage({ text: "Run" });
+    });
+
+    expect(result.current.contextBreakdown).toEqual(turn1Breakdown);
+    expect(result.current.messages.at(-1)?.generation?.contextBreakdown).toEqual(turn1Breakdown);
   });
 
   it("does not hide explicit memory compaction messages during hydration", () => {

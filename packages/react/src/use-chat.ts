@@ -18,7 +18,12 @@ import {
 } from "@anvia/core/agent/interactions";
 import type { Usage } from "@anvia/core/completion";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { contextUsageFromMessages, contextUsageUpdateFromEvent } from "./context-usage";
+import {
+  contextBreakdownFromMessages,
+  contextBreakdownUpdateFromEvent,
+  contextUsageFromMessages,
+  contextUsageUpdateFromEvent,
+} from "./context-usage";
 import { clearChatResumeState, loadChatResumeState, saveChatResumeState } from "./resume";
 import { runUsageUpdateFromEvent } from "./run-usage";
 import { appendRetainedEvent, retainedEventLimit } from "./retained-events";
@@ -46,6 +51,9 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
   const [runUsage, setRunUsage] = useState<Usage>();
   const [contextUsage, setContextUsage] = useState(() =>
     contextUsageFromMessages(options.initialMessages ?? []),
+  );
+  const [contextBreakdown, setContextBreakdown] = useState(() =>
+    contextBreakdownFromMessages(options.initialMessages ?? []),
   );
   const [status, setStatus] = useState<UseChatResult<Transport>["status"]>("ready");
   const [error, setError] = useState<Error>();
@@ -91,6 +99,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
       updateMessages((current) => {
         const value = typeof next === "function" ? next(current) : next;
         setContextUsage(contextUsageFromMessages(value));
+        setContextBreakdown(contextBreakdownFromMessages(value));
         return value;
       });
     },
@@ -140,6 +149,12 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
 
       if (contextUsageUpdate !== undefined) {
         setContextUsage(contextUsageUpdate.contextUsage);
+      }
+
+      const contextBreakdownUpdate = contextBreakdownUpdateFromEvent(event);
+
+      if (contextBreakdownUpdate !== undefined) {
+        setContextBreakdown(contextBreakdownUpdate.contextBreakdown);
       }
 
       const nextRunUsage = runUsageUpdateFromEvent(event);
@@ -193,6 +208,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
       updateMessages(nextMessages);
       setRunUsage(undefined);
       setContextUsage(contextUsageFromMessages(nextMessages));
+      setContextBreakdown(contextBreakdownFromMessages(nextMessages));
       setEvents([]);
       setError(undefined);
 
@@ -399,6 +415,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
     updateMessages([]);
     setRunUsage(undefined);
     setContextUsage(undefined);
+    setContextBreakdown(undefined);
     setEvents([]);
     interactionsRef.current = [];
     respondingRef.current = new Set();
@@ -414,6 +431,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
     events,
     runUsage,
     contextUsage,
+    contextBreakdown,
     suggestions: options.suggestions ?? [],
     setMessages,
     sendMessage,

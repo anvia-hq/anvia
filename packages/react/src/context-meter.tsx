@@ -4,15 +4,17 @@ import { forwardRef, type ReactNode } from "react";
 import { type PrimitiveProps, renderPrimitive } from "./primitives";
 
 type ContextUsage = NonNullable<UseChatResult["contextUsage"]>;
+type ContextBreakdown = NonNullable<UseChatResult["contextBreakdown"]>;
 
 export type ContextMeterProps = Omit<PrimitiveProps<"div">, "children"> & {
   usage?: ContextUsage;
+  breakdown?: ContextBreakdown;
   display?: "remaining" | "used";
-  children?: ReactNode | ((usage: ContextUsage) => ReactNode);
+  children?: ReactNode | ((usage: ContextUsage, breakdown?: ContextBreakdown) => ReactNode);
 };
 
 export const ContextMeterPrimitive = /* @__PURE__ */ forwardRef<HTMLDivElement, ContextMeterProps>(
-  function ContextMeter({ usage, display = "remaining", children, ...props }, ref) {
+  function ContextMeter({ usage, breakdown, display = "remaining", children, ...props }, ref) {
     if (usage === undefined) {
       return null;
     }
@@ -22,7 +24,7 @@ export const ContextMeterPrimitive = /* @__PURE__ */ forwardRef<HTMLDivElement, 
     const label = `${roundedPercent}% context ${display === "remaining" ? "left" : "used"}`;
     const content =
       typeof children === "function"
-        ? children(usage)
+        ? children(usage, breakdown)
         : (children ?? (
             <>
               <span>{label}</span>

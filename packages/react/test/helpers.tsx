@@ -19,6 +19,7 @@ export function createChatController(overrides: Partial<UseChatResult> = {}): Us
     messages: [],
     events: [],
     contextUsage: undefined,
+    contextBreakdown: undefined,
     suggestions: [],
     setMessages: vi.fn(),
     sendMessage: vi.fn(async () => {}),

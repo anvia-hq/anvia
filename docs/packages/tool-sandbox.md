@@ -440,13 +440,13 @@ docker run --rm \
   my-sandbox
 ```
 
-**3. The browser** renders `SandboxTerminal` from `@anvia/react-ui/sandbox-terminal`
-(see [the component docs](./react-ui.md#sandbox-terminal)) and asks your backend for a ticket on
+**3. The browser** renders `SandboxTerminal` from `@anvia/react/sandbox-terminal`
+(see [the component docs](./react.md#sandbox-terminal)) and asks your backend for a ticket on
 every connection:
 
 ```tsx
 import "@xterm/xterm/css/xterm.css";
-import { SandboxTerminal } from "@anvia/react-ui/sandbox-terminal";
+import { SandboxTerminal } from "@anvia/react/sandbox-terminal";
 
 <div style={{ height: 420 }}>
   <SandboxTerminal
@@ -691,7 +691,7 @@ The daemon's VNC server listens on `127.0.0.1` with no password, so the only way
 connection to it, with `authorizeDesktop` returning `{ sandboxId, readOnly?, holder? }`. Tickets,
 Origin checks and status codes are the same as for [browser terminals](#browser-terminals), and
 `hub.listen({ desktopPath: "/desktop" })` routes to it. No websockify runs in the sandbox. In React,
-use [`<SandboxDesktop>`](./react-ui.md#sandbox-desktop).
+use [`<SandboxDesktop>`](./react.md#sandbox-desktop).
 
 ```ts
 authorizeDesktop(request) {

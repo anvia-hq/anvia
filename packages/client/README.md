@@ -78,8 +78,8 @@ See the [durable HTTP guide](../../docs/packages/durable.md#http-server-and-clie
 ### Chat UI transport
 
 The optional `@anvia/client/durable-chat` entrypoint exports `createDurableChatTransport`, which
-adapts a durable endpoint to the `ClientTransport` contract used by `useChat` from `@anvia/react`
-and the `@anvia/react-ui` primitives. Create one transport per chat session; the agent, session and
+adapts a durable endpoint to the `ClientTransport` contract used by `useChat` and the chat
+primitives from `@anvia/react`. Create one transport per chat session; the agent, session and
 request identity live there, not in an individual message request.
 
 ```ts

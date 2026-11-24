@@ -33,6 +33,7 @@ import {
   firstString,
   indexMatches,
   recordContains,
+  resolveResources,
   seedRegistration,
   validateExistingSeed,
   validateResources,
@@ -43,6 +44,7 @@ import {
 import type {
   DeleteMemgraphDocumentsOptions,
   ManagedMemgraphKnowledgeGraphOptions,
+  ManagedMemgraphResources,
   MemgraphGraphConflict,
   MemgraphGraphValidateOptions,
   MemgraphKnowledgeGraphOptions,
@@ -75,7 +77,7 @@ export abstract class MemgraphKnowledgeGraphBase<
     protected readonly owner: MemgraphClient,
     readonly schema: Schema,
   ) {
-    if (schema.kind !== "graph-schema") {
+    if (schema.kind !== "graph-schema" && schema.kind !== "neo4j-graph-schema") {
       throw new TypeError("Memgraph knowledge graphs require defineGraphSchema().");
     }
   }
@@ -266,13 +268,13 @@ export class ManagedMemgraphKnowledgeGraph<
 > extends MemgraphKnowledgeGraphBase<Schema, "chunks"> {
   readonly evidenceCapability = "chunks" as const;
   readonly seeds: Readonly<Record<string, MemgraphSeedRegistration>>;
-  readonly resources: ManagedMemgraphKnowledgeGraphOptions<Schema>["resources"];
+  readonly resources: ManagedMemgraphResources;
   readonly name: string;
 
   constructor(owner: MemgraphClient, options: ManagedMemgraphKnowledgeGraphOptions<Schema>) {
     super(owner, options.schema);
     this.name = assertName(options.name, "Managed Memgraph graph name");
-    this.resources = validateResources(options.resources);
+    this.resources = validateResources(resolveResources(options));
     const chunks = seedRegistration(
       this.resources.labels.chunk,
       this.resources.indexes.chunks.vector,
@@ -458,7 +460,7 @@ function requiredString(value: unknown, label: string): string {
 
 function validateReplacement<Schema extends GraphSchemaLike>(
   options: ReplaceMemgraphDocumentsOptions<Schema>,
-  indexes: ManagedMemgraphKnowledgeGraphOptions<Schema>["resources"]["indexes"],
+  indexes: ManagedMemgraphResources["indexes"],
   schema: Schema,
 ): void {
   if (!(["error", "overwrite", "keep-existing"] as const).includes(options.conflict)) {

@@ -4,6 +4,8 @@ import { driverNumber, positiveInteger, quoteIdentifier } from "./helpers.js";
 import type {
   ExistingMemgraphSeed,
   ManagedMemgraphKnowledgeGraphOptions,
+  ManagedMemgraphResources,
+  ManagedMemgraphTextShorthand,
   MemgraphTextIndex,
   MemgraphVectorIndex,
 } from "./types.js";
@@ -56,9 +58,100 @@ export function validateExistingSeed(
   return Object.freeze(registration);
 }
 
-export function validateResources<Schema extends GraphSchemaLike>(
-  resources: ManagedMemgraphKnowledgeGraphOptions<Schema>["resources"],
-): ManagedMemgraphKnowledgeGraphOptions<Schema>["resources"] {
+export function resolveResources<Schema extends GraphSchemaLike>(
+  options: ManagedMemgraphKnowledgeGraphOptions<Schema>,
+): ManagedMemgraphResources {
+  if ("resources" in options && options.resources !== undefined) {
+    return options.resources;
+  }
+
+  const labelPrefix = toPascalCase(options.name);
+  const indexPrefix = toSnakeCase(options.name);
+  const similarity = options.similarity ?? "cosine";
+  const dimensions = options.dimensions;
+  const textShorthand = options.text ?? options.fulltext;
+  const textIndexes = resolveTextShorthand(options.schema, indexPrefix, textShorthand);
+  const chunks: { vector: MemgraphVectorIndex; text?: MemgraphTextIndex | undefined } = {
+    vector: { name: `${indexPrefix}_chunks_vector`, dimensions, similarity },
+  };
+  const entities: { vector: MemgraphVectorIndex; text?: MemgraphTextIndex | undefined } = {
+    vector: { name: `${indexPrefix}_entities_vector`, dimensions, similarity },
+  };
+
+  if (textIndexes.chunks !== undefined) chunks.text = textIndexes.chunks;
+
+  if (textIndexes.entities !== undefined) entities.text = textIndexes.entities;
+
+  return {
+    labels: {
+      document: `${labelPrefix}Document`,
+      chunk: `${labelPrefix}Chunk`,
+      entity: `${labelPrefix}Entity`,
+    },
+    indexes: { chunks, entities },
+  };
+}
+
+function resolveTextShorthand(
+  schema: GraphSchemaLike,
+  indexPrefix: string,
+  text: ManagedMemgraphTextShorthand | undefined,
+): { chunks?: MemgraphTextIndex; entities?: MemgraphTextIndex } {
+  if (text === undefined || text === false) return {};
+
+  const entityProperties = [
+    ...new Set(Object.values(schema.nodes).flatMap((node) => Object.keys(node.properties.shape))),
+  ];
+
+  if (text === true) {
+    const result: { chunks?: MemgraphTextIndex; entities?: MemgraphTextIndex } = {
+      chunks: { name: `${indexPrefix}_chunks_text` },
+    };
+
+    if (entityProperties.length > 0) {
+      result.entities = { name: `${indexPrefix}_entities_text`, properties: entityProperties };
+    }
+
+    return result;
+  }
+
+  const result: { chunks?: MemgraphTextIndex; entities?: MemgraphTextIndex } = {};
+
+  if (text.chunks === true) {
+    result.chunks = { name: `${indexPrefix}_chunks_text` };
+  } else if (typeof text.chunks === "object") {
+    result.chunks = text.chunks;
+  }
+
+  if (text.entities === true) {
+    result.entities = { name: `${indexPrefix}_entities_text`, properties: entityProperties };
+  } else if (Array.isArray(text.entities)) {
+    result.entities = { name: `${indexPrefix}_entities_text`, properties: text.entities };
+  } else if (typeof text.entities === "object") {
+    result.entities = text.entities as MemgraphTextIndex;
+  }
+
+  return result;
+}
+
+function toPascalCase(name: string): string {
+  const parts = name
+    .split(/[^A-Za-z0-9]+/)
+    .filter((part) => part.length > 0)
+    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`);
+  return parts.length > 0 ? parts.join("") : "Graph";
+}
+
+function toSnakeCase(name: string): string {
+  const normalized = name
+    .replaceAll(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replaceAll(/[^A-Za-z0-9]+/g, "_")
+    .replaceAll(/^_+|_+$/g, "")
+    .toLowerCase();
+  return normalized.length > 0 ? normalized : "graph";
+}
+
+export function validateResources(resources: ManagedMemgraphResources): ManagedMemgraphResources {
   const labels = Object.fromEntries(
     Object.entries(resources.labels).map(([key, value]) => [
       key,
@@ -225,7 +318,9 @@ function validateVectorIndex(index: MemgraphVectorIndex): void {
   assertName(index.name, "Memgraph vector index name");
   positiveInteger(index.dimensions, `Memgraph vector index ${index.name} dimensions`);
 
-  if (!(["cosine", "euclidean", "inner-product"] as const).includes(index.similarity)) {
+  if (
+    !(["cosine", "euclidean", "dotProduct", "inner-product"] as const).includes(index.similarity)
+  ) {
     throw new TypeError(`Memgraph vector index ${index.name} has an unsupported similarity.`);
   }
 
@@ -258,6 +353,7 @@ function similarityName(value: MemgraphVectorIndex["similarity"]): string {
       return "cos";
     case "euclidean":
       return "l2sq";
+    case "dotProduct":
     case "inner-product":
       return "ip";
   }

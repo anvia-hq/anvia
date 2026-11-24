@@ -1,7 +1,7 @@
 {
   "name": "@anvia/react",
   "version": "1.2.0",
-  "description": "React hooks for Anvia client streams and runtime primitives.",
+  "description": "React hooks and composable, headless UI primitives for Anvia applications.",
   "author": "anvia",
   "license": "MIT",
   "repository": {
@@ -16,6 +16,7 @@
     "access": "public"
   },
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -23,25 +24,105 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./attachment": {
+      "types": "./dist/attachment/index.d.ts",
+      "import": "./dist/attachment/index.js"
+    },
+    "./chat": {
+      "types": "./dist/chat/index.d.ts",
+      "import": "./dist/chat/index.js"
+    },
+    "./completion": {
+      "types": "./dist/completion/index.d.ts",
+      "import": "./dist/completion/index.js"
+    },
     "./graph-explorer": {
       "types": "./dist/graph-explorer/index.d.ts",
       "import": "./dist/graph-explorer/index.js"
+    },
+    "./human-input": {
+      "types": "./dist/human-input/index.d.ts",
+      "import": "./dist/human-input/index.js"
+    },
+    "./image": {
+      "types": "./dist/image/index.d.ts",
+      "import": "./dist/image/index.js"
+    },
+    "./message": {
+      "types": "./dist/message/index.d.ts",
+      "import": "./dist/message/index.js"
+    },
+    "./sandbox-terminal": {
+      "types": "./dist/sandbox-terminal/index.d.ts",
+      "import": "./dist/sandbox-terminal/index.js"
+    },
+    "./sandbox-desktop": {
+      "types": "./dist/sandbox-desktop/index.d.ts",
+      "import": "./dist/sandbox-desktop/index.js"
+    },
+    "./selection-toolbar": {
+      "types": "./dist/selection-toolbar/index.d.ts",
+      "import": "./dist/selection-toolbar/index.js"
+    },
+    "./stream": {
+      "types": "./dist/stream/index.d.ts",
+      "import": "./dist/stream/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared.d.ts",
+      "import": "./dist/shared.js"
+    },
+    "./thread-list": {
+      "types": "./dist/thread-list/index.d.ts",
+      "import": "./dist/thread-list/index.js"
     }
   },
   "scripts": {
-    "build": "tsdown src/index.ts src/graph-explorer/index.ts --format esm --dts --sourcemap --clean --external react --no-fixed-extension",
+    "build": "tsdown src/index.ts src/attachment/index.ts src/chat/index.ts src/completion/index.ts src/graph-explorer/index.ts src/human-input/index.ts src/image/index.ts src/message/index.ts src/sandbox-desktop/index.ts src/sandbox-terminal/index.ts src/selection-toolbar/index.ts src/shared.ts src/stream/index.ts src/thread-list/index.ts --format esm --dts --sourcemap --clean --external react --external react-dom --external @xterm/xterm --external @xterm/addon-fit --external @novnc/novnc --no-fixed-extension",
     "coverage": "vitest run --coverage",
     "test": "vitest run",
     "typecheck": "tsrs --noEmit"
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "^1.5.0",
+    "@tiptap/core": "^3.35.0",
+    "@tiptap/extension-document": "^3.35.0",
+    "@tiptap/extension-hard-break": "^3.35.0",
+    "@tiptap/extension-mention": "^3.35.0",
+    "@tiptap/extension-paragraph": "^3.35.0",
+    "@tiptap/extension-placeholder": "^3.35.0",
+    "@tiptap/extension-text": "^3.35.0",
+    "@tiptap/pm": "^3.35.0",
+    "@tiptap/react": "^3.35.0",
+    "@tiptap/suggestion": "^3.35.0",
+    "marked": "^18.2.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "peerDependencies": {
     "@anvia/client": "workspace:^",
     "@anvia/core": "workspace:^",
     "@anvia/graph": "workspace:^",
-    "react": ">=18"
+    "@novnc/novnc": ">=1.5.0",
+    "@xterm/addon-fit": ">=0.10.0",
+    "@xterm/xterm": ">=5.5.0",
+    "react": ">=18",
+    "react-dom": ">=18"
   },
   "peerDependenciesMeta": {
     "@anvia/graph": {
+      "optional": true
+    },
+    "@xterm/xterm": {
+      "optional": true
+    },
+    "@xterm/addon-fit": {
+      "optional": true
+    },
+    "@novnc/novnc": {
+      "optional": true
+    },
+    "react-dom": {
       "optional": true
     }
   },
@@ -50,11 +131,14 @@
     "@anvia/core": "workspace:*",
     "@anvia/durable": "workspace:*",
     "@anvia/graph": "workspace:*",
+    "@novnc/novnc": "^1.7.0",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^24.9.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitest/coverage-v8": "4.1.11",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "esbuild": "^0.28.2",
     "happy-dom": "21.0.4",
     "react": "^19.3.1",

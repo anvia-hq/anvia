@@ -1,5 +1,5 @@
 import type { GraphExploreNode, GraphExploreResult } from "@anvia/graph";
-import type { GraphExplorerController } from "@anvia/react/graph-explorer";
+import type { GraphExplorerController } from "../src/graph-explorer";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 

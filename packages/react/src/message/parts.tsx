@@ -1,10 +1,7 @@
 import type { UIAttachment, UIMessagePart } from "@anvia/client";
-import {
-  type SmoothStreamItemAdapter,
-  type StreamSmoothingLifecycle,
-  useSmoothStreamItems,
-  useSmoothStreamText,
-} from "@anvia/react";
+import type { SmoothStreamItemAdapter, StreamSmoothingLifecycle } from "../stream-smoothing";
+import { useSmoothStreamItems } from "../use-smooth-stream-items";
+import { useSmoothStreamText } from "../use-smooth-stream-text";
 import {
   type ComponentPropsWithoutRef,
   createElement,

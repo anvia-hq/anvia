@@ -8,7 +8,7 @@ import type {
   AgentToolApprovalRequest,
   AgentToolQuestionRequest,
 } from "@anvia/core/agent/interactions";
-import type { UseChatResult } from "@anvia/react";
+import type { UseChatResult } from "../types";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
 
 export type ChatController<

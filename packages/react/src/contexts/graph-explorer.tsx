@@ -3,7 +3,7 @@ import type {
   GraphExplorerController,
   GraphExplorerExpandNodeOptions,
   GraphExplorerStatus,
-} from "@anvia/react/graph-explorer";
+} from "../graph-explorer/use-graph-explorer";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
 
 export type { GraphExplorerController, GraphExplorerExpandNodeOptions, GraphExplorerStatus };

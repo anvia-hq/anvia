@@ -6,7 +6,7 @@ import type {
   UIAttachment,
 } from "@anvia/client";
 import { CLIENT_STREAM_PROTOCOL } from "@anvia/client";
-import { type SendMessageInput, useChat } from "@anvia/react";
+import { type SendMessageInput, useChat } from "../src";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
 import { StrictMode, useEffect, useMemo, useState } from "react";

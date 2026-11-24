@@ -10,7 +10,7 @@ while you choose your design system and transport.
 pnpm add @anvia/react @anvia/client @anvia/core react react-dom
 ```
 
-Requires React 18 or newer (`react-dom` is optional if you only use hooks without portal primitives).
+Requires React 18 or newer (`react` and `react-dom`).
 For editable, styled components, use `pnpm dlx @anvia/cli ui add chat` in an application configured
 with shadcn.
 

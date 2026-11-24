@@ -78,7 +78,7 @@
     }
   },
   "scripts": {
-    "build": "tsdown src/index.ts src/attachment/index.ts src/chat/index.ts src/completion/index.ts src/graph-explorer/index.ts src/human-input/index.ts src/image/index.ts src/message/index.ts src/sandbox-desktop/index.ts src/sandbox-terminal/index.ts src/selection-toolbar/index.ts src/shared.ts src/stream/index.ts src/thread-list/index.ts --format esm --dts --sourcemap --clean --external react --external react-dom --external @xterm/xterm --external @xterm/addon-fit --external @novnc/novnc --no-fixed-extension",
+    "build": "tsdown",
     "coverage": "vitest run --coverage",
     "test": "vitest run",
     "typecheck": "tsrs --noEmit"
@@ -121,9 +121,6 @@
     },
     "@novnc/novnc": {
       "optional": true
-    },
-    "react-dom": {
-      "optional": true
     }
   },
   "devDependencies": {
@@ -142,7 +139,7 @@
     "esbuild": "^0.28.2",
     "happy-dom": "21.0.4",
     "react": "^19.3.1",
-    "react-dom": "19.3.1",
+    "react-dom": "^19.3.1",
     "tsdown": "^0.23.4",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"

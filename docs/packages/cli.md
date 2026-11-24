@@ -45,8 +45,8 @@ Compatibility aliases remain supported:
 
 `ui init` configures shadcn in an existing Next.js or Vite app; it does not create an app.
 `ui add` writes below the components alias in `components.json` (normally
-`src/components/anvia`) and installs the React UI version recorded with the bundled registry.
-The CLI and React UI release independently.
+`src/components/anvia`) and installs the `@anvia/react` version recorded with the bundled registry.
+The CLI and `@anvia/react` release independently.
 
 Available items: `chat`, `thread`, `message`, `composer`, `attachment`, `markdown`, and
 `tool-fallback`. Larger items include their shared component dependencies.

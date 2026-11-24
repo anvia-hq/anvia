@@ -94,7 +94,7 @@ The DOM contract is ARIA attributes plus `data-state` / `data-role`.
 For styled, app-owned components instead of headless composition:
 
 ```sh
-pnpm dlx @anvia/cli add chat
+pnpm dlx @anvia/cli ui add chat
 ```
 
 Items: `chat`, `thread`, `message`, `composer`, `attachment`, `markdown`,

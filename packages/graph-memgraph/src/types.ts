@@ -21,10 +21,12 @@ import type {
 import type { EmbeddedDocument } from "@anvia/core/embeddings";
 import type { Driver } from "neo4j-driver";
 
+export type MemgraphVectorSimilarity = "cosine" | "euclidean" | "dotProduct" | "inner-product";
+
 export type MemgraphVectorIndex = Readonly<{
   name: string;
   dimensions: number;
-  similarity: "cosine" | "euclidean" | "inner-product";
+  similarity: MemgraphVectorSimilarity;
   capacity?: number | undefined;
   resizeCoefficient?: number | undefined;
   scalarKind?: "f64" | "f32" | "f16" | "bf16" | undefined;
@@ -35,17 +37,40 @@ export type MemgraphTextIndex = Readonly<{
   properties?: readonly string[] | undefined;
 }>;
 
-export type ManagedMemgraphKnowledgeGraphOptions<Schema extends GraphSchemaLike> = Readonly<{
-  name: string;
-  schema: Schema;
-  resources: {
-    labels: { document: string; chunk: string; entity: string };
-    indexes: {
-      chunks: { vector: MemgraphVectorIndex; text?: MemgraphTextIndex | undefined };
-      entities: { vector: MemgraphVectorIndex; text?: MemgraphTextIndex | undefined };
-    };
+export type ManagedMemgraphResources = Readonly<{
+  labels: { document: string; chunk: string; entity: string };
+  indexes: {
+    chunks: { vector: MemgraphVectorIndex; text?: MemgraphTextIndex | undefined };
+    entities: { vector: MemgraphVectorIndex; text?: MemgraphTextIndex | undefined };
   };
 }>;
+
+export type ManagedMemgraphTextShorthand =
+  | boolean
+  | Readonly<{
+      chunks?: boolean | MemgraphTextIndex | undefined;
+      entities?: boolean | readonly string[] | MemgraphTextIndex | undefined;
+    }>;
+
+export type ManagedMemgraphKnowledgeGraphOptions<Schema extends GraphSchemaLike> =
+  | Readonly<{
+      name: string;
+      schema: Schema;
+      resources: ManagedMemgraphResources;
+      dimensions?: never;
+      similarity?: never;
+      fulltext?: never;
+      text?: never;
+    }>
+  | Readonly<{
+      name: string;
+      schema: Schema;
+      dimensions: number;
+      similarity?: MemgraphVectorSimilarity | undefined;
+      fulltext?: ManagedMemgraphTextShorthand | undefined;
+      text?: ManagedMemgraphTextShorthand | undefined;
+      resources?: undefined;
+    }>;
 
 export type ExistingMemgraphSeed = Readonly<{
   nodeTypes: readonly string[];

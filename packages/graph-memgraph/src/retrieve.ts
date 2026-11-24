@@ -1,22 +1,19 @@
 import { embedText } from "@anvia/core/embeddings";
-import type {
-  GraphContext,
-  GraphContextNode,
-  GraphContextRelationship,
-  GraphContextSeed,
-  GraphEvidence,
-  GraphRetrieveOptions,
-  GraphSchemaLike,
+import {
+  resolveGraphRetrieveOptions,
+  type GraphContext,
+  type GraphContextNode,
+  type GraphContextRelationship,
+  type GraphContextSeed,
+  type GraphEvidence,
+  type GraphEvidenceOptions,
+  type GraphRetrieveOptions,
+  type GraphSchemaLike,
+  type GraphTraversalOptions,
 } from "@anvia/graph";
 import { int, type Record as DriverRecord } from "neo4j-driver";
 import { ManagedMemgraphKnowledgeGraph, MemgraphKnowledgeGraphBase } from "./graph.js";
-import {
-  driverNumber,
-  positiveInteger,
-  quoteIdentifier,
-  strictProperties,
-  throwIfAborted,
-} from "./helpers.js";
+import { driverNumber, quoteIdentifier, strictProperties, throwIfAborted } from "./helpers.js";
 import type { MemgraphSeedRegistration } from "./resources.js";
 
 export type RetrieveMemgraphOptions<Schema extends GraphSchemaLike> =
@@ -39,11 +36,29 @@ export async function retrieveGraphContext<Schema extends GraphSchemaLike>(
     throw new TypeError("retrieveGraphContext requires a Memgraph knowledge graph registration.");
   }
 
+  if (typeof options.query !== "string" || options.query.trim().length === 0) {
+    throw new TypeError("Graph retrieval query must be a non-empty string.");
+  }
+
   throwIfAborted(options.abortSignal);
-  validateSearch(options.search);
-  validateTraversal(options.graph.schema, options.traversal);
-  validateEvidence(options.graph, options.evidence);
-  const selected = options.search.seeds.map((name) => ({ name, seed: options.graph.seed(name) }));
+  const availableSeeds = Object.keys(options.graph.seeds);
+  const hybridSeeds = Object.entries(options.graph.seeds)
+    .filter(([, seed]) => seed.textIndex !== undefined)
+    .map(([name]) => name);
+  const resolved = resolveGraphRetrieveOptions(
+    {
+      schema: options.graph.schema,
+      evidenceCapability: options.graph.evidenceCapability,
+      availableSeeds,
+      hybridSeeds,
+    },
+    {
+      search: options.search,
+      traversal: options.traversal,
+      evidence: options.evidence,
+    },
+  );
+  const selected = resolved.search.seeds.map((name) => ({ name, seed: options.graph.seed(name) }));
   const dimensions = new Set(selected.map(({ seed }) => seed.vectorIndex.dimensions));
 
   if (dimensions.size !== 1) {
@@ -52,13 +67,16 @@ export async function retrieveGraphContext<Schema extends GraphSchemaLike>(
 
   const expectedDimensions = [...dimensions][0];
 
-  if (expectedDimensions === undefined || options.model.dimensions !== expectedDimensions) {
+  if (
+    expectedDimensions === undefined ||
+    (options.model.dimensions !== undefined && options.model.dimensions !== expectedDimensions)
+  ) {
     throw new TypeError(
       `Embedding model dimensions ${options.model.dimensions} do not match Memgraph graph dimensions ${expectedDimensions}.`,
     );
   }
 
-  if (options.search.type === "hybrid") {
+  if (resolved.search.type === "hybrid") {
     for (const { name, seed } of selected) {
       if (seed.textIndex === undefined) {
         throw new TypeError(`Memgraph graph seed ${name} does not declare a text index.`);
@@ -80,28 +98,28 @@ export async function retrieveGraphContext<Schema extends GraphSchemaLike>(
   const lists: SearchHit[][] = [];
   for (const { seed } of selected) {
     const limit =
-      options.search.type === "hybrid" ? options.search.candidatesPerSeed : options.search.topK;
+      resolved.search.type === "hybrid" ? resolved.search.candidatesPerSeed : resolved.search.topK;
     lists.push(
       await vectorSearch(options.graph, seed, embedding.vector, limit, options.abortSignal),
     );
 
-    if (options.search.type === "hybrid") {
+    if (resolved.search.type === "hybrid") {
       lists.push(await textSearch(options.graph, seed, options.query, limit, options.abortSignal));
     }
   }
   const hits =
-    options.search.type === "hybrid"
-      ? fuseResults(lists, options.search.topK, options.search.rrfK)
-      : vectorResults(lists[0] ?? [], options.search.topK, options.search.minScore);
+    resolved.search.type === "hybrid"
+      ? fuseResults(lists, resolved.search.topK, resolved.search.rrfK)
+      : vectorResults(lists[0] ?? [], resolved.search.topK, resolved.search.minScore);
   const seeds = hits.map((hit) => seedFromHit(hit, options.graph.schema));
   const traversed =
     hits.length === 0
       ? { nodes: [], relationships: [] }
-      : await traverse(options.graph, hits, options.traversal, options.abortSignal);
+      : await traverse(options.graph, hits, resolved.traversal, options.abortSignal);
   const evidence = await hydrateEvidence(
     options.graph,
     { seeds, ...traversed },
-    options.evidence,
+    resolved.evidence,
     options.abortSignal,
   );
   return { seeds, ...traversed, evidence };
@@ -191,7 +209,7 @@ function seedFromHit(hit: SearchHit, schema: GraphSchemaLike): GraphContextSeed 
 async function traverse<Schema extends GraphSchemaLike>(
   graph: MemgraphKnowledgeGraphBase<Schema>,
   hits: readonly SearchHit[],
-  options: GraphRetrieveOptions<Schema>["traversal"],
+  options: GraphTraversalOptions<Schema>,
   abortSignal?: AbortSignal,
 ): Promise<{ nodes: GraphContextNode[]; relationships: GraphContextRelationship[] }> {
   const direct = hits
@@ -226,18 +244,21 @@ RETURN {internalId: id(node), labels: labels(node), properties: properties(node)
     { seedIds: seedIds.map((id) => int(id)) },
     abortSignal,
   );
-  const paths = await graph.query(
-    `MATCH (seed) WHERE id(seed) IN $seedIds
+  const paths =
+    options.relationships.length === 0
+      ? { records: [] }
+      : await graph.query(
+          `MATCH (seed) WHERE id(seed) IN $seedIds
 MATCH path = ${pattern}
 RETURN [item IN nodes(path) | {internalId: id(item), labels: labels(item), properties: properties(item)}] AS nodes,
        [item IN relationships(path) | {internalId: id(item), type: type(item), properties: properties(item), from: id(startNode(item)), to: id(endNode(item))}] AS relationships
 LIMIT $pathLimit`,
-    {
-      seedIds: seedIds.map((id) => int(id)),
-      pathLimit: int(Math.max(options.maxNodes, options.maxRelationships)),
-    },
-    abortSignal,
-  );
+          {
+            seedIds: seedIds.map((id) => int(id)),
+            pathLimit: int(Math.max(options.maxNodes, options.maxRelationships)),
+          },
+          abortSignal,
+        );
   const nodes = new Map<string, GraphContextNode>();
   const keys = new Map<number, string>();
   const addNode = (value: Record<string, unknown>) => {
@@ -345,7 +366,7 @@ function contextRelationship(
 async function hydrateEvidence(
   graph: MemgraphKnowledgeGraphBase,
   context: Pick<GraphContext, "seeds" | "nodes" | "relationships">,
-  options: GraphRetrieveOptions<GraphSchemaLike>["evidence"],
+  options: GraphEvidenceOptions,
   abortSignal?: AbortSignal,
 ): Promise<GraphEvidence[]> {
   if (options.type === "none") return [];
@@ -411,68 +432,6 @@ function evidenceFromRecord(record: DriverRecord): GraphEvidence {
     text: stringValue(record.get("text"), "Memgraph evidence text"),
     metadata: applicationProperties(properties, "Memgraph evidence metadata"),
   };
-}
-
-function validateSearch(search: GraphRetrieveOptions<GraphSchemaLike>["search"]): void {
-  positiveInteger(search.topK, "Memgraph graph search topK");
-
-  if (search.seeds.length === 0 || new Set(search.seeds).size !== search.seeds.length) {
-    throw new TypeError("Memgraph graph search requires unique seed names.");
-  }
-
-  if (search.type === "vector") {
-    if (search.seeds.length !== 1) {
-      throw new TypeError(
-        "Vector graph search accepts exactly one seed; use hybrid search to fuse seeds.",
-      );
-    }
-
-    if (search.minScore !== undefined && !Number.isFinite(search.minScore)) {
-      throw new TypeError("Memgraph graph search minScore must be finite.");
-    }
-  } else {
-    positiveInteger(search.candidatesPerSeed, "Memgraph hybrid candidatesPerSeed");
-    positiveInteger(search.rrfK, "Memgraph hybrid rrfK");
-  }
-}
-
-function validateTraversal(
-  schema: GraphSchemaLike,
-  traversal: GraphRetrieveOptions<GraphSchemaLike>["traversal"],
-): void {
-  if (!(["outgoing", "incoming", "both"] as const).includes(traversal.direction)) {
-    throw new TypeError("Memgraph traversal direction must be outgoing, incoming, or both.");
-  }
-
-  positiveInteger(traversal.maxDepth, "Memgraph traversal maxDepth", 8);
-  positiveInteger(traversal.maxNodes, "Memgraph traversal maxNodes");
-  positiveInteger(traversal.maxRelationships, "Memgraph traversal maxRelationships");
-
-  if (
-    traversal.relationships.length === 0 ||
-    new Set(traversal.relationships).size !== traversal.relationships.length
-  ) {
-    throw new TypeError("Memgraph traversal requires unique relationship types.");
-  }
-
-  for (const type of traversal.relationships) {
-    if (!(type in schema.relationships)) {
-      throw new TypeError(`Memgraph traversal references unknown relationship type ${type}.`);
-    }
-  }
-}
-
-function validateEvidence(
-  graph: MemgraphKnowledgeGraphBase,
-  evidence: GraphRetrieveOptions<GraphSchemaLike>["evidence"],
-): void {
-  if (evidence.type === "none") return;
-
-  positiveInteger(evidence.maxChunks, "Memgraph graph evidence maxChunks");
-
-  if (graph.evidenceCapability !== "chunks") {
-    throw new TypeError("Chunk evidence requires a managed Memgraph knowledge graph.");
-  }
 }
 
 function vectorResults(

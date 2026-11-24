@@ -12,6 +12,7 @@ import {
   type ToolResultContentPart,
   type ToolResultOutput,
 } from "@anvia/core/completion";
+import type { ContextBreakdown } from "@anvia/core/context";
 import { createClientId } from "./messages";
 import { maskedClientError } from "./protocol";
 import type {
@@ -98,6 +99,7 @@ type MessageState = {
 };
 
 type FinalMessageMetadata = Pick<CompletionResponse, "usage" | "contextUsage"> & {
+  contextBreakdown?: ContextBreakdown;
   sources?: readonly CompletionSource[];
   providerToolCalls?: readonly ProviderToolCall[];
 };
@@ -448,6 +450,10 @@ async function* translateAgentEvent(
         finalMetadata.contextUsage = event.response.contextUsage;
       }
 
+      if (event.contextBreakdown !== undefined) {
+        finalMetadata.contextBreakdown = event.contextBreakdown;
+      }
+
       if (event.response.sources !== undefined) finalMetadata.sources = event.response.sources;
 
       if (event.response.providerToolCalls !== undefined) {
@@ -462,6 +468,10 @@ async function* translateAgentEvent(
 
       if (event.response.contextUsage !== undefined) {
         turnEnd.contextUsage = event.response.contextUsage;
+      }
+
+      if (event.contextBreakdown !== undefined) {
+        turnEnd.contextBreakdown = event.contextBreakdown;
       }
 
       if (event.firstDeltaMs !== undefined) turnEnd.firstDeltaMs = event.firstDeltaMs;
@@ -501,6 +511,10 @@ async function* translateAgentEvent(
       if (output !== undefined) runEnd.output = output;
 
       if (result.contextUsage !== undefined) runEnd.contextUsage = result.contextUsage;
+
+      if (result.contextBreakdown !== undefined) {
+        runEnd.contextBreakdown = result.contextBreakdown;
+      }
 
       if (result.trace !== undefined) runEnd.trace = clientTrace(result.trace);
 
@@ -939,6 +953,10 @@ async function* finishMessage(
   if (state.modelMessageId !== undefined) messageEnd.modelMessageId = state.modelMessageId;
 
   if (metadata.contextUsage !== undefined) messageEnd.contextUsage = metadata.contextUsage;
+
+  if (metadata.contextBreakdown !== undefined) {
+    messageEnd.contextBreakdown = metadata.contextBreakdown;
+  }
 
   yield clientEvent(state, messageEnd);
 }

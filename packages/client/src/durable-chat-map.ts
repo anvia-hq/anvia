@@ -14,6 +14,7 @@ import type {
 } from "@anvia/core/completion";
 import { isJsonValue } from "@anvia/core/completion";
 import type { CompletionSource } from "@anvia/core/completion";
+import { isContextBreakdown } from "@anvia/core/context";
 import type { MemoryCompactionInfo } from "@anvia/core/memory";
 import type { DurableEvent } from "@anvia/durable/protocol";
 import type { ClientStreamEvent } from "./types";
@@ -465,6 +466,10 @@ function mapModelCompleted(
     messageEnd.contextUsage = contextUsage;
   }
 
+  if (isContextBreakdown(result?.contextBreakdown) && messageEnd.type === "message_end") {
+    messageEnd.contextBreakdown = result.contextBreakdown;
+  }
+
   if (typeof result?.messageId === "string" && messageEnd.type === "message_end") {
     messageEnd.modelMessageId = result.messageId;
   }
@@ -616,6 +621,10 @@ function runEnd(
   if (usage !== undefined) end.usage = usage;
 
   if (contextUsage !== undefined) end.contextUsage = contextUsage;
+
+  if (isContextBreakdown(outcome?.contextBreakdown)) {
+    end.contextBreakdown = outcome.contextBreakdown;
+  }
 
   if (trace !== undefined) end.trace = trace;
 

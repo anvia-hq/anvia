@@ -196,6 +196,10 @@ export function messagesToUIMessages<Metadata extends JsonObject = JsonObject>(
           generation.contextUsage = generationMetadata.contextUsage;
         }
 
+        if (generationMetadata.contextBreakdown !== undefined) {
+          generation.contextBreakdown = generationMetadata.contextBreakdown;
+        }
+
         uiMessage = {
           ...uiMessage,
           generation,

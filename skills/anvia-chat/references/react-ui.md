@@ -40,7 +40,7 @@ await chat.respondToInteraction({
 ```
 
 Render those prompts with `HumanInputPrimitive`, or drive them headlessly with
-`useApproval` / `useQuestion` — both from `@anvia/react-ui`.
+`useApproval` / `useQuestion` — both from `@anvia/react`.
 
 `useCompletion({ transport })` is single-turn: `complete({ prompt })` or manage
 `input` and call `submit()`. Each call replaces the previous completion, events,
@@ -50,7 +50,7 @@ and usage — it never accumulates messages. The UI counterpart is
 `useSmoothStreamText` / `useSmoothStreamItems` only smooth presentation. They do
 not change protocol events or message state.
 
-## Headless primitives (`@anvia/react-ui`)
+## Headless primitives (`@anvia/react`)
 
 Primitives are headless: no stylesheet, style via `className` or `asChild`.
 The DOM contract is ARIA attributes plus `data-state` / `data-role`.
@@ -85,7 +85,7 @@ The DOM contract is ARIA attributes plus `data-state` / `data-role`.
 </MessagePrimitive.Parts>
 ```
 
-- For app-owned text state, `StreamMarkdown` from `@anvia/react-ui/stream` is a
+- For app-owned text state, `StreamMarkdown` from `@anvia/react/stream` is a
   context-free renderer: pass displayed text as `content`, set `live` only for
   the growing tail, and style `[data-state="revealing"]` in the app.
 
@@ -99,6 +99,6 @@ pnpm dlx @anvia/cli add chat
 
 Items: `chat`, `thread`, `message`, `composer`, `attachment`, `markdown`,
 `tool-fallback`. `add` writes below the `components` alias (normally
-`src/components/anvia`) and installs the matching `@anvia/react-ui` release.
+`src/components/anvia`) and installs the matching `@anvia/react` release.
 `@anvia/cli` installs the `[data-state="revealing"]` animation with the
 `markdown`, `message`, `thread`, and `chat` items.

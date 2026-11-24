@@ -35,8 +35,7 @@ return createClientStreamResponse({ events }); // JSONL by default
 ```tsx
 // App: explicit transport, hook owns state, primitives render it.
 import { createHttpClientTransport } from "@anvia/client";
-import { useChat } from "@anvia/react";
-import { ChatProvider, ComposerPrimitive, ThreadPrimitive } from "@anvia/react-ui";
+import { ChatProvider, ComposerPrimitive, ThreadPrimitive, useChat } from "@anvia/react";
 
 const transport = createHttpClientTransport({ endpoint: "/api/chat" });
 const chat = useChat({ transport });

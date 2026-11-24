@@ -131,9 +131,7 @@ behavior belongs in `packages/tool-studio`.
   `packages/observability-otel`: tracing,
   eval reporting, scoring, prompt/dataset helpers, and OpenTelemetry adapters.
 - `packages/logger`: console, pino, and observer logger helpers.
-- `packages/react`: React hooks and transports for chat/completion UI streams.
-- `packages/react-ui`: composable, headless React UI primitives for Anvia
-  applications.
+- `packages/react`: React hooks, transports, and composable, headless React UI primitives for Anvia applications.
 - `packages/server`: JSONL, SSE, and UI stream response helpers.
 - `packages/tool-sandbox`: Docker-backed sandbox tools. Docker integration tests
   are gated by `ANVIA_SANDBOX_DOCKER_TESTS=1`.

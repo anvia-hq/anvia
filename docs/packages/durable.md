@@ -998,7 +998,7 @@ Durable progress is not the existing token-delta chat protocol.
 ## Chat UI adapter
 
 `@anvia/client/durable-chat` adapts a durable endpoint to the `ClientTransport` contract used by
-`useChat` from `@anvia/react` and the `@anvia/react-ui` chat primitives. Create one transport per
+`useChat` and the chat primitives from `@anvia/react`. Create one transport per
 chat session: the agent and session identity live in the transport because a chat request carries
 only messages.
 

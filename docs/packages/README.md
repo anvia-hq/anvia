@@ -30,7 +30,6 @@ These guides contain the longer API examples, configuration details, and operati
 | `@anvia/azure`           | [README](../../packages/provider-azure/README.md)         | [Guide](./provider-azure.md)         |
 | `@anvia/openai`          | [README](../../packages/provider-openai/README.md)        | [Guide](./provider-openai.md)        |
 | `@anvia/react`           | [README](../../packages/react/README.md)                  | [Guide](./react.md)                  |
-| `@anvia/react-ui`        | [README](../../packages/react-ui/README.md)               | [Guide](./react-ui.md)               |
 | `@anvia/server`          | [README](../../packages/server/README.md)                 | [Guide](./server.md)                 |
 | `@anvia/sandbox`         | [README](../../packages/tool-sandbox/README.md)           | [Guide](./tool-sandbox.md)           |
 | `@anvia/studio`          | [README](../../packages/tool-studio/README.md)            | [Guide](./tool-studio.md)            |

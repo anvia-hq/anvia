@@ -20,7 +20,6 @@ const representativePackages = new Set([
   "@anvia/otel",
   "@anvia/pgvector",
   "@anvia/react",
-  "@anvia/react-ui",
   "@anvia/server",
   "@anvia/studio",
 ]);

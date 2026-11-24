@@ -140,9 +140,6 @@ importers:
       '@anvia/react':
         specifier: workspace:*
         version: link:../packages/react
-      '@anvia/react-ui':
-        specifier: workspace:*
-        version: link:../packages/react-ui
       '@anvia/sandbox':
         specifier: workspace:*
         version: link:../packages/tool-sandbox
@@ -214,9 +211,9 @@ importers:
         specifier: ^4.23.0
         version: 4.23.0
     devDependencies:
-      '@anvia/react-ui':
+      '@anvia/react':
         specifier: workspace:*
-        version: link:../react-ui
+        version: link:../react
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -844,57 +841,6 @@ importers:
         version: 4.1.11(@opentelemetry/api@1.10.0)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.11)(happy-dom@21.0.4)(vite@8.3.4(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/react:
-    devDependencies:
-      '@anvia/client':
-        specifier: workspace:*
-        version: link:../client
-      '@anvia/core':
-        specifier: workspace:*
-        version: link:../core
-      '@anvia/durable':
-        specifier: workspace:*
-        version: link:../durable
-      '@anvia/graph':
-        specifier: workspace:*
-        version: link:../graph
-      '@testing-library/react':
-        specifier: ^16.3.3
-        version: 16.3.3(@testing-library/dom@10.4.1)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@types/node':
-        specifier: ^24.9.1
-        version: 24.12.2
-      '@types/react':
-        specifier: ^19.3.0
-        version: 19.3.0
-      '@types/react-dom':
-        specifier: ^19.3.0
-        version: 19.3.0(@types/react@19.3.0)
-      '@vitest/coverage-v8':
-        specifier: 4.1.11
-        version: 4.1.11(vitest@4.1.11)
-      esbuild:
-        specifier: 0.28.2
-        version: 0.28.2
-      happy-dom:
-        specifier: 21.0.4
-        version: 21.0.4
-      react:
-        specifier: ^19.3.1
-        version: 19.3.1
-      react-dom:
-        specifier: 19.3.1
-        version: 19.3.1(react@19.3.1)
-      tsdown:
-        specifier: ^0.23.4
-        version: 0.23.4(tsx@4.23.15)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.11
-        version: 4.1.11(@opentelemetry/api@1.10.0)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.11)(happy-dom@21.0.4)(vite@8.3.4(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
-
-  packages/react-ui:
     dependencies:
       '@radix-ui/react-slot':
         specifier: ^1.5.0
@@ -942,12 +888,15 @@ importers:
       '@anvia/client':
         specifier: workspace:*
         version: link:../client
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
+      '@anvia/durable':
+        specifier: workspace:*
+        version: link:../durable
       '@anvia/graph':
         specifier: workspace:*
         version: link:../graph
-      '@anvia/react':
-        specifier: workspace:*
-        version: link:../react
       '@novnc/novnc':
         specifier: ^1.7.0
         version: 1.7.0
@@ -972,11 +921,14 @@ importers:
       '@xterm/xterm':
         specifier: ^6.0.0
         version: 6.0.0
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
       happy-dom:
         specifier: 21.0.4
         version: 21.0.4
       react:
-        specifier: 19.3.1
+        specifier: ^19.3.1
         version: 19.3.1
       react-dom:
         specifier: 19.3.1
@@ -1063,9 +1015,6 @@ importers:
       '@anvia/react':
         specifier: workspace:*
         version: link:../react
-      '@anvia/react-ui':
-        specifier: workspace:*
-        version: link:../react-ui
       '@anvia/server':
         specifier: workspace:*
         version: link:../server

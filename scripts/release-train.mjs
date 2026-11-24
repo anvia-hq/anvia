@@ -170,10 +170,16 @@ export function assertReleasableChangesets(changesets, allowedPackages) {
   }
 }
 
+function isInitialStableGraduation({ type, oldVersion, newVersion }) {
+  return type === undefined && Number(oldVersion.split(".")[0]) === 0 && newVersion === "1.0.0";
+}
+
 export function assertNoMajorReleases(releases) {
   const majors = releases.filter(
-    ({ type, oldVersion, newVersion }) =>
-      type === "major" || Number(newVersion.split(".")[0]) > Number(oldVersion.split(".")[0]),
+    (release) =>
+      !isInitialStableGraduation(release) &&
+      (release.type === "major" ||
+        Number(release.newVersion.split(".")[0]) > Number(release.oldVersion.split(".")[0])),
   );
 
   if (majors.length > 0) {

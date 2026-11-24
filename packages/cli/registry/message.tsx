@@ -1,6 +1,6 @@
 "use client";
 
-import { MessagePrimitive, useChatContext, useMessage } from "@anvia/react-ui";
+import { MessagePrimitive, useChatContext, useMessage } from "@anvia/react";
 import type { ComponentProps } from "react";
 import { Attachment } from "./attachment";
 import { Markdown } from "./markdown";

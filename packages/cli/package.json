@@ -37,7 +37,7 @@
     "shadcn": "^4.23.0"
   },
   "devDependencies": {
-    "@anvia/react-ui": "workspace:*",
+    "@anvia/react": "workspace:*",
     "@types/node": "^24.9.1",
     "@types/react": "^19.3.0",
     "react": "19.3.1",

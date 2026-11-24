@@ -1,6 +1,6 @@
 "use client";
 
-import { ThreadPrimitive } from "@anvia/react-ui";
+import { ThreadPrimitive } from "@anvia/react";
 import type { ComponentProps } from "react";
 import { Composer } from "./composer";
 import { Message } from "./message";

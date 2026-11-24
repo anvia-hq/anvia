@@ -28,7 +28,7 @@ describe("Anvia component registry", () => {
     });
 
     expect(registryItemSchema.safeParse(item).success).toBe(true);
-    expect(item.dependencies).toContain("@anvia/react-ui@1.2.3");
+    expect(item.dependencies).toContain("@anvia/react@1.2.3");
     expect(item.files.every((file) => file.target.startsWith("@components/anvia/"))).toBe(true);
   });
 

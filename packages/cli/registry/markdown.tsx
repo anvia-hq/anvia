@@ -1,6 +1,6 @@
 "use client";
 
-import { MessagePrimitive } from "@anvia/react-ui";
+import { MessagePrimitive } from "@anvia/react";
 import type { ComponentProps } from "react";
 
 export function Markdown({

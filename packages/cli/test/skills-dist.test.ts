@@ -119,11 +119,11 @@ describe.runIf(existsSync(distCli))("built CLI update contract", () => {
     expect(invalid.stderr).toContain('Unknown option "--aply"');
   });
 
-  it("uses the bundled React UI version independently of the CLI version", async () => {
+  it("uses the bundled React version independently of the CLI version", async () => {
     const { createRegistryItem } = await import(join(import.meta.dirname, "../dist/index.js"));
-    const reactUi = JSON.parse(
-      readFileSync(join(import.meta.dirname, "../../react-ui/package.json"), "utf8"),
+    const reactPkg = JSON.parse(
+      readFileSync(join(import.meta.dirname, "../../react/package.json"), "utf8"),
     ) as { version: string };
-    expect(createRegistryItem("chat").dependencies).toEqual([`@anvia/react-ui@${reactUi.version}`]);
+    expect(createRegistryItem("chat").dependencies).toEqual([`@anvia/react@${reactPkg.version}`]);
   });
 });

@@ -7,8 +7,11 @@ import type {
   GraphExploreResult,
   GraphSchemaLike,
 } from "@anvia/graph";
-import { useGraphExplorer } from "@anvia/react/graph-explorer";
-import { graphExplorerNodeLabel, GraphExplorerProvider } from "@anvia/react-ui/graph-explorer";
+import {
+  graphExplorerNodeLabel,
+  GraphExplorerProvider,
+  useGraphExplorer,
+} from "@anvia/react/graph-explorer";
 import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import type { StudioConfig } from "../../../../types";
 import { Button } from "../../components/ui/button";

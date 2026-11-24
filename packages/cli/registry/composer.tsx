@@ -1,6 +1,6 @@
 "use client";
 
-import { ComposerPrimitive } from "@anvia/react-ui";
+import { ComposerPrimitive } from "@anvia/react";
 import type { ComponentProps } from "react";
 import { Attachment } from "./attachment";
 

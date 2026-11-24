@@ -58,5 +58,5 @@ Use `--cwd <path>` to target another project. `skills list` shows the bundled sk
 ## Learn more
 
 - [CLI commands and update behavior](https://github.com/anvia-hq/anvia/blob/main/docs/packages/cli.md)
-- [Headless React UI](https://github.com/anvia-hq/anvia/tree/main/packages/react-ui#readme)
+- [React hooks and headless UI](https://github.com/anvia-hq/anvia/tree/main/packages/react#readme)
 - [Bundled Agent Skills](https://github.com/anvia-hq/anvia/tree/main/skills)

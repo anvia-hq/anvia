@@ -1,4 +1,4 @@
-import { StreamMarkdown, type StreamMarkdownProps } from "@anvia/react-ui/stream";
+import { StreamMarkdown, type StreamMarkdownProps } from "@anvia/react/stream";
 import type React from "react";
 import { cn } from "../../lib/utils";
 import { parseToolDisplayValue } from "./format";

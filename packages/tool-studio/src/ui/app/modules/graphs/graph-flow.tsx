@@ -1,6 +1,6 @@
 import { Handle, MarkerType, type Node, type NodeProps, Position } from "@xyflow/react";
 import type { GraphExploreNode, GraphExploreRelationship, GraphExploreResult } from "@anvia/graph";
-import { graphExplorerNodeLabel, GraphExplorerNodePrimitive } from "@anvia/react-ui/graph-explorer";
+import { graphExplorerNodeLabel, GraphExplorerNodePrimitive } from "@anvia/react/graph-explorer";
 
 export type ExplorerNodeData = {
   label: string;

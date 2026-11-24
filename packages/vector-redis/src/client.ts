@@ -33,6 +33,9 @@ export class RedisVectorClient {
 
     await (await this.clientPromise).quit?.();
   }
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.close();
+  }
   private async createClient(): Promise<RedisClientLike> {
     const redis = await import("redis");
     const client = redis.createClient({

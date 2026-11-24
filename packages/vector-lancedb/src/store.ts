@@ -3,6 +3,7 @@ import type {
   VectorSearchRequest,
   VectorSearchResult,
   VectorStore,
+  VectorStoreDeleteOptions,
   VectorStoreUpsertOptions,
 } from "@anvia/core/vector-store";
 import { matchesVectorFilter } from "@anvia/core/vector-store";
@@ -92,6 +93,16 @@ export class LanceDBVectorStore<
     const rows = options.documents.flatMap((document) => lanceRows(document));
 
     if (rows.length > 0) await table.add(rows, options.providerOptions);
+  }
+
+  async delete(options: VectorStoreDeleteOptions): Promise<void> {
+    throwIfAborted(options.abortSignal);
+    const ids = [...new Set(options.documentIds)];
+
+    if (ids.length === 0) return;
+
+    const table = await (await this.owner.nativeClient()).openTable(this.options.tableName);
+    await table.delete(`${documentIdColumn} IN (${ids.map(sqlString).join(", ")})`);
   }
 
   async search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>> {

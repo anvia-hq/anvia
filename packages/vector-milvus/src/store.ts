@@ -3,6 +3,7 @@ import type {
   VectorSearchRequest,
   VectorSearchResult,
   VectorStore,
+  VectorStoreDeleteOptions,
   VectorStoreUpsertOptions,
 } from "@anvia/core/vector-store";
 import type { MilvusVectorClient } from "./client.js";
@@ -74,6 +75,20 @@ export class MilvusVectorStore<
         collection_name: this.options.collectionName,
         data,
       });
+  }
+
+  async delete(options: VectorStoreDeleteOptions): Promise<void> {
+    throwIfAborted(options.abortSignal);
+    const ids = [...new Set(options.documentIds)];
+
+    if (ids.length === 0) return;
+
+    const client = await this.owner.nativeClient();
+    await client.delete({
+      ...options.providerOptions,
+      collection_name: this.options.collectionName,
+      filter: `${documentIdFieldName} in [${ids.map((id) => JSON.stringify(id)).join(", ")}]`,
+    });
   }
 
   async search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>> {

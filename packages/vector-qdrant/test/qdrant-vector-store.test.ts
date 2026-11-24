@@ -282,7 +282,7 @@ describe("QdrantVectorClient", () => {
 
   it("does not close an injected native client but rejects reuse", async () => {
     const owner = new QdrantVectorClient({ client: fixture() });
-    await owner.close();
+    await owner[Symbol.asyncDispose]();
     expect(() => owner.nativeClient()).toThrow("closed");
   });
 });

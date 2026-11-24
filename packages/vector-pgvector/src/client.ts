@@ -33,6 +33,9 @@ export class PgVectorClient {
 
     await (await this.clientPromise).end?.();
   }
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.close();
+  }
   private assertOpen(): void {
     if (this.closed) throw new Error("PgVectorClient is closed.");
   }

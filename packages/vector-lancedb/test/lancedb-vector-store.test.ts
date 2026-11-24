@@ -312,4 +312,26 @@ describe("LanceDBVectorClient", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it("deletes documents by id and supports AsyncDisposable", async () => {
+    const del = vi.fn(async () => undefined);
+    const table: LanceDBTableLike = {
+      add: vi.fn(async () => undefined),
+      search: vi.fn() as unknown as LanceDBTableLike["search"],
+      countRows: vi.fn(async () => 0),
+      delete: del,
+    };
+    const client: LanceDBConnectionLike = {
+      openTable: vi.fn(async () => table),
+      tableNames: vi.fn(async () => ["docs"]),
+      createTable: vi.fn(async () => table),
+    };
+    const owner = new LanceDBVectorClient({ client });
+    const store = owner.vectorStore<string>({ tableName: "docs", dimensions: 2 });
+
+    await store.delete({ documentIds: ["a", "a", "b'c"] });
+    expect(del).toHaveBeenCalledWith("__anvia_document_id IN ('a', 'b''c')");
+    await owner[Symbol.asyncDispose]();
+    expect(() => owner.nativeClient()).toThrow("closed");
+  });
 });

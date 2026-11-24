@@ -151,4 +151,22 @@ describe("RedisVectorClient", () => {
     ]);
     expect(limits).toEqual([2, 4]);
   });
+
+  it("deletes documents by id and supports AsyncDisposable", async () => {
+    const del = vi.fn(async () => undefined);
+    const search = vi.fn(async () => ({ documents: [{ id: "anvia:docs:a:0" }] }));
+    const client: RedisClientLike = {
+      ft: { create: vi.fn(async () => undefined), info: vi.fn(async () => ({})), search },
+      hSet: vi.fn(async () => undefined),
+      expire: vi.fn(async () => undefined),
+      del,
+    };
+    const owner = new RedisVectorClient({ client });
+    const store = owner.vectorStore<string>({ indexName: "docs", dimensions: 2 });
+
+    await store.delete({ documentIds: ["a", "a"] });
+    expect(del).toHaveBeenCalledWith(["anvia:docs:a:0"]);
+    await owner[Symbol.asyncDispose]();
+    expect(() => owner.nativeClient()).toThrow("closed");
+  });
 });

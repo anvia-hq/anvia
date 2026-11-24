@@ -3,6 +3,7 @@ import type {
   VectorSearchRequest,
   VectorSearchResult,
   VectorStore,
+  VectorStoreDeleteOptions,
   VectorStoreUpsertOptions,
 } from "@anvia/core/vector-store";
 import pgvector from "pgvector";
@@ -81,6 +82,20 @@ export class PgVectorStore<
 VALUES ${placeholders.join(", ")}
 ON CONFLICT (id) DO UPDATE SET document_id = EXCLUDED.document_id, document = EXCLUDED.document, metadata = EXCLUDED.metadata, embedding = EXCLUDED.embedding`,
       values,
+      options.providerOptions,
+    );
+  }
+  async delete(options: VectorStoreDeleteOptions): Promise<void> {
+    throwIfAborted(options.abortSignal);
+    const ids = [...new Set(options.documentIds)];
+
+    if (ids.length === 0) return;
+
+    const client = await this.owner.nativeClient();
+    await queryWithProviderOptions(
+      client,
+      `DELETE FROM ${this.tableName} WHERE document_id = ANY($1::text[])`,
+      [ids],
       options.providerOptions,
     );
   }

@@ -194,4 +194,18 @@ describe("Milvus metadata filter expression validation", () => {
       }),
     );
   });
+
+  it("deletes documents by id and supports AsyncDisposable", async () => {
+    const client = fixture();
+    const owner = new MilvusVectorClient({ client });
+    const store = owner.vectorStore<string>({ collectionName: "docs", dimensions: 2 });
+
+    await store.delete({ documentIds: ["a", "a", "b"] });
+    expect(client.delete).toHaveBeenCalledWith({
+      collection_name: "docs",
+      filter: '__anvia_document_id in ["a", "b"]',
+    });
+    await owner[Symbol.asyncDispose]();
+    expect(() => owner.nativeClient()).toThrow("closed");
+  });
 });

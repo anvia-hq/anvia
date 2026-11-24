@@ -39,6 +39,10 @@ export class MilvusVectorClient {
     await (await this.clientPromise).closeConnection?.();
   }
 
+  [Symbol.asyncDispose](): Promise<void> {
+    return this.close();
+  }
+
   private async createClient(): Promise<MilvusClientLike> {
     const { MilvusClient } = await import("@zilliz/milvus2-sdk-node");
     const options: { address: string; token?: string } = {

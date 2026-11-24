@@ -122,4 +122,24 @@ describe("ChromaVectorClient", () => {
     ]);
     expect(query.mock.calls.map(([options]) => options.nResults)).toEqual([2, 4]);
   });
+
+  it("deletes documents by id and supports AsyncDisposable", async () => {
+    const del = vi.fn(async () => undefined);
+    const collection: ChromaCollectionLike = {
+      delete: del,
+      upsert: vi.fn(async () => undefined),
+      query: vi.fn(async () => ({ ids: [[]], documents: [[]], metadatas: [[]], distances: [[]] })),
+    };
+    const client: ChromaClientLike = {
+      getCollection: vi.fn(async () => collection),
+      createCollection: vi.fn(async () => collection),
+    };
+    const owner = new ChromaVectorClient({ client });
+    const store = owner.vectorStore<string>({ collectionName: "docs", dimensions: 2 });
+
+    await store.delete({ documentIds: ["a", "a", "b"] });
+    expect(del).toHaveBeenCalledWith({ where: { __anvia_document_id: { $in: ["a", "b"] } } });
+    await owner[Symbol.asyncDispose]();
+    expect(() => owner.nativeClient()).toThrow("closed");
+  });
 });

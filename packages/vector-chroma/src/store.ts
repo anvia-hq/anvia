@@ -3,6 +3,7 @@ import type {
   VectorSearchRequest,
   VectorSearchResult,
   VectorStore,
+  VectorStoreDeleteOptions,
   VectorStoreUpsertOptions,
 } from "@anvia/core/vector-store";
 import type { ChromaVectorClient } from "./client.js";
@@ -76,6 +77,19 @@ export class ChromaVectorStore<
       metadatas: records.map((record) => record.metadata),
     };
     await collection.upsert(request);
+  }
+
+  async delete(options: VectorStoreDeleteOptions): Promise<void> {
+    throwIfAborted(options.abortSignal);
+    const ids = [...new Set(options.documentIds)];
+
+    if (ids.length === 0) return;
+
+    const collection = await this.collection();
+    await collection.delete({
+      ...options.providerOptions,
+      where: { [documentIdMetadataKey]: { $in: ids } },
+    });
   }
 
   async search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>> {

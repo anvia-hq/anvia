@@ -708,16 +708,26 @@ back to a system prompt, a growing conversation, tool results, retrieved documen
 MCP tool definitions:
 
 ```ts
-import { estimateContextBreakdown, scaleContextBreakdown } from "@anvia/core/context";
+import {
+  CONTEXT_SEGMENT_IDS,
+  estimateContextBreakdown,
+  isContextBreakdown,
+  scaleContextBreakdown,
+} from "@anvia/core/context";
 
 const breakdown = estimateContextBreakdown(request, {
   mcpToolNames: ["search_issues", "create_pull_request"],
+  skillInstructions: skills.instructions,
+  skillToolNames: skills.tools.map((tool) => tool.name),
 });
 ```
 
-Segments are `instructions`, `messages`, `toolResults`, `documents`, `tools`, `mcpTools`,
-`providerTools`, and `outputSchema`. Each segment reports estimated `tokens`, `characters`, and the
-number of `items` counted.
+Segments are `instructions`, `skills`, `messages`, `toolResults`, `documents`, `tools`, `mcpTools`,
+`providerTools`, and `outputSchema` (also exported in order as `CONTEXT_SEGMENT_IDS`, with
+`isContextBreakdown` for validating serialized payloads). Each segment reports estimated `tokens`,
+`characters`, and the number of `items` counted. The `skills` segment combines the skill catalog
+instructions, skill tool definitions, and loaded skill tool results (such as
+`get_skill_instructions` and `get_skill_reference`).
 
 Segment splits come from a provider-neutral estimate of about four characters per token, with inline
 image and file payloads bounded. When the provider's reported input tokens are known, scale the split
@@ -728,10 +738,12 @@ truth:
 const scaled = scaleContextBreakdown(breakdown, response.usage.inputTokens);
 ```
 
-Agent runs do this for you. `AgentGenerationStartArgs.context` carries the estimate, and
-`AgentGenerationEndArgs.context` carries the same split scaled to `response.usage.inputTokens`
-(`AgentGenerationErrorArgs.context` carries the estimate when no usage was reported). Inspect it from
-an observer:
+Agent runs do this for you automatically (including MCP tools from `mcpServers` and skills from
+`skills`). `AgentGenerationStartArgs.context` carries the estimate, and
+`AgentGenerationEndArgs.context`, streaming `turn_end.contextBreakdown`,
+`AssistantGenerationMetadata.contextBreakdown`, and `AgentOutcome.contextBreakdown` carry the same
+split scaled to `response.usage.inputTokens` (`AgentGenerationErrorArgs.context` carries the
+estimate when no usage was reported). Inspect it from an observer or the run outcome:
 
 ```ts
 startGeneration: (args) => ({

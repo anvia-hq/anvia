@@ -72,6 +72,9 @@ needs to name them.
 - exposes canonical events through `onEvent` and the returned `events` array;
 - exposes aggregate usage for the latest run through `runUsage`, while each assistant message
   retains its own provider-generation usage;
+- exposes latest context window totals through `contextUsage` and per-segment input breakdown
+  (system prompt, skills, messages, tool results, tools, MCP tools, etc.) through
+  `contextBreakdown`, both consumable via `ContextMeterPrimitive`;
 - supports optional resumable streams and unified Agent interaction state.
 
 The default request is:

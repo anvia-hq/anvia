@@ -295,6 +295,46 @@ test("versioned release PRs cannot hide major bumps by consuming changesets", ()
   }
 });
 
+test("initial 0.x to 1.0.0 graduation is allowed while other major bumps stay prohibited", () => {
+  const fixture = createReleaseFixture();
+  try {
+    const manifestPath = path.join(fixture, "packages", "a", "package.json");
+    writeJson(manifestPath, { ...readJson(manifestPath), version: "0.18.0" });
+    initializeGitFixture(fixture);
+
+    writeJson(manifestPath, { ...readJson(manifestPath), version: "1.0.0" });
+    assert.doesNotThrow(() => assertNoMajorVersionChanges(fixture, "main"));
+    const allowed = spawnSync(process.execPath, [validatorScript, "--base-ref", "main"], {
+      cwd: fixture,
+      encoding: "utf8",
+      env: { ...process.env, CI: "true" },
+    });
+    assert.equal(allowed.status, 0, allowed.stderr);
+
+    writeJson(manifestPath, { ...readJson(manifestPath), version: "1.1.0" });
+    assert.throws(
+      () => assertNoMajorVersionChanges(fixture, "main"),
+      /Major releases are prohibited.*@fixture\/a/,
+    );
+
+    writeJson(manifestPath, { ...readJson(manifestPath), version: "2.0.0" });
+    assert.throws(
+      () => assertNoMajorVersionChanges(fixture, "main"),
+      /Major releases are prohibited.*@fixture\/a/,
+    );
+
+    assert.throws(
+      () =>
+        assertNoMajorReleases([
+          { name: "@fixture/a", type: "major", oldVersion: "0.18.0", newVersion: "1.0.0" },
+        ]),
+      /Major releases are prohibited/,
+    );
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 test("workspace peers release unchanged dependents across the 0.x minor boundary", () => {
   const fixture = createReleaseFixture();
   try {

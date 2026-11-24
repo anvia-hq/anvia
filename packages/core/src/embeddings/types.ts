@@ -74,20 +74,25 @@ export type EmbedSparseQueryOptions = EmbeddingOperationOptions & {
   query: string;
 };
 
-type EmbedDocumentContentOption<T> = T extends string | Readonly<{ text: string }>
-  ? { content?: ((document: T, index: number) => string | string[]) | undefined }
-  : { content(document: T, index: number): string | string[] };
+export type TextLikeDocument = string | Readonly<{ text: string }>;
 
 export type EmbedDocumentsBaseOptions<
   T,
   Metadata extends VectorMetadata = VectorMetadata,
-> = EmbeddingOperationOptions &
-  EmbedDocumentContentOption<T> & {
-    documents: readonly T[];
-    id?: ((document: T, index: number) => string) | undefined;
-    metadata?: ((document: T, index: number) => Metadata | undefined) | undefined;
-    concurrency?: number | undefined;
-  };
+> = EmbeddingOperationOptions & {
+  documents: readonly T[];
+  id?: ((document: T, index: number) => string) | undefined;
+  content(document: T, index: number): string | string[];
+  metadata?: ((document: T, index: number) => Metadata | undefined) | undefined;
+  concurrency?: number | undefined;
+};
+
+export type EmbedTextDocumentsBaseOptions<
+  T extends TextLikeDocument,
+  Metadata extends VectorMetadata = VectorMetadata,
+> = Omit<EmbedDocumentsBaseOptions<T, Metadata>, "content"> & {
+  content?: ((document: T, index: number) => string | string[]) | undefined;
+};
 
 export type EmbedDocumentsOptions<
   T,
@@ -97,10 +102,29 @@ export type EmbedDocumentsOptions<
   models?: never;
 };
 
+export type EmbedTextDocumentsOptions<
+  T extends TextLikeDocument,
+  Metadata extends VectorMetadata = VectorMetadata,
+> = EmbedTextDocumentsBaseOptions<T, Metadata> & {
+  model: EmbeddingModel;
+  models?: never;
+};
+
 export type EmbedHybridDocumentsOptions<
   T,
   Metadata extends VectorMetadata = VectorMetadata,
 > = EmbedDocumentsBaseOptions<T, Metadata> & {
+  model?: never;
+  models: {
+    dense: EmbeddingModel;
+    sparse: SparseEmbeddingModel;
+  };
+};
+
+export type EmbedHybridTextDocumentsOptions<
+  T extends TextLikeDocument,
+  Metadata extends VectorMetadata = VectorMetadata,
+> = EmbedTextDocumentsBaseOptions<T, Metadata> & {
   model?: never;
   models: {
     dense: EmbeddingModel;

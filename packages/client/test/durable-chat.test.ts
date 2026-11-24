@@ -261,6 +261,77 @@ describe("durable chat event mapping", () => {
     });
   });
 
+  it("forwards valid contextBreakdown on model_completed and completed run_end and ignores malformed payloads", () => {
+    const breakdown = {
+      segments: [
+        { id: "instructions", tokens: 30, characters: 120, items: 1 },
+        { id: "skills", tokens: 70, characters: 280, items: 2 },
+      ],
+      estimatedTokens: 100,
+      reportedInputTokens: 100,
+    };
+    const validMapped = mapAll([
+      event(1, "model_completed", {
+        operationId: "0:model:1",
+        attemptId: "a1",
+        result: {
+          choice: [{ type: "text", text: "Hello" }],
+          usage,
+          contextBreakdown: breakdown,
+        },
+      }),
+      event(2, "status", {
+        status: "completed",
+        outcome: {
+          type: "response",
+          text: "Hello",
+          usage,
+          contextBreakdown: breakdown,
+        },
+      }),
+    ]);
+
+    const messageEnd = validMapped.find((item) => item.type === "message_end");
+    const runEndEvent = validMapped.find((item) => item.type === "run_end");
+    expect(messageEnd).toMatchObject({ type: "message_end", contextBreakdown: breakdown });
+    expect(runEndEvent).toMatchObject({
+      type: "run_end",
+      status: "completed",
+      contextBreakdown: breakdown,
+    });
+
+    const malformedMapped = mapAll([
+      event(1, "model_completed", {
+        operationId: "0:model:1",
+        attemptId: "a1",
+        result: {
+          choice: [{ type: "text", text: "Hello" }],
+          usage,
+          contextBreakdown: {
+            segments: [{ id: "bogus", tokens: 1, characters: 4, items: 1 }],
+            estimatedTokens: 1,
+          },
+        },
+      }),
+      event(2, "status", {
+        status: "completed",
+        outcome: {
+          type: "response",
+          text: "Hello",
+          usage,
+          contextBreakdown: { segments: "bad", estimatedTokens: 1 },
+        },
+      }),
+    ]);
+
+    const malformedMessageEnd = malformedMapped.find((item) => item.type === "message_end");
+    const malformedRunEnd = malformedMapped.find((item) => item.type === "run_end");
+    expect(malformedMessageEnd).toBeDefined();
+    expect(malformedRunEnd).toBeDefined();
+    expect(malformedMessageEnd && "contextBreakdown" in malformedMessageEnd).toBe(false);
+    expect(malformedRunEnd && "contextBreakdown" in malformedRunEnd).toBe(false);
+  });
+
   it("maps tool_started and tool_completed into a matching call and result", () => {
     const mapped = mapAll([
       event(1, "tool_started", { operationId: "0:tool:1", input: { toolCall } }),

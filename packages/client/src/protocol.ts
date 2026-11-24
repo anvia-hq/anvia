@@ -4,6 +4,7 @@ import {
 } from "@anvia/core/agent/interactions";
 import type { JsonObject, JsonValue, Message } from "@anvia/core/completion";
 import { isJsonValue, parseMessages } from "@anvia/core/completion";
+import { isContextBreakdown } from "@anvia/core/context";
 import {
   CLIENT_STREAM_PROTOCOL,
   type ClientDataMap,
@@ -423,6 +424,7 @@ export function parseClientStreamEvent<
         "parts",
         "usage",
         "contextUsage",
+        "contextBreakdown",
         "metadata",
       ]);
       requireStrings(event, ["messageId"], value);
@@ -445,7 +447,7 @@ export function parseClientStreamEvent<
       validateUsageAndContext(event, value);
       break;
     case "turn_end":
-      requireEventKeys(event, ["usage", "contextUsage", "firstDeltaMs"]);
+      requireEventKeys(event, ["usage", "contextUsage", "contextBreakdown", "firstDeltaMs"]);
 
       if (!isPositiveEventId(event.turn)) invalid("turn_end.turn", value);
 
@@ -476,6 +478,7 @@ export function parseClientStreamEvent<
         "output",
         "usage",
         "contextUsage",
+        "contextBreakdown",
         "trace",
         "memoryCompaction",
         "metadata",
@@ -698,7 +701,15 @@ function isUIMessageGeneration(value: unknown): value is UIMessageGeneration {
   if (!isRecord(value)) return false;
 
   if (
-    !hasOnlyKeys(value, ["runId", "status", "usage", "contextUsage", "trace", "memoryCompaction"])
+    !hasOnlyKeys(value, [
+      "runId",
+      "status",
+      "usage",
+      "contextUsage",
+      "contextBreakdown",
+      "trace",
+      "memoryCompaction",
+    ])
   ) {
     return false;
   }
@@ -711,6 +722,7 @@ function isUIMessageGeneration(value: unknown): value is UIMessageGeneration {
       )) &&
     (value.usage === undefined || isUsage(value.usage)) &&
     (value.contextUsage === undefined || isContextUsage(value.contextUsage)) &&
+    (value.contextBreakdown === undefined || isContextBreakdown(value.contextBreakdown)) &&
     (value.trace === undefined || isTrace(value.trace)) &&
     (value.memoryCompaction === undefined ||
       (isRecord(value.memoryCompaction) &&
@@ -1080,6 +1092,10 @@ function validateUsageAndContext(event: Record<string, unknown>, original: unkno
 
   if (event.contextUsage !== undefined && !isContextUsage(event.contextUsage)) {
     invalid(`${String(event.type)}.contextUsage`, original);
+  }
+
+  if (event.contextBreakdown !== undefined && !isContextBreakdown(event.contextBreakdown)) {
+    invalid(`${String(event.type)}.contextBreakdown`, original);
   }
 }
 

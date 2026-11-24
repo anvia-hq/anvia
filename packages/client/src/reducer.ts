@@ -249,6 +249,10 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
           generationUpdate.contextUsage = event.contextUsage;
         }
 
+        if (event.contextBreakdown !== undefined) {
+          generationUpdate.contextBreakdown = event.contextBreakdown;
+        }
+
         const generation = mergeGeneration(message.generation, generationUpdate);
         let updated: UIMessage<Metadata, Data> = {
           ...message,
@@ -274,6 +278,10 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
       };
 
       if (event.contextUsage !== undefined) generation.contextUsage = event.contextUsage;
+
+      if (event.contextBreakdown !== undefined) {
+        generation.contextBreakdown = event.contextBreakdown;
+      }
 
       if (event.trace !== undefined) generation.trace = event.trace;
 

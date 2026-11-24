@@ -15,6 +15,7 @@ import type {
   ToolResultContentPart,
   Usage,
 } from "@anvia/core/completion";
+import type { ContextBreakdown } from "@anvia/core/context";
 import type { GuardrailDecisionRecord } from "@anvia/core/guardrails";
 import type { MemoryCompactionInfo } from "@anvia/core/memory";
 
@@ -51,6 +52,7 @@ export type UIMessageGeneration = {
   status?: "completed" | "blocked" | "suspended" | "cancelled" | "error";
   usage?: Usage;
   contextUsage?: ContextUsage;
+  contextBreakdown?: ContextBreakdown;
   trace?: { observer: string; traceId?: string; observationId?: string };
   memoryCompaction?: MemoryCompactionInfo;
 };
@@ -333,12 +335,14 @@ type ClientStandardStreamEvent<Metadata extends JsonObject, Data extends ClientD
       parts?: readonly UIMessagePart<Data>[];
       usage?: Usage;
       contextUsage?: ContextUsage;
+      contextBreakdown?: ContextBreakdown;
       metadata?: Metadata;
     }
   | {
       type: "turn_end";
       usage?: Usage;
       contextUsage?: ContextUsage;
+      contextBreakdown?: ContextBreakdown;
       firstDeltaMs?: number;
     }
   | {
@@ -348,6 +352,7 @@ type ClientStandardStreamEvent<Metadata extends JsonObject, Data extends ClientD
       output?: JsonValue;
       usage?: Usage;
       contextUsage?: ContextUsage;
+      contextBreakdown?: ContextBreakdown;
       trace?: { observer: string; traceId?: string; observationId?: string };
       memoryCompaction?: MemoryCompactionInfo;
       metadata?: Metadata;

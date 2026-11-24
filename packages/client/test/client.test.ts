@@ -18,6 +18,7 @@ import {
   parseClientStreamFrame,
   parseClientStreamRequest,
   parseUIMessage,
+  type UIMessage,
   type UIToolMessagePart,
   uiMessagesToMessages,
 } from "../src";
@@ -89,6 +90,15 @@ describe("message boundary", () => {
       usedPercent: 16,
       remainingPercent: 84,
     };
+    const contextBreakdown = {
+      segments: [
+        { id: "instructions" as const, tokens: 6, characters: 24, items: 1 },
+        { id: "skills" as const, tokens: 4, characters: 16, items: 2 },
+        { id: "mcpTools" as const, tokens: 2, characters: 8, items: 1 },
+      ],
+      estimatedTokens: 12,
+      reportedInputTokens: 12,
+    };
     const laterUsage = {
       inputTokens: 20,
       outputTokens: 5,
@@ -107,6 +117,7 @@ describe("message boundary", () => {
               modelId: "test-model",
               usage,
               contextUsage,
+              contextBreakdown,
               sources: [{ type: "url", url: "https://example.test/source" }],
             },
           },
@@ -129,7 +140,7 @@ describe("message boundary", () => {
 
     const ui = messagesToUIMessages(messages);
 
-    expect(ui[0]?.generation).toEqual({ usage, contextUsage });
+    expect(ui[0]?.generation).toEqual({ usage, contextUsage, contextBreakdown });
     expect(ui[1]?.generation).toEqual({ usage: laterUsage });
     expect(ui[0]?.parts).toContainEqual(
       expect.objectContaining({
@@ -1455,6 +1466,80 @@ describe("protocol and transport", () => {
       event,
     );
     expect(next[0]?.parts[0]).toMatchObject({ text: "corrected" });
+  });
+
+  it("forwards, validates, and reduces contextBreakdown across agent stream events", async () => {
+    const breakdown = {
+      segments: [
+        { id: "instructions" as const, tokens: 10, characters: 40, items: 1 },
+        { id: "skills" as const, tokens: 15, characters: 60, items: 2 },
+        { id: "mcpTools" as const, tokens: 5, characters: 20, items: 1 },
+      ],
+      estimatedTokens: 30,
+      reportedInputTokens: 30,
+    };
+    const usage = {
+      inputTokens: 30,
+      outputTokens: 5,
+      totalTokens: 35,
+      cachedInputTokens: 0,
+      cacheCreationInputTokens: 0,
+    };
+    const stream = agentToClientStream({
+      runId: "run_ctx",
+      events: values([
+        {
+          type: "turn_start",
+          turn: 1,
+          prompt: { role: "user", content: "hi" },
+          history: [],
+        },
+        { type: "text_delta", turn: 1, delta: "hello" },
+        {
+          type: "turn_end",
+          turn: 1,
+          response: { choice: [{ type: "text", text: "hello" }], usage, rawResponse: {} },
+          contextBreakdown: breakdown,
+        },
+        {
+          type: "response",
+          runId: "run_ctx",
+          text: "hello",
+          output: "hello",
+          usage,
+          contextBreakdown: breakdown,
+          messages: [],
+        },
+      ]),
+    });
+
+    const emitted = await collect(stream);
+    const parsed = emitted.map((event) => parseClientStreamEvent(event));
+    const messageEnd = parsed.find((event) => event.type === "message_end");
+    const turnEnd = parsed.find((event) => event.type === "turn_end");
+    const runEnd = parsed.find((event) => event.type === "run_end");
+
+    expect(messageEnd?.type === "message_end" && messageEnd.contextBreakdown).toEqual(breakdown);
+    expect(turnEnd?.type === "turn_end" && turnEnd.contextBreakdown).toEqual(breakdown);
+    expect(runEnd?.type === "run_end" && runEnd.contextBreakdown).toEqual(breakdown);
+
+    const reduced = parsed.reduce<readonly UIMessage[]>(
+      (messages, event) => applyClientStreamEvent(messages, event),
+      [],
+    );
+    expect(reduced[0]?.generation?.contextBreakdown).toEqual(breakdown);
+
+    expect(() =>
+      parseClientStreamEvent({
+        type: "turn_end",
+        runId: "run_ctx",
+        turn: 1,
+        contextBreakdown: {
+          segments: [{ id: "bogus", tokens: 1, characters: 1, items: 1 }],
+          estimatedTokens: 1,
+        },
+      }),
+    ).toThrow("Invalid turn_end.contextBreakdown");
   });
 });
 

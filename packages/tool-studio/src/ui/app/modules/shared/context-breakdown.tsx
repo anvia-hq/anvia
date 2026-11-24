@@ -3,6 +3,7 @@ import { isRecord } from "./object";
 
 const SEGMENT_LABELS: Readonly<Record<string, string>> = {
   instructions: "System prompt",
+  skills: "Skills",
   messages: "Messages",
   toolResults: "Tool results",
   documents: "Documents",
@@ -14,6 +15,7 @@ const SEGMENT_LABELS: Readonly<Record<string, string>> = {
 
 const SEGMENT_COLORS: Readonly<Record<string, string>> = {
   instructions: "bg-tone-agent",
+  skills: "bg-tone-generation",
   messages: "bg-chart-2",
   toolResults: "bg-tone-tool",
   documents: "bg-chart-4",

@@ -1,5 +1,30 @@
 # @anvia/studio
 
+## 1.5.2
+
+### Patch Changes
+
+- 4391550: Merge headless React UI primitives from `@anvia/react-ui` into `@anvia/react` and remove the separate `@anvia/react-ui` package.
+
+  - `@anvia/react` now exports all headless UI primitives, providers, and subpaths (`./attachment`, `./chat`, `./completion`, `./graph-explorer`, `./human-input`, `./image`, `./message`, `./sandbox-terminal`, `./sandbox-desktop`, `./selection-toolbar`, `./stream`, `./shared`, `./thread-list`) alongside `useChat`, `useCompletion`, `useGraphExplorer`, and stream smoothing hooks, with `"sideEffects": false` so hooks-only imports tree-shake UI dependencies.
+  - `@anvia/cli` component registry templates and installer now target `@anvia/react`.
+  - `@anvia/studio` imports graph explorer and stream markdown primitives directly from `@anvia/react`.
+
+- ae40e82: Improve developer experience across RAG, vector stores, embeddings, and knowledge graph packages with progressive defaults while retaining full low-level control:
+
+  - **Core RAG (`@anvia/core`)**: default recursive chunking (`strategy`, `maxSize`, `separators`), zero-boilerplate `embedDocuments` overloads for strings and `{ text }` documents, plain-object metadata filter shorthand (`{ key: value }` / `{ key: { gt, in, ... } }`), default `topK = 5`, reranking hook (`rerank` + `candidateTopK`), hybrid and chunk-granularity support in `ingestVectorDocuments`, `VectorStore.delete()` + `matchedText`, `ContextSource` for custom dynamic agent context, clean `TextDocument` formatting in `VectorContext`, and the high-level `createVectorIndex()` facade.
+  - **Local embeddings (`@anvia/transformers`)**: default `loadTransformersEmbeddingModel()` to `DEFAULT_TRANSFORMERS_EMBEDDING_MODEL`.
+  - **Vector adapters (`@anvia/pgvector`, `@anvia/qdrant`, `@anvia/pinecone`, `@anvia/chroma`, `@anvia/lancedb`, `@anvia/milvus`, `@anvia/redis`, `@anvia/weaviate`)**: add `delete({ documentIds })` and `[Symbol.asyncDispose]()` across all adapters.
+  - **Knowledge graphs (`@anvia/graph`, `@anvia/neo4j`, `@anvia/memgraph`)**: compile-time validation for node `identity` and relationship `from`/`to`, auto-strictening of plain `z.object()` schemas, optional `relationships` and relationship `properties`, `onInvalidFact: "warn"` and `onProgress` callbacks, default ingestion conflict/orphan policies, bounded default retrieval options (supporting empty `relationships: []`), `formatGraphContext()`, `createGraphContext()`, `createKnowledgeGraph()`, derived managed graph resource defaults + default `ensure()` timeout in Neo4j/Memgraph, `"dotProduct"` similarity parity in Memgraph, unified `defineGraphSchema`/`extractGraphFacts` exports in Neo4j, and fix Memgraph retrieval when `model.dimensions` is omitted.
+
+- Updated dependencies [d8a6cca]
+- Updated dependencies [4391550]
+- Updated dependencies [ae40e82]
+  - @anvia/client@1.9.1
+  - @anvia/server@1.5.1
+  - @anvia/react@1.3.0
+  - @anvia/graph@1.3.0
+
 ## 1.5.1
 
 ### Patch Changes

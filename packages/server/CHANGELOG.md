@@ -1,5 +1,11 @@
 # @anvia/server
 
+## 1.5.1
+
+### Patch Changes
+
+- d8a6cca: Widen the optional `@anvia/durable` peer dependency range to `>=0.8.0 <2.0.0` to support `@anvia/durable@1.x`.
+
 ## 1.5.0
 
 ### Minor Changes

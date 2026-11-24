@@ -64,7 +64,9 @@ const ingestion = await ingestGraphText({
   `orphanEntities` defaults to `"delete"` (pass explicit overrides when needed).
   `ingestGraphDocuments()` batches; `ingestGraphTextToStores()` writes graph +
   vector store in one call; `createKnowledgeGraph()` binds models and defaults
-  for repeated `ingest()`, `retrieve()`, `asTool()`, and `asContext()` calls.
+  for repeated `ingest()`, `retrieve()`, `asTool()`, and `asContext()` calls
+  (note: plain-string inputs derive content-hash document ids, so pass an
+  explicit `{ id, text }` whenever you need in-place replacement).
 - Two conflict policies: `factConflicts` (disagreements between chunks, rejected
   by default — strategies like `prefer-longest`, `union`, `max`), and `conflict`
   (collisions with already-stored facts). Set `onInvalidFact: "warn"` to skip

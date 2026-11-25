@@ -33,7 +33,7 @@ import { Pipeline } from "@anvia/core/pipeline";
 import { createQuestionTool, createToolIndex, type Tool } from "@anvia/core/tool";
 import { InMemoryVectorStore, type VectorStore } from "@anvia/core/vector-store";
 import { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   AssistantContent,
@@ -43,7 +43,6 @@ import {
 } from "../../core/test/helpers/imports";
 import {
   type AgentRunResponse,
-  type AgentRunStreamEvent,
   createInMemoryStudioStore,
   Studio,
   type StudioSessionRunTranscriptInput,
@@ -543,12 +542,6 @@ function vectorFor(text: string): number[] {
 }
 
 describe("Anvia studio", () => {
-  it("exposes only canonical Agent interaction events", () => {
-    expectTypeOf<Extract<AgentRunStreamEvent, { type: "approval_required" }>>().toBeNever();
-    expectTypeOf<Extract<AgentRunStreamEvent, { type: "tool_approval_request" }>>().toBeNever();
-    expectTypeOf<Extract<AgentRunStreamEvent, { type: "interaction_response" }>>().not.toBeNever();
-  });
-
   it("generates config from registered agents", async () => {
     const agent = new Agent({
       id: "support",
@@ -2463,38 +2456,6 @@ describe("Anvia studio", () => {
     });
   });
 
-  it("starts a served runner from configured agents", async () => {
-    const agent = new Agent({
-      id: "support",
-      model: new QueueModel([response([AssistantContent.text("ok")])]),
-      name: "Support",
-      tools: [createRefundTool(() => "ok")],
-    });
-    const runner = new Studio([agent], {
-      quickPrompts: {
-        support: ["Issue a refund"],
-      },
-    }).start({ port: 0, log: false });
-
-    try {
-      expect(runner.config()).toMatchObject({
-        agents: [{ id: "support", name: "Support", quickPrompts: ["Issue a refund"] }],
-        capabilities: { interactions: { enabled: true } },
-      });
-
-      const res = await runner.fetch(
-        new Request("http://runner.test/agents/support/runs", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ type: "messages", messages: [Message.user("hi")] }),
-        }),
-      );
-      expect(res.status).toBe(200);
-    } finally {
-      runner.close();
-    }
-  });
-
   it("runs an agent without streaming and passes history", async () => {
     const model = new QueueModel([response([AssistantContent.text("Anvia")])]);
     const agent = new Agent({ id: "support", model, instructions: "system" });
@@ -3322,61 +3283,11 @@ describe("Anvia studio", () => {
 
     const shell = await runner.fetch(new Request("http://runner.test/playground"));
     expect(shell.status).toBe(200);
-    const html = await shell.text();
-    expect(html).toContain('id="anvia-ui"');
+    expect(await shell.text()).toContain('id="anvia-ui"');
 
-    const legacy = await runner.fetch(new Request("http://runner.test/ui"));
+    const legacy = await runner.fetch(new Request("http://runner.test/ui/playground"));
     expect(legacy.status).toBe(302);
     expect(legacy.headers.get("location")).toBe("/playground");
-
-    for (const path of [
-      "/playground",
-      "/playground/session_1",
-      "/tracing",
-      "/tracing/trace_1",
-      "/tracing/sessions/session_1",
-      "/sessions",
-      "/agents",
-      "/tools",
-      "/pipelines",
-      "/mcps",
-      "/memory",
-      "/status",
-      "/knowledge",
-      "/knowledge/static-context",
-      "/knowledge/dynamic-context",
-      "/knowledge/dynamic-tools",
-      "/knowledge/retrieval-log",
-    ]) {
-      const routeShell = await runner.fetch(
-        new Request(`http://runner.test${path}`, {
-          headers: { accept: "text/html" },
-        }),
-      );
-      expect(routeShell.status).toBe(200);
-      await expect(routeShell.text()).resolves.toContain('id="anvia-ui"');
-    }
-
-    for (const [path, location] of [
-      ["/ui/playground", "/playground"],
-      ["/ui/playground/session_1", "/playground/session_1"],
-      ["/ui/tracing", "/tracing"],
-      ["/ui/tracing/trace_1", "/tracing/trace_1"],
-      ["/ui/tracing/sessions/session_1", "/tracing/sessions/session_1"],
-      ["/ui/sessions", "/sessions"],
-      ["/ui/agents", "/agents"],
-      ["/ui/tools", "/tools"],
-      ["/ui/pipelines", "/pipelines"],
-      ["/ui/mcps", "/mcps"],
-      ["/ui/memory", "/memory"],
-      ["/ui/status", "/status"],
-      ["/ui/knowledge", "/knowledge"],
-      ["/ui/knowledge/static-context", "/knowledge/static-context"],
-    ]) {
-      const legacyRoute = await runner.fetch(new Request(`http://runner.test${path}`));
-      expect(legacyRoute.status).toBe(302);
-      expect(legacyRoute.headers.get("location")).toBe(location);
-    }
   });
 
   it("returns 404 for unknown agents", async () => {

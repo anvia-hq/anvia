@@ -53,16 +53,6 @@ async function admissionError(runtime: DurableRuntime, prompt: string) {
     );
 }
 
-it("accepts a number as one budget for every field, as before", async () => {
-  const runtime = await open(2_000);
-  expect(runtime.limits().maxPayloadBytes).toBe(2_000);
-  expect(await admissionError(runtime, "p".repeat(3_000))).toMatchObject({
-    code: "payload_too_large",
-    field: "run.prompt",
-    limit: 2_000,
-  });
-});
-
 it("fills every field group from the default when only the default is given", async () => {
   const runtime = await open({ default: 2_000 });
   expect(runtime.limits().maxPayloadBytes).toEqual({

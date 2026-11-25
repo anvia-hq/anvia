@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { chunkText, chunkTextDocuments } from "../src/documents";
 
@@ -241,16 +240,5 @@ describe("chunkTextDocuments", () => {
     expect(() => chunkTextDocuments({ documents: [{ id: "empty", text: "" }] })).toThrow(
       "non-empty text",
     );
-  });
-});
-
-describe("@anvia/core/documents", () => {
-  it("publishes only the documents subpath", async () => {
-    const packageJson = JSON.parse(
-      await readFile(new URL("../package.json", import.meta.url), "utf8"),
-    ) as { exports: Record<string, unknown> };
-
-    expect(packageJson.exports).toHaveProperty("./documents");
-    expect(packageJson.exports).not.toHaveProperty("./loaders");
   });
 });

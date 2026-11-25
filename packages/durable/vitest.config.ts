@@ -33,7 +33,6 @@ const sqliteOnly = [
   "test/hardening.test.ts",
   "test/storage.test.ts",
   "test/journal.test.ts",
-  "test/journal-benchmark.ts",
   "test/goal-recovery.test.ts",
   "test/task-recovery.test.ts",
   "test/recorded-memory-sqlite.test.ts",

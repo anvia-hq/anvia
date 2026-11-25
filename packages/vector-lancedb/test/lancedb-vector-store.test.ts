@@ -1,16 +1,13 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, expectTypeOf, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { VectorFilter } from "@anvia/core/vector-store";
 import {
   type LanceDBConnectionLike,
   type LanceDBTableLike,
   LanceDBVectorClient,
 } from "../src/index.js";
-
-// @ts-expect-error LanceDB no longer exposes an engine-specific SQL filter translator.
-type RemovedFilterTranslator = typeof import("../src/index.js").filterToLanceExpr;
 
 function fixture() {
   const toArray = vi.fn(async () => [
@@ -46,9 +43,6 @@ function fixture() {
 }
 
 describe("LanceDBVectorClient", () => {
-  it("does not export the removed filter translator", () => {
-    expectTypeOf<RemovedFilterTranslator>().toBeAny();
-  });
   it("keeps construction lazy and uses explicit lifecycle", async () => {
     const { client } = fixture();
     const store = new LanceDBVectorClient({ client }).vectorStore({

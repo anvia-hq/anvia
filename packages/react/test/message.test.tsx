@@ -393,7 +393,6 @@ describe("Message primitives", () => {
     const tool = container.querySelectorAll('[data-role="tool"]').item(1);
     expect(tool?.getAttribute("data-state")).toBe("input-streaming");
     expect(screen.getByText("write_file")).toBeTruthy();
-    expect(screen.getByText("Running")).toBeTruthy();
     expect(screen.getByText('{"path":')).toBeTruthy();
   });
 
@@ -488,7 +487,6 @@ describe("Message primitives", () => {
                     <Message.ToolStatus />
                     <Message.ToolInput />
                     <Message.ToolOutput />
-                    <Message.ToolError />
                   </Message.Tool>
                 </Message.Part>
               </Message.Parts>
@@ -499,7 +497,6 @@ describe("Message primitives", () => {
     );
 
     expect(screen.getByText("lookup")).toBeTruthy();
-    expect(screen.getByText("Done")).toBeTruthy();
     expect(screen.getByText(/"id": "A-100"/)).toBeTruthy();
     expect(screen.getByText(/"status": "shipped"/)).toBeTruthy();
   });

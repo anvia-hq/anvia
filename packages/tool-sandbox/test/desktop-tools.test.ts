@@ -3,7 +3,6 @@ import {
   createDesktopTools,
   desktopToolRecovery,
   type DesktopToolName,
-  viewOf,
 } from "../src/desktop-tools";
 import { DockerSandboxError } from "../src/errors";
 import type { DesktopAction, SandboxDesktop } from "../src/remote/desktop";
@@ -146,13 +145,19 @@ describe("screenshots", () => {
     expect(desktop.screenshot).toHaveBeenCalledWith(expect.objectContaining({ scale: undefined }));
   });
 
-  it("scales by whichever limit bites first, and never up", () => {
-    const policy = { maxEdge: 1568, maxPixels: 1_150_000 };
-    expect(viewOf(800, 600, policy)).toMatchObject({ scale: 1, imageWidth: 800, imageHeight: 600 });
-    expect(viewOf(3000, 300, policy).imageWidth).toBe(1568);
-    const square = viewOf(1568, 1568, policy);
-    expect(square.imageWidth * square.imageHeight).toBeLessThanOrEqual(1_150_000);
-    expect(square.imageWidth).toBeLessThan(1568);
+  it("scales by whichever limit bites first, and never up", async () => {
+    const screenshotSize = async (width: number, height: number) => {
+      const output = (await tools(fakeDesktop(width, height)).call("desktop_screenshot", {})) as {
+        content: Array<{ text?: string }>;
+      };
+      return JSON.parse(output.content[0]?.text ?? "{}") as { width: number; height: number };
+    };
+
+    expect(await screenshotSize(800, 600)).toEqual({ width: 800, height: 600 });
+    expect((await screenshotSize(3000, 300)).width).toBe(1568);
+    const square = await screenshotSize(1568, 1568);
+    expect(square.width * square.height).toBeLessThanOrEqual(1_150_000);
+    expect(square.width).toBeLessThan(1568);
   });
 
   it("honours a different policy", async () => {
@@ -171,11 +176,12 @@ describe("coordinates", () => {
   it("translates points in the screenshot to display pixels", async () => {
     const desktop = fakeDesktop(2560, 1440);
     const { call } = tools(desktop);
-    const view = viewOf(2560, 1440, { maxEdge: 1568, maxPixels: 1_150_000 });
+    const shot = (await call("desktop_screenshot", {})) as { content: Array<{ text?: string }> };
+    const view = JSON.parse(shot.content[0]?.text ?? "{}") as { width: number; height: number };
 
-    await call("desktop_click", { coordinate: [view.imageWidth / 2, view.imageHeight / 2] });
+    await call("desktop_click", { coordinate: [view.width / 2, view.height / 2] });
     await call("desktop_mouse_move", { coordinate: [0, 0] });
-    await call("desktop_mouse_move", { coordinate: [view.imageWidth - 1, view.imageHeight - 1] });
+    await call("desktop_mouse_move", { coordinate: [view.width - 1, view.height - 1] });
 
     const [click, moveOrigin, moveCorner] = desktop.act.mock.calls.map(([action]) => action);
     expect(click).toMatchObject({ type: "click", x: 1280, y: 720 });

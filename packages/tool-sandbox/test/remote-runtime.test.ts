@@ -1,10 +1,11 @@
 import { access, readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { EventEmitter } from "node:events";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket, { WebSocketServer } from "ws";
 import { SandboxDaemon } from "../src/daemon/index";
-import { LinkClosedError, type HubConnection } from "../src/remote/connection";
+import { HubConnection, LinkClosedError } from "../src/remote/connection";
 import { RemoteSandboxHub } from "../src/remote/index";
 import { RemoteSandboxRuntime } from "../src/remote/runtime";
 import {
@@ -22,6 +23,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const harnesses: RemoteHarness[] = [];
 const hubs: RemoteSandboxHub[] = [];
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.all(hubs.splice(0).map((hub) => hub.close()));
   await Promise.all(harnesses.splice(0).map((harness) => harness.cleanup()));
 });
@@ -680,6 +682,36 @@ describe("RemoteSandboxRuntime retry rules", () => {
     const { runtime, attempts } = runtimeWith([() => Promise.reject(new TypeError("bad request"))]);
     await expect(runtime.listProcesses()).rejects.toThrow("bad request");
     expect(attempts()).toBe(1);
+  });
+});
+
+describe("HubConnection heartbeat", () => {
+  function fakeSocket() {
+    return Object.assign(new EventEmitter(), {
+      readyState: WebSocket.OPEN as number,
+      send: vi.fn(),
+      close: vi.fn(),
+      terminate: vi.fn(),
+    });
+  }
+
+  it("pings open sockets and ignores ticks while closing", () => {
+    vi.useFakeTimers();
+    const openSocket = fakeSocket();
+    const openConnection = new HubConnection(openSocket as unknown as WebSocket, "/w", 1_000);
+    vi.advanceTimersByTime(2_000);
+    expect(openSocket.send.mock.calls.map(([data]) => JSON.parse(String(data)).type)).toEqual([
+      "ping",
+      "ping",
+    ]);
+    openConnection.close(1000, "done");
+
+    const closingSocket = fakeSocket();
+    const closingConnection = new HubConnection(closingSocket as unknown as WebSocket, "/w", 1_000);
+    closingSocket.readyState = WebSocket.CLOSING;
+    expect(() => vi.advanceTimersByTime(3_000)).not.toThrow();
+    expect(closingSocket.send).not.toHaveBeenCalled();
+    closingConnection.close(1000, "done");
   });
 });
 

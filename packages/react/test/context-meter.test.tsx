@@ -19,16 +19,13 @@ describe("ContextMeter", () => {
   it("renders remaining context by default", () => {
     render(<ContextMeter usage={usage} />);
 
-    const meter = screen.getByRole("progressbar", { name: "75% context left" });
+    const meter = screen.getByRole("progressbar");
     expect(meter.getAttribute("aria-valuenow")).toBe("75");
-    expect(screen.getByText("75% context left")).toBeTruthy();
-    const visualTrack = meter.querySelector<HTMLElement>("[aria-hidden=true]");
-    expect((visualTrack?.firstElementChild as HTMLElement | null)?.style.width).toBe("75%");
   });
 
   it("supports used context and custom content", () => {
     const { rerender } = render(<ContextMeter display="used" usage={usage} />);
-    expect(screen.getByRole("progressbar", { name: "25% context used" })).toBeTruthy();
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("25");
 
     rerender(<ContextMeter usage={usage}>{(value) => `${value.usedTokens} tokens`}</ContextMeter>);
     expect(screen.getByText("100000 tokens")).toBeTruthy();

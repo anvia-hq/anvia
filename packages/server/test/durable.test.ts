@@ -195,9 +195,14 @@ describe("durable HTTP bridge", () => {
     });
     runtimes.push(runtime);
     const handler = createDurableHandler({ runtime, authorize: () => true, maxBodyBytes: 65_536 });
+    const responses: Response[] = [];
     const client = new DurableClient({
       endpoint: "http://anvia.test/durable",
-      fetch: async (url, init) => handler(new Request(url, init)),
+      fetch: async (url, init) => {
+        const response = await handler(new Request(url, init));
+        responses.push(response);
+        return response;
+      },
     });
 
     const payload = await failure(client.submit({ ...submission, prompt: "x".repeat(3_000) }));
@@ -205,12 +210,16 @@ describe("durable HTTP bridge", () => {
     expect(payload).toMatchObject({ status: 413, code: "payload_too_large", field: "run.prompt" });
     expect(payload.message).toContain("run.prompt is");
     expect(payload.message).toContain("limit is 1000 bytes");
+    expect(responses.at(-1)?.headers.has("retry-after")).toBe(false);
 
     await client.submit(submission);
     await vi.waitFor(() => expect(model).toHaveBeenCalledTimes(1));
     const capacity = await failure(client.submit({ ...submission, sessionId: "other" }));
     expect(capacity).toMatchObject({ status: 429, code: "capacity_exceeded" });
     expect(capacity.message).toContain("Pending durable run limit reached");
+    const retryAfter = responses.at(-1)?.headers.get("retry-after");
+    expect(retryAfter).toMatch(/^\d+$/);
+    expect(Number(retryAfter)).toBeGreaterThanOrEqual(1);
 
     const oversized = await handler(
       new Request("http://anvia.test/durable/runs", {
@@ -220,6 +229,7 @@ describe("durable HTTP bridge", () => {
       }),
     );
     expect(oversized.status).toBe(413);
+    expect(oversized.headers.has("retry-after")).toBe(false);
     expect(await oversized.json()).toMatchObject({
       error: "Durable request body is too large",
       code: "payload_too_large",

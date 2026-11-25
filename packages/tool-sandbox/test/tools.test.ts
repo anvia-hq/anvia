@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDockerSandboxTools } from "../src/tools";
+import { createDockerSandboxTools, createSandboxTools } from "../src/tools";
 import { Writable } from "../src/internal/type-utils";
-import type { DockerSandboxCommandPolicy, DockerSandboxRuntime } from "../src/types";
+import type {
+  DockerSandboxCommandPolicy,
+  DockerSandboxRuntime,
+  SandboxRuntime,
+} from "../src/types";
 
 describe("createDockerSandboxTools", () => {
   it("requires an explicit, ordered, non-empty tool selection", () => {
@@ -778,3 +782,71 @@ function shellProbeResult(exitCode: number) {
     stderrTruncated: false,
   };
 }
+
+describe("createSandboxTools operationId", () => {
+  function genericRuntime(): SandboxRuntime {
+    const info = {
+      id: "p1",
+      command: "sh",
+      args: [],
+      status: "running",
+      startedAt: "now",
+    } as const;
+    return {
+      id: "s",
+      provider: "custom",
+      workdir: "/workspace",
+      publishedPorts: [],
+      exec: vi.fn(async () => shellProbeResult(0)),
+      execStream: vi.fn(),
+      readFile: vi.fn(),
+      readTextFile: vi.fn(),
+      readTextFilePage: vi.fn(),
+      writeFile: vi.fn(),
+      writeTextFile: vi.fn(async () => undefined),
+      listFiles: vi.fn(),
+      startProcess: vi.fn(async () => info),
+      listProcesses: vi.fn(),
+      readProcessLogs: vi.fn(),
+      stopProcess: vi.fn(async () => ({ ...info, status: "stopped" as const })),
+      waitForPort: vi.fn(async () => ({ containerPort: 3000, protocol: "tcp" as const })),
+    } as unknown as SandboxRuntime;
+  }
+
+  it("forwards context.operationId on every mutating tool and omits it when absent", async () => {
+    const sandbox = genericRuntime();
+    const tools = createSandboxTools({
+      sandbox,
+      tools: ["exec_command", "write_file", "start_process", "stop_process", "wait_for_port"],
+    });
+    const call = (name: string, args: unknown, operationId?: string) => {
+      const tool = tools.find((candidate) => candidate.name === name);
+
+      if (tool === undefined) throw new Error(name);
+
+      return tool.call(args as never, operationId === undefined ? {} : { operationId });
+    };
+
+    await call("exec_command", { command: "ls", args: [] }, "op-exec");
+    await call("write_file", { path: "a.txt", content: "x" }, "op-write");
+    await call("start_process", { command: "sleep", args: ["1"] }, "op-start");
+    await call("stop_process", { processId: "p1" }, "op-stop");
+    await call("write_file", { path: "b.txt", content: "y" });
+
+    expect(sandbox.exec).toHaveBeenCalledWith(expect.objectContaining({ operationId: "op-exec" }));
+    expect(sandbox.writeTextFile).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ operationId: "op-write" }),
+    );
+    expect(sandbox.writeTextFile).toHaveBeenNthCalledWith(2, { path: "b.txt", text: "y" });
+    expect(sandbox.startProcess).toHaveBeenCalledWith(
+      expect.objectContaining({ operationId: "op-start" }),
+    );
+    expect(sandbox.stopProcess).toHaveBeenCalledWith(
+      expect.objectContaining({ operationId: "op-stop" }),
+    );
+    await expect(call("wait_for_port", { containerPort: 3000 })).resolves.toEqual({
+      port: { containerPort: 3000, protocol: "tcp" },
+    });
+  });
+});

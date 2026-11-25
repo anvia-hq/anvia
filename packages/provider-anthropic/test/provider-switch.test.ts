@@ -1,7 +1,15 @@
 import type { JsonObject, Message as MessageType } from "@anvia/core/completion";
 import { describe, expect, it } from "vitest";
 import { Message } from "../../core/test/helpers/imports";
-import { anthropicMessageHelpers, toAnthropicMessagesParams } from "../src/anthropic/completion";
+import { toAnthropicMessagesParams } from "../src/anthropic/completion";
+
+function toMessages(message: MessageType) {
+  return toAnthropicMessagesParams("claude-sonnet-5", {
+    chatHistory: [message],
+    documents: [],
+    tools: [],
+  }).messages;
+}
 
 function assistantFrom(
   provider: string,
@@ -27,7 +35,7 @@ function assistantFrom(
 
 describe("Anthropic history after a provider switch", () => {
   it("does not replay OpenAI reasoning items as Anthropic thinking blocks", () => {
-    const messages = anthropicMessageHelpers.messageToAnthropicMessages(
+    const messages = toMessages(
       assistantFrom("openai", [
         {
           type: "reasoning",
@@ -54,7 +62,7 @@ describe("Anthropic history after a provider switch", () => {
   });
 
   it("does not replay Gemini thought signatures as Anthropic thinking signatures", () => {
-    const messages = anthropicMessageHelpers.messageToAnthropicMessages(
+    const messages = toMessages(
       assistantFrom("gemini", [
         {
           type: "reasoning",
@@ -70,7 +78,7 @@ describe("Anthropic history after a provider switch", () => {
   });
 
   it("drops reasoning-only foreign turns instead of sending an empty assistant message", () => {
-    const messages = anthropicMessageHelpers.messageToAnthropicMessages(
+    const messages = toMessages(
       assistantFrom("openai", [
         {
           type: "reasoning",
@@ -86,7 +94,7 @@ describe("Anthropic history after a provider switch", () => {
 
   it("keeps Anthropic's own signed thinking when the same provider produced it", () => {
     expect(
-      anthropicMessageHelpers.messageToAnthropicMessages(
+      toMessages(
         assistantFrom("anthropic", [
           {
             type: "reasoning",
@@ -157,7 +165,7 @@ describe("Anthropic history after a provider switch", () => {
   });
 
   it("never sends unsigned thinking, which Anthropic rejects", () => {
-    const messages = anthropicMessageHelpers.messageToAnthropicMessages({
+    const messages = toMessages({
       role: "assistant",
       content: [
         {

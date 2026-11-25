@@ -3,7 +3,6 @@ import { createDurableChatTransport, type DurableChatClient } from "@anvia/clien
 import type { DurableEvent } from "@anvia/durable/protocol";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import * as publicReact from "../src";
 import { useDurableChat } from "../src";
 
 const runId = "run-1";
@@ -58,10 +57,6 @@ function fakeClient(options: { events: DurableEvent[]; hold?: Gate; status?: str
 }
 
 describe("useDurableChat", () => {
-  it("is exported from the public entrypoint", () => {
-    expect(publicReact).toHaveProperty("useDurableChat");
-  });
-
   it("exposes the durable run id and status and controls the run", async () => {
     const hold = gate();
     const { client, calls } = fakeClient({

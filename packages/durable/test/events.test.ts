@@ -69,15 +69,32 @@ describe("typed durable events", () => {
     expect(first("model_completed").data.operationId).toBeTypeOf("string");
     expect(first("tool_started").data.operationId).toBeTypeOf("string");
     expect(first("tool_completed").data).toHaveProperty("result");
-    const attempt = events.find((event) => event.type === "model_attempt_started");
-
-    if (attempt !== undefined && isDurableEvent(attempt, "model_attempt_started"))
-      expect(attempt.data.attempt).toBeTypeOf("number");
   });
 
-  it("narrows by type, including several types at once", async () => {
-    const events = await collect();
-    const event = events[0]!;
+  it("narrows by type, including several types at once", () => {
+    const events: DurableEvent[] = [
+      {
+        runId: "r",
+        sequence: 1,
+        type: "status",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        data: { status: "running" },
+      },
+      {
+        runId: "r",
+        sequence: 2,
+        type: "tool_started",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        data: {
+          operationId: "op_1",
+          toolCallId: "call_1",
+          toolName: "lookup",
+          input: {},
+          recovery: "safe",
+        },
+      },
+    ];
+    const event = events[1]!;
 
     if (isDurableEvent(event, "tool_started", "tool_completed")) {
       expectTypeOf(event.data.operationId).toBeString();
@@ -88,9 +105,7 @@ describe("typed durable events", () => {
       epoch: number;
       turn: number;
     }>();
-    expect(
-      events.filter((candidate) => isDurableEvent(candidate, "status")).length,
-    ).toBeGreaterThan(0);
+    expect(events.filter((candidate) => isDurableEvent(candidate, "status"))).toHaveLength(1);
     expect(isDurableEvent(events[0]!, "tool_started", "model_started")).toBe(false);
   });
 });

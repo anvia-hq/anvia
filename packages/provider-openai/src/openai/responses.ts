@@ -22,7 +22,7 @@ import {
 import { fromOpenAIResponse } from "./responses-response";
 import { OpenAIResponsesStreamState } from "./responses-stream";
 
-export { openaiMessageHelpers, toOpenAIResponsesParams } from "./responses-request";
+export { toOpenAIResponsesParams } from "./responses-request";
 export { fromOpenAIResponse } from "./responses-response";
 export { fromOpenAIStreamEvent } from "./responses-stream";
 

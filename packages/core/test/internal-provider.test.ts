@@ -95,8 +95,8 @@ describe("internal provider helpers", () => {
     const controls = defineReasoningEffortControls(["low", "high"] as const, "high");
     expect(controls.reasoningEffort).toEqual({
       type: "select",
-      label: "Reasoning effort",
-      description: "Controls how much reasoning the model applies before responding.",
+      label: expect.any(String),
+      description: expect.any(String),
       options: ["low", "high"],
       defaultValue: "high",
     });
@@ -165,6 +165,24 @@ describe("internal provider helpers", () => {
     expect(() =>
       indexedEmbeddingDataFromResponse({ data: [{ index: 0, embedding: ["bad"] }] }, 1, "Mistral"),
     ).toThrow("Invalid Mistral embedding response vector at position 0.");
+    expect(() =>
+      indexedEmbeddingDataFromResponse({ data: [{ index: "0", embedding: [1] }] }, 1, "Mistral"),
+    ).toThrow("Invalid Mistral embedding response index at position 0.");
+    expect(() =>
+      indexedEmbeddingDataFromResponse({ data: [{ index: 1, embedding: [1] }] }, 1, "Mistral"),
+    ).toThrow("Mistral embedding response index 1 was outside the input range.");
+    expect(() =>
+      indexedEmbeddingDataFromResponse(
+        {
+          data: [
+            { index: 0, embedding: [1] },
+            { index: 0, embedding: [2] },
+          ],
+        },
+        2,
+        "OpenAI",
+      ),
+    ).toThrow("Duplicate OpenAI embedding response index 0.");
   });
 
   it("validates decision primitives", () => {

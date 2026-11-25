@@ -1,19 +1,22 @@
 import { describe, expect, it } from "vitest";
+import { Message } from "../../core/test/helpers/imports";
 import type { StudioTrace, StudioTraceObservation } from "../src/types";
 import {
   compactTraceMetadata,
   firstDeltaMsFromObservations,
+  jsonSyntaxTokens,
   observationDetailMetadata,
   observationStatusSummary,
   observationUsageText,
   plainTraceValue,
+  rawTraceJson,
   selectedTraceDetail,
   traceDetailMetadata,
   traceObservationLabel,
   traceObservationTree,
   traceTurns,
   turnUsageText,
-} from "../src/ui/app/modules/tracing/trace-browser";
+} from "../src/ui/app/modules/tracing/trace-browser-detail";
 
 describe("trace browser helper behavior", () => {
   it("groups observations into sorted turns and builds parent-child trees", () => {
@@ -206,6 +209,79 @@ describe("trace browser helper behavior", () => {
     ]);
     expect(plainTraceValue("Prompt", { prompt: [{ role: "user", content: "Hi" }] })).toEqual([
       { label: "User", text: "Hi" },
+    ]);
+    expect(plainTraceValue("Metadata", { agentName: "Support Operations" })).toEqual([
+      { label: "Agent Name", text: "Support Operations" },
+    ]);
+    expect(
+      plainTraceValue("Output", {
+        choice: [{ type: "text", text: "Hey! How can I help?" }],
+        usage: { inputTokens: 69, outputTokens: 11, totalTokens: 80 },
+        rawResponse: {
+          instructions: "Use tools when useful.",
+        },
+        messageId: "resp_123",
+      }),
+    ).toEqual([
+      { label: "Assistant output", text: "Hey! How can I help?" },
+      { label: "Message Id", text: "resp_123" },
+    ]);
+    expect(
+      plainTraceValue("Input", {
+        instructions: "Use tools when useful.",
+        chatHistory: [
+          Message.user("Hello!"),
+          Message.assistant("Hello! How can I help you today?"),
+          Message.user("What tools do you have?"),
+        ],
+      }),
+    ).toEqual([
+      { label: "System prompt", text: "Use tools when useful." },
+      {
+        label: "Conversation history (2)",
+        text: "1. User\nHello!\n\n2. Assistant\nHello! How can I help you today?",
+      },
+      { label: "Current prompt", text: "What tools do you have?" },
+    ]);
+    expect(
+      plainTraceValue("Input", {
+        instructions: "Use tools when useful.",
+        history: [Message.user("Hello!"), Message.assistant("Hello! How can I help you today?")],
+        prompt: Message.user("Get ORDER 11001"),
+      }),
+    ).toEqual([
+      { label: "System prompt", text: "Use tools when useful." },
+      {
+        label: "Conversation history (2)",
+        text: "1. User\nHello!\n\n2. Assistant\nHello! How can I help you today?",
+      },
+      { label: "Current prompt", text: "Get ORDER 11001" },
+    ]);
+  });
+
+  it("renders values that cannot be serialized and classifies JSON tokens", () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(rawTraceJson(circular)).toBe("[object Object]");
+    expect(rawTraceJson(undefined)).toBe("undefined");
+    expect(
+      jsonSyntaxTokens('{"agentName":"Support Operations","toolCount":1,"active":true}').map(
+        ({ text, type }) => ({ text, type }),
+      ),
+    ).toEqual([
+      { text: "{", type: "plain" },
+      { text: '"agentName"', type: "key" },
+      { text: ":", type: "plain" },
+      { text: '"Support Operations"', type: "string" },
+      { text: ",", type: "plain" },
+      { text: '"toolCount"', type: "key" },
+      { text: ":", type: "plain" },
+      { text: "1", type: "number" },
+      { text: ",", type: "plain" },
+      { text: '"active"', type: "key" },
+      { text: ":", type: "plain" },
+      { text: "true", type: "boolean" },
+      { text: "}", type: "plain" },
     ]);
   });
 });

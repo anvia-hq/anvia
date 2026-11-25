@@ -12,13 +12,11 @@ import {
   containsAll,
   containsAny,
   createTool,
-  defineMetric,
   doesNotMatch,
   type Embedding,
   type EmbeddingModel,
   type EvalMetricArgs,
   EvalOutcome,
-  EvalFailFastError,
   exactMatch,
   llmJudge,
   llmScore,
@@ -317,37 +315,7 @@ describe("evals", () => {
     });
   });
 
-  it("supports aborting runs, fail-fast gates, and rerun selection", async () => {
-    const controller = new AbortController();
-    controller.abort(new Error("cancelled by caller"));
-    await expect(
-      runEvalSuite({
-        name: "aborted",
-        cases: [{ id: "case", input: "x", expected: "x" }],
-        target: (input) => input,
-        metrics: [exactMatch()],
-        signal: controller.signal,
-      }),
-    ).rejects.toThrow("cancelled by caller");
-
-    const completed: string[] = [];
-    await expect(
-      runEvalSuite({
-        name: "fail-fast",
-        cases: [
-          { id: "first", input: "wrong", expected: "right" },
-          { id: "second", input: "right", expected: "right" },
-        ],
-        target: (input) => input,
-        metrics: [exactMatch()],
-        failFast: true,
-        onProgress: (event) => {
-          if (event.type === "case-complete") completed.push(event.result.case.id);
-        },
-      }),
-    ).rejects.toBeInstanceOf(EvalFailFastError);
-    expect(completed).toEqual(["first"]);
-
+  it("selects failed and invalid case ids for rerun", async () => {
     const previous = await runEvalSuite({
       name: "rerun-source",
       cases: [
@@ -869,17 +837,36 @@ describe("evals", () => {
   });
 
   it("rejects duplicate case ids and metric names before running targets", async () => {
+    let targetCalls = 0;
+
     await expect(
       runEvalSuite({
-        name: "duplicates",
+        name: "duplicate-cases",
         cases: [
           { id: "same", input: "a" },
           { id: "same", input: "b" },
         ],
-        target: (input) => input,
+        target: (input) => {
+          targetCalls += 1;
+          return input;
+        },
         metrics: [exactMatch({ expected: "a" })],
       }),
     ).rejects.toThrow("Evaluation case id must be unique");
+
+    await expect(
+      runEvalSuite({
+        name: "duplicate-metrics",
+        cases: [{ id: "case-1", input: "a", expected: "a" }],
+        target: (input) => {
+          targetCalls += 1;
+          return input;
+        },
+        metrics: [exactMatch({ name: "dup" }), exactMatch({ name: "dup" })],
+      }),
+    ).rejects.toThrow(/metric name/i);
+
+    expect(targetCalls).toBe(0);
   });
 
   it("rejects invalid suite names, empty inputs, and concurrency values", async () => {
@@ -902,33 +889,6 @@ describe("evals", () => {
     await expect(runEvalSuite({ ...base, concurrency: Number.NaN })).rejects.toThrow(
       "Evaluation concurrency must be a positive integer",
     );
-  });
-});
-
-describe("defineMetric", () => {
-  it("returns the metric object unchanged and preserves annotations", async () => {
-    const metric = defineMetric({
-      name: "quality",
-      dataType: "CATEGORICAL" as const,
-      scoreConfigId: "sc-1",
-      metadata: { suite: "qa" },
-      evaluate: () => EvalOutcome.pass("good"),
-    });
-
-    expect(metric.name).toBe("quality");
-    expect(metric.dataType).toBe("CATEGORICAL");
-    expect(metric.scoreConfigId).toBe("sc-1");
-    expect(metric.metadata).toEqual({ suite: "qa" });
-    const args: EvalMetricArgs<string, string> = {
-      suiteName: "qa",
-      case: { id: "c", input: "x" },
-      output: "x",
-      signal: new AbortController().signal,
-    };
-    await expect(Promise.resolve(metric.evaluate(args))).resolves.toEqual({
-      outcome: "pass",
-      score: "good",
-    });
   });
 });
 

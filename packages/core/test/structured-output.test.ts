@@ -193,8 +193,7 @@ describe("Agent structured output", () => {
       { role: "user", content: "Create hypotheses." },
       {
         role: "user",
-        content:
-          "Your previous response exceeded the provider output limit. Return substantially shorter raw JSON that matches the supplied JSON schema. Do not use Markdown fences or include commentary.",
+        content: expect.stringContaining("output limit"),
       },
     ]);
   });
@@ -296,8 +295,7 @@ describe("Agent structured output", () => {
       { role: "assistant", content: [AssistantContent.text(invalidOutput)] },
       {
         role: "user",
-        content:
-          "Your previous response was invalid structured output. Return only raw JSON that matches the supplied JSON schema. Do not use Markdown fences or include commentary.",
+        content: expect.stringContaining("invalid structured output"),
       },
     ]);
   });

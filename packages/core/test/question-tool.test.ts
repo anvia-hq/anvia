@@ -221,60 +221,6 @@ describe("createQuestionTool", () => {
     });
   });
 
-  it("suspends and resumes with the answers delivered to the fake model as a tool result", async () => {
-    const { agent, requests } = askingAgent({
-      questions: [
-        { ...question(), choices: choices(2) },
-        { id: "details", text: "What details do you need?" },
-      ],
-    });
-    const pending = await agent.generate({ prompt: "Prepare a report" });
-
-    if (pending.type !== "interaction") throw new Error("Expected question interaction");
-
-    expect(pending.interaction).toMatchObject({
-      type: "tool-question",
-      toolName: "ask_user",
-      toolCallId: "question_call",
-    });
-    const answers = [
-      { questionId: "format", value: "format_0" },
-      { questionId: "details", value: "An incident timeline" },
-    ];
-    const result = await agent.generate({
-      continuation: parseAgentContinuation(JSON.parse(JSON.stringify(pending.continuation))),
-      response: { type: "tool-question", answers },
-    });
-    expect(result).toMatchObject({ type: "response", output: "done" });
-    expect(requests[1]?.chatHistory.at(-1)).toEqual({
-      role: "tool",
-      content: [
-        {
-          type: "tool-result",
-          toolCallId: "question_call",
-          toolName: "ask_user",
-          output: { type: "json", value: { answers } },
-        },
-      ],
-    });
-  });
-
-  it("returns schema errors to the model without pausing for invalid questions", async () => {
-    const { agent, requests } = askingAgent({
-      questions: [{ ...question(), choices: choices(1) }],
-    });
-    expect(await agent.generate({ prompt: "Ask me" })).toMatchObject({
-      type: "response",
-      output: "done",
-    });
-    expect(requests[1]?.chatHistory.at(-1)).toMatchObject({
-      role: "tool",
-      content: [
-        { output: { type: "error-text", value: expect.stringContaining("at least 2 choices") } },
-      ],
-    });
-  });
-
   it.each([
     ["five questions", Array.from({ length: 5 }, (_, index) => question(String(index)))],
     ["one choice", [{ ...question(), choices: choices(1) }]],

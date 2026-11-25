@@ -31,17 +31,8 @@ import type {
   CompletionProviderOutputErrorKind,
   CompletionProviderOutputErrorOptions,
 } from "../src/completion";
-import * as completion from "../src/completion";
 import * as documents from "../src/documents";
 import * as embeddings from "../src/embeddings";
-// @ts-expect-error EvalSuiteTypeBuilder was removed from the public eval API.
-import type { EvalSuiteTypeBuilder as RemovedEvalSuiteTypeBuilder } from "../src/evals";
-import * as evals from "../src/evals";
-// @ts-expect-error ExtractorBuilder was removed from the public extractor API.
-import type { ExtractorBuilder as RemovedExtractorBuilder } from "../src/extractor";
-import * as extractor from "../src/extractor";
-import * as guardrails from "../src/guardrails";
-import * as imageGeneration from "../src/image-generation";
 import type {
   AgentErrorStreamEvent as RootAgentErrorStreamEvent,
   AgentOutcome as RootAgentOutcome,
@@ -61,80 +52,24 @@ import type { ToolApprovalRequest as InternalToolApprovalRequest } from "../src/
 import * as internalAgent from "../src/internal/agent";
 import * as mcp from "../src/mcp";
 import * as memory from "../src/memory";
-import * as modelListing from "../src/model-listing";
-import * as observability from "../src/observability";
-// @ts-expect-error PipelineBuilder was removed from the public pipeline API.
-import type { PipelineBuilder as RemovedPipelineBuilder } from "../src/pipeline";
 import * as pipeline from "../src/pipeline";
-import * as skills from "../src/skills";
-import * as speechGeneration from "../src/speech-generation";
-import * as streaming from "../src/streaming";
 import * as tool from "../src/tool";
-import * as transcription from "../src/transcription";
 import * as vectorStore from "../src/vector-store";
 
-// @ts-expect-error AgentSession was removed in favor of Agent.generate/stream session options.
-type RemovedPublicAgentSession = import("../src/agent").AgentSession;
-// @ts-expect-error AgentSession was removed from the root API.
-type RemovedRootAgentSession = import("../src/index").AgentSession;
-// @ts-expect-error MemoryContext was replaced by MemoryScope.
-type RemovedMemoryContext = import("../src/memory").MemoryContext;
-// @ts-expect-error MemoryAppendInput was replaced by MemoryAppendOptions.
-type RemovedMemoryAppendInput = import("../src/memory").MemoryAppendInput;
-// @ts-expect-error MemoryErrorInput was replaced by MemoryErrorOptions.
-type RemovedMemoryErrorInput = import("../src/memory").MemoryErrorInput;
-// @ts-expect-error MemoryCompactionStore was replaced by MemoryCompactionCapability.
-type RemovedMemoryCompactionStore = import("../src/memory").MemoryCompactionStore;
-// @ts-expect-error MemoryCompactionCommitInput was replaced by prefix replacement options.
-type RemovedMemoryCompactionCommitInput = import("../src/memory").MemoryCompactionCommitInput;
-// @ts-expect-error SummaryMemoryCompactorOptions was replaced by object-only creator options.
-type RemovedSummaryMemoryCompactorOptions = import("../src/memory").SummaryMemoryCompactorOptions;
-// @ts-expect-error MemoryRegistration was removed from the public memory API.
-type RemovedMemoryRegistration = import("../src/memory").MemoryRegistration;
-// @ts-expect-error ResolvedMemoryOptions was removed from the public memory API.
-type RemovedResolvedMemoryOptions = import("../src/memory").ResolvedMemoryOptions;
-// @ts-expect-error SessionOptions was replaced by MemoryScope on Agent inputs.
-type RemovedSessionOptions = import("../src/memory").SessionOptions;
-// @ts-expect-error McpConnection was removed in favor of McpClient lifecycle ownership.
-type RemovedMcpConnection = import("../src/mcp").McpConnection;
-// @ts-expect-error McpSseOptions was removed with the legacy SSE transport.
-type RemovedMcpSseOptions = import("../src/mcp").McpSseOptions;
-// @ts-expect-error connectMcp was removed in favor of McpClient.connect.
-type RemovedConnectMcp = typeof import("../src/mcp").connectMcp;
-// @ts-expect-error The MCP factory namespace was removed in favor of constructors.
-type RemovedMcpFactory = typeof import("../src/mcp").mcp;
-// @ts-expect-error FileLoader was removed with the legacy loader API.
-type RemovedFileLoader = import("../src/documents").FileLoader;
-// @ts-expect-error PdfFileLoader was removed with the legacy loader API.
-type RemovedPdfFileLoader = import("../src/documents").PdfFileLoader;
-// @ts-expect-error Approval-required results were replaced by AgentInteractionOutcome.
-type RemovedApprovalRequiredResult = import("../src/agent").AgentApprovalRequiredResult;
-// @ts-expect-error Approval decisions were replaced by AgentInteractionResponse.
-type RemovedApprovalDecision = import("../src/agent").AgentApprovalDecision;
 // @ts-expect-error Agent interaction contracts have a dedicated browser-safe subpath.
 type RemovedAgentInteractionResponse = import("../src/agent").AgentInteractionResponse;
 // @ts-expect-error Agent interaction contracts are not exported from the root server barrel.
 type RemovedRootAgentInteractionResponse = import("../src/index").AgentInteractionResponse;
-// @ts-expect-error AgentResult was replaced by AgentOutcome.
-type RemovedAgentResult = import("../src/agent").AgentResult;
-// @ts-expect-error AgentBlockedResult was replaced by AgentBlockedOutcome.
-type RemovedAgentBlockedResult = import("../src/agent").AgentBlockedResult;
-// @ts-expect-error AgentSuspendedResult was replaced by AgentInteractionOutcome.
-type RemovedAgentSuspendedResult = import("../src/agent").AgentSuspendedResult;
 
 describe("public exports", () => {
   it("exposes public agent type exports", () => {
     expectTypeOf<AgentOptions>().not.toBeNever();
     expectTypeOf<PublicAgentType>().not.toBeNever();
-    expectTypeOf<RemovedPublicAgentSession>().toBeAny();
     expectTypeOf<AgentContextInput>().not.toBeNever();
     expectTypeOf<VectorContext>().not.toBeNever();
     expectTypeOf<CreateVectorContextOptions>().not.toBeNever();
     expectTypeOf<AgentToolInput>().not.toBeNever();
     expectTypeOf<AgentToolOptions>().not.toBeNever();
-    expectTypeOf<RemovedRootAgentSession>().toBeAny();
-    expectTypeOf<RemovedApprovalRequiredResult>().toBeAny();
-    expectTypeOf<RemovedApprovalDecision>().toBeAny();
     expectTypeOf<RemovedAgentInteractionResponse>().toBeAny();
     expectTypeOf<RemovedRootAgentInteractionResponse>().toBeAny();
     expectTypeOf<PublicAgentContinuation>().not.toBeNever();
@@ -145,9 +80,6 @@ describe("public exports", () => {
     expectTypeOf<AgentBlockedOutcome>().not.toBeNever();
     expectTypeOf<AgentInteractionOutcome>().not.toBeNever();
     expectTypeOf<RootAgentOutcome>().toEqualTypeOf<AgentOutcome>();
-    expectTypeOf<RemovedAgentResult>().toBeAny();
-    expectTypeOf<RemovedAgentBlockedResult>().toBeAny();
-    expectTypeOf<RemovedAgentSuspendedResult>().toBeAny();
     expectTypeOf<RootAgentToolOptions>().toEqualTypeOf<AgentToolOptions>();
     expectTypeOf<Parameters<PublicAgentType["generate"]>["length"]>().toEqualTypeOf<1>();
     expectTypeOf<Parameters<PublicAgentType["stream"]>["length"]>().toEqualTypeOf<1>();
@@ -170,62 +102,25 @@ describe("public exports", () => {
     }
   });
 
-  it("does not expose the removed AgentBuilder", () => {
-    expect("AgentBuilder" in publicCore).toBe(false);
-    expect("AgentBuilder" in publicAgent).toBe(false);
-  });
-
-  it("exposes vector context helpers from the public entrypoints", () => {
-    expect("createVectorContext" in publicCore).toBe(true);
-    expect("createVectorContext" in publicAgent).toBe(true);
-    expect("isVectorContext" in publicCore).toBe(true);
-    expect("isVectorContext" in publicAgent).toBe(true);
-  });
-
-  it("exposes provider-neutral vector filter matching from the vector-store subpath", () => {
+  it("keeps domain-specific helpers on their subpaths instead of the root barrel", () => {
     expect("matchesVectorFilter" in vectorStore).toBe(true);
-    expect("ingestVectorDocuments" in vectorStore).toBe(true);
-    expect("ingestVectorText" in vectorStore).toBe(true);
     expect("matchesVectorFilter" in publicCore).toBe(false);
     expect("ingestVectorText" in publicCore).toBe(false);
-  });
-
-  it("exposes portable text document chunking from the documents subpath", () => {
     expect("chunkTextDocuments" in documents).toBe(true);
     expect("chunkTextDocuments" in publicCore).toBe(false);
-  });
-
-  it("exposes middleware helpers from public entrypoints", () => {
-    expect("createMiddleware" in publicCore).toBe(true);
-    expect("createToolMiddleware" in publicCore).toBe(false);
-    expect("createMiddleware" in publicAgent).toBe(false);
-    expect("createToolMiddleware" in publicAgent).toBe(false);
+    expect("chunkText" in publicCore).toBe(false);
     expect("createMiddleware" in tool).toBe(true);
-    expect("createToolMiddleware" in tool).toBe(false);
-  });
-
-  it("exposes runtime Agent without the removed AgentSession surface", () => {
-    expect("Agent" in publicCore).toBe(true);
-    expect("Agent" in publicAgent).toBe(true);
-    expect("AgentSession" in publicAgent).toBe(false);
-    expect(publicAgent.Agent.prototype).not.toHaveProperty("session");
-    expect(publicAgent.Agent.prototype).toHaveProperty("resume");
-    expect(publicAgent).not.toHaveProperty("parseAgentContinuation");
-    expect(publicAgent).not.toHaveProperty("parseAgentInteractionResponse");
-    expect(publicCore).not.toHaveProperty("parseAgentContinuation");
-    expect(publicCore).not.toHaveProperty("parseAgentInteractionResponse");
+    expect("createMiddleware" in publicAgent).toBe(false);
+    expect("Pipeline" in pipeline).toBe(true);
+    expect("Pipeline" in publicCore).toBe(false);
+    expect("CompletionProviderOutputError" in publicAgent).toBe(false);
   });
 
   it("isolates Agent interaction contracts on the browser-safe subpath", async () => {
-    expect(Object.keys(publicAgentInteractions).sort()).toEqual([
-      "agentContinuationSchema",
-      "agentInteractionRequestSchema",
-      "agentInteractionResponseSchema",
-      "assertAgentInteractionResponse",
-      "parseAgentContinuation",
-      "parseAgentInteractionRequest",
-      "parseAgentInteractionResponse",
-    ]);
+    expect(typeof publicAgentInteractions.parseAgentContinuation).toBe("function");
+    expect(typeof publicAgentInteractions.parseAgentInteractionResponse).toBe("function");
+    expect("parseAgentContinuation" in publicAgent).toBe(false);
+    expect("parseAgentContinuation" in publicCore).toBe(false);
     const packageJson = JSON.parse(
       await readFile(new URL("../package.json", import.meta.url), "utf8"),
     ) as { exports?: Record<string, unknown> };
@@ -235,49 +130,26 @@ describe("public exports", () => {
     });
   });
 
-  it("exposes only the internal Agent integration contract", () => {
-    expect("Agent" in internalAgent).toBe(true);
+  it("exposes internal agent integration and hook contracts without leaking to public barrels", () => {
+    expect("createHook" in publicCore).toBe(false);
+    expect("createHook" in publicAgent).toBe(false);
+    expect("createHook" in internalAgent).toBe(true);
     expect("createResolvedAgent" in internalAgent).toBe(true);
     expect("getResolvedAgentOptions" in internalAgent).toBe(true);
     expect("getAgentToolState" in internalAgent).toBe(true);
-    expect("getAgentApprovalRequestDetails" in internalAgent).toBe(false);
     expect("withInternalAgentRunOptions" in internalAgent).toBe(true);
-    expect("AgentSession" in internalAgent).toBe(false);
-    expect("DEFAULT_MAX_TURNS" in internalAgent).toBe(false);
-    expect("cancelAgentApproval" in internalAgent).toBe(false);
     expectTypeOf<InternalToolApprovalRequest>().not.toBeNever();
   });
 
-  it("exposes agent run errors from the public agent entrypoint", () => {
-    expect("createHook" in publicAgent).toBe(false);
-    expect("skipTool" in publicAgent).toBe(false);
-    expect("AgentRunCancelledError" in publicAgent).toBe(true);
-    expect("AgentRunBlockedError" in publicAgent).toBe(true);
-    expect("AgentStructuredOutputError" in publicAgent).toBe(true);
-    expect("AgentStructuredOutputError" in publicCore).toBe(true);
-    expect("MaxTurnsError" in publicAgent).toBe(true);
-    expect("ToolApprovalRequiredError" in publicAgent).toBe(false);
-    expect("AgentToolSuspensionError" in publicAgent).toBe(true);
-    expect("AgentStreamClosedError" in publicAgent).toBe(true);
-  });
-
-  it("keeps controlling hooks internal", () => {
-    expect("createHook" in publicCore).toBe(false);
-    expect("createHook" in internalAgent).toBe(true);
-    expect("skipTool" in internalAgent).toBe(false);
-    expect("cancelRun" in internalAgent).toBe(false);
-    expect("requestToolApproval" in internalAgent).toBe(false);
-    expect("runControl" in internalAgent).toBe(false);
-    expect("toolCallControl" in internalAgent).toBe(false);
-  });
-
-  it("exposes agent run contracts from root and agent entrypoints", () => {
+  it("exposes aligned agent and completion error types across barrels", () => {
     expectTypeOf<RootRetryContext>().toEqualTypeOf<PublicRetryContext>();
     expectTypeOf<RootRetryOptions>().toEqualTypeOf<PublicRetryOptions>();
     expectTypeOf<RootAgentErrorStreamEvent>().toEqualTypeOf<PublicAgentErrorStreamEvent>();
     expectTypeOf<RootAgentRunOptions>().toEqualTypeOf<PublicAgentRunOptions>();
     expectTypeOf<RootAgentToolCallDeltaEvent>().toEqualTypeOf<PublicAgentToolCallDeltaEvent>();
     expectTypeOf<RootAgentStreamEvent>().toEqualTypeOf<PublicAgentStreamEvent>();
+    expectTypeOf<RootCompletionProviderOutputErrorKind>().toEqualTypeOf<CompletionProviderOutputErrorKind>();
+    expectTypeOf<RootCompletionProviderOutputErrorOptions>().toEqualTypeOf<CompletionProviderOutputErrorOptions>();
     expectTypeOf<
       Extract<PublicAgentStreamEvent, { type: "tool_call_delta" }>
     >().toEqualTypeOf<PublicAgentToolCallDeltaEvent>();
@@ -297,133 +169,16 @@ describe("public exports", () => {
     void missingUsage;
   });
 
-  it("does not expose client/UI protocol concerns", () => {
-    expect("createCompletionUIStream" in publicCore).toBe(false);
-    expect("createAgentUIStream" in publicCore).toBe(false);
-    expect("completionStreamToUIStream" in publicCore).toBe(false);
-    expect("agentStreamToUIStream" in publicCore).toBe(false);
-    expect("UIMessage" in publicCore).toBe(false);
-    expect("uiMessagesToMessages" in publicCore).toBe(false);
-  });
-
-  it("keeps public subpath runtime exports available", () => {
-    expectTypeOf<RemovedEvalSuiteTypeBuilder>().toBeAny();
-    expect(speechGeneration).toHaveProperty("generateSpeech");
-    expect(completion).not.toHaveProperty("CompletionRequestBuilder");
-    expect(completion).toHaveProperty("generateCompletion");
-    expect(completion).toHaveProperty("streamCompletion");
-    expect(completion).toHaveProperty("CompletionStructuredOutputError");
-    expect(publicCore).toHaveProperty("CompletionStructuredOutputError");
-    expect(completion).toHaveProperty("CompletionProviderOutputError");
-    expect(publicCore).toHaveProperty("CompletionProviderOutputError");
-    expect(completion).toHaveProperty(
-      "COMPLETION_PROVIDER_OUTPUT_ERROR_CODE",
-      "ANVIA_COMPLETION_PROVIDER_OUTPUT",
-    );
-    expect(publicCore).toHaveProperty(
-      "COMPLETION_PROVIDER_OUTPUT_ERROR_CODE",
-      "ANVIA_COMPLETION_PROVIDER_OUTPUT",
-    );
-    expect(publicAgent).not.toHaveProperty("CompletionProviderOutputError");
-    expectTypeOf<CompletionProviderOutputErrorKind>().not.toBeNever();
-    expectTypeOf<CompletionProviderOutputErrorOptions>().not.toBeNever();
-    expectTypeOf<RootCompletionProviderOutputErrorKind>().toEqualTypeOf<CompletionProviderOutputErrorKind>();
-    expectTypeOf<RootCompletionProviderOutputErrorOptions>().toEqualTypeOf<CompletionProviderOutputErrorOptions>();
-    expect(completion).not.toHaveProperty("createCompletion");
-    expect(completion).not.toHaveProperty("createParsedCompletion");
-    expect(completion).not.toHaveProperty("createCompletionStream");
-    expect(completion).not.toHaveProperty("Message");
-    expect(tool).toHaveProperty("createQuestionTool");
-    expect(tool).toHaveProperty("DEFAULT_QUESTION_TOOL_NAME", "ask_user");
-    expect(publicCore).toHaveProperty("DEFAULT_QUESTION_TOOL_NAME", "ask_user");
-    expect(publicCore.DEFAULT_QUESTION_TOOL_DESCRIPTION).toBe(
-      tool.DEFAULT_QUESTION_TOOL_DESCRIPTION,
-    );
-    expect(completion).toHaveProperty("parseMessage");
-    expect(completion).toHaveProperty("messagesSchema");
-    expect(embeddings).toHaveProperty("embedText");
-    expect(embeddings).toHaveProperty("embedDocuments");
-    expect(embeddings).not.toHaveProperty("embedHybridDocuments");
-    expect(evals).toHaveProperty("runEvalSuite");
-    expect(evals).toHaveProperty("createEvalTypes");
-    expect(evals).toHaveProperty("defineEvalExpectations");
-    expect(evals).toHaveProperty("formatEvalResult");
-    expect(evals).toHaveProperty("selectEvalCaseIds");
-    expect(evals).toHaveProperty("EvalTimeoutError");
-    expect(evals).toHaveProperty("EvalAbortError");
-    expect(evals).toHaveProperty("EvalFailFastError");
-    expect(evals).toHaveProperty("EvalOutcome");
-    expect(evals).toHaveProperty("defaultEvalTraceSelector");
-    expect(evals).toHaveProperty("projectEvalOutcome");
-    expect(evals).toHaveProperty("resolveEvalTraceRef");
-    expect(evals).toHaveProperty("answerRelevancy");
-    expect(evals).toHaveProperty("gEval");
-    expect(evals).toHaveProperty("promptAlignment");
-    expect(evals).toHaveProperty("jsonCorrectness");
-    expect(evals).toHaveProperty("summarization");
-    expect(evals).toHaveProperty("hallucination");
-    expect(evals).toHaveProperty("faithfulness");
-    expect(evals).toHaveProperty("turnRelevancy");
-    expect(evals).toHaveProperty("knowledgeRetention");
-    expect(extractor).toHaveProperty("extract");
-    expect(extractor).not.toHaveProperty("ExtractorBuilder");
-    expect(guardrails).toHaveProperty("defineGuardrailPolicy");
-    expect(guardrails).toHaveProperty("defineInputGuardrail");
-    expect(guardrails).toHaveProperty("defineOutputGuardrail");
-    expect(guardrails).not.toHaveProperty("defineToolGuardrail");
-    expect(guardrails).not.toHaveProperty("defineToolResultGuardrail");
-    expect(guardrails).toHaveProperty("guardrails");
-    expect(guardrails.guardrails).toMatchObject({
-      blockText: expect.any(Function),
-      redactText: expect.any(Function),
-    });
-    expect(imageGeneration).toHaveProperty("generateImage");
-    expect(imageGeneration).not.toHaveProperty("imageGenerationRequest");
-    expect(imageGeneration).not.toHaveProperty("ImageGenerationRequestBuilder");
-    expect(documents).toHaveProperty("chunkText");
-    expect(documents).not.toHaveProperty("extractPdfText");
-    expect(documents).not.toHaveProperty("FileLoader");
-    expect(documents).not.toHaveProperty("PdfFileLoader");
-    expect(publicCore).not.toHaveProperty("chunkText");
-    expect(publicCore).not.toHaveProperty("extractPdfText");
-    expect(mcp).toHaveProperty("isMcpTool");
-    expect(mcp).not.toHaveProperty("McpClient");
-    expect(mcp).not.toHaveProperty("McpClientGroup");
-    expect(mcp).not.toHaveProperty("connectMcp");
-    expect(mcp).not.toHaveProperty("mcp");
-    expect(modelListing).toHaveProperty("ModelListingError");
-    expect(observability).not.toHaveProperty("createObserver");
-    expect(pipeline).toHaveProperty("Pipeline");
-    expect(pipeline).not.toHaveProperty("PipelineBuilder");
-    expect(skills).toHaveProperty("loadSkills");
-    expect(streaming).toHaveProperty("toReadableStream");
-    expect(tool).toHaveProperty("createTool");
-    expect(transcription).toHaveProperty("transcribe");
-    expect(transcription).not.toHaveProperty("transcriptionRequest");
-    expect(transcription).not.toHaveProperty("TranscriptionRequestBuilder");
-    expectTypeOf<RemovedMcpConnection>().toBeAny();
-    expectTypeOf<RemovedMcpSseOptions>().toBeAny();
-    expectTypeOf<RemovedConnectMcp>().toBeAny();
-    expectTypeOf<RemovedMcpFactory>().toBeAny();
-    expectTypeOf<RemovedFileLoader>().toBeAny();
-    expectTypeOf<RemovedPdfFileLoader>().toBeAny();
+  it("enforces compile-time object-only signatures and lifecycle boundaries", () => {
+    expectTypeOf<
+      Parameters<typeof memory.createSummaryMemoryCompactor>["length"]
+    >().toEqualTypeOf<1>();
 
     if (Date.now() === Number.NEGATIVE_INFINITY) {
       const server = null as unknown as mcp.McpServer;
       // @ts-expect-error McpServer is a registration snapshot and does not own lifecycle.
       server.close();
-    }
 
-    expect(vectorStore).toHaveProperty("InMemoryVectorStore");
-    expect(vectorStore).toHaveProperty("retrieveDocuments");
-    expect(vectorStore).toHaveProperty("createVectorSearchTool");
-    expect(vectorStore).not.toHaveProperty("VectorSearchIndex");
-    expect(publicAgent).not.toHaveProperty("createContextIndex");
-    expect(publicAgent).not.toHaveProperty("isContextIndex");
-  });
-
-  it("rejects removed positional embedding signatures at compile time", () => {
-    const removedSignatures = () => {
       const model = {
         async embedTexts(texts: string[]) {
           return texts.map((document) => ({ document, vector: [1] }));
@@ -433,107 +188,10 @@ describe("public exports", () => {
       void embeddings.embedText(model, "text");
       // @ts-expect-error Document embedding accepts one object argument in RC2.
       void embeddings.embedDocuments(model, ["text"], { content: (text: string) => text });
-    };
-    expect(removedSignatures).toBeTypeOf("function");
-  });
 
-  it("exposes direct pipelines without builder, build, or prompt aliases", () => {
-    expectTypeOf<RemovedPipelineBuilder>().toBeAny();
-    expect(publicCore).not.toHaveProperty("Pipeline");
-    expect(pipeline.Pipeline.prototype).toHaveProperty("agent");
-    expect(pipeline.Pipeline.prototype).not.toHaveProperty("build");
-    expect(pipeline.Pipeline.prototype).not.toHaveProperty("prompt");
-  });
-
-  it("exposes stateless extraction without builder or class APIs", () => {
-    expectTypeOf<RemovedExtractorBuilder>().toBeAny();
-    expect(publicCore).not.toHaveProperty("Extractor");
-    expect(extractor).toHaveProperty("extract");
-    expect(extractor).not.toHaveProperty("Extractor");
-    expect(extractor).not.toHaveProperty("ExtractorBuilder");
-  });
-
-  it("exposes direct model operations from the root entrypoint", () => {
-    expect("generateCompletion" in publicCore).toBe(true);
-    expect("streamCompletion" in publicCore).toBe(true);
-    expect("createCompletion" in publicCore).toBe(false);
-    expect("createParsedCompletion" in publicCore).toBe(false);
-    expect("createCompletionStream" in publicCore).toBe(false);
-    expect("generateImage" in publicCore).toBe(true);
-    expect("generateSpeech" in publicCore).toBe(true);
-    expect("transcribe" in publicCore).toBe(true);
-  });
-
-  it("exposes canonical memory helpers from root and memory entrypoints", () => {
-    expect(publicCore).toHaveProperty("createMemoryScopeKey");
-    expect(publicCore).toHaveProperty("createSummaryMemoryCompactor");
-    expect(publicCore).toHaveProperty("estimateMemoryTokens");
-    expect(publicCore).toHaveProperty("isMemoryCompactionMessage");
-    expect(publicCore).toHaveProperty("MemoryCompactionError");
-    expect(publicCore).toHaveProperty("MemoryCompactionConflictError");
-    expect(memory).toHaveProperty("createMemoryScopeKey");
-    expect(memory).toHaveProperty("createSummaryMemoryCompactor");
-    expect(memory).toHaveProperty("estimateMemoryTokens");
-    expect(memory).toHaveProperty("isMemoryCompactionMessage");
-    expectTypeOf<RemovedMemoryContext>().toBeAny();
-    expectTypeOf<RemovedMemoryAppendInput>().toBeAny();
-    expectTypeOf<RemovedMemoryErrorInput>().toBeAny();
-    expectTypeOf<RemovedMemoryCompactionStore>().toBeAny();
-    expectTypeOf<RemovedMemoryCompactionCommitInput>().toBeAny();
-    expectTypeOf<RemovedSummaryMemoryCompactorOptions>().toBeAny();
-    expectTypeOf<RemovedMemoryRegistration>().toBeAny();
-    expectTypeOf<RemovedResolvedMemoryOptions>().toBeAny();
-    expectTypeOf<RemovedSessionOptions>().toBeAny();
-    expectTypeOf<
-      Parameters<typeof memory.createSummaryMemoryCompactor>["length"]
-    >().toEqualTypeOf<1>();
-    expect(
-      memory.createMemoryScopeKey({
-        scope: {
-          sessionId: "thread-1",
-          userId: "user-1",
-          metadata: { tenant: { id: "tenant-1" } },
-        },
-        metadataKeys: ["tenant.id"],
-      }),
-    ).toBe(JSON.stringify(["thread-1", "user-1", "tenant-1"]));
-
-    const capability = null as unknown as import("../src/memory").MemoryCompactionCapability;
-    const model = null as unknown as import("../src/completion").CompletionModel;
-
-    if (Date.now() === Number.NEGATIVE_INFINITY) {
-      // @ts-expect-error Old compaction snapshot method was removed.
-      capability.load({ sessionId: "session_1" });
-      // @ts-expect-error Old compaction commit method was removed.
-      capability.commit({});
+      const completionModel = null as unknown as import("../src/completion").CompletionModel;
       // @ts-expect-error Summary compactor construction is object-only.
-      memory.createSummaryMemoryCompactor(model);
+      memory.createSummaryMemoryCompactor(completionModel);
     }
-  });
-
-  it("exposes guardrail helpers from the root entrypoint", () => {
-    expect("defineGuardrailPolicy" in publicCore).toBe(true);
-    expect("defineInputGuardrail" in publicCore).toBe(true);
-    expect("defineOutputGuardrail" in publicCore).toBe(true);
-    expect("defineToolGuardrail" in publicCore).toBe(false);
-    expect("defineToolResultGuardrail" in publicCore).toBe(false);
-    expect(publicCore).toHaveProperty("guardrails");
-    expect(publicCore.guardrails).toMatchObject({
-      blockText: expect.any(Function),
-      redactText: expect.any(Function),
-    });
-  });
-
-  it("exports structural message parsers without factory namespaces", () => {
-    expect(publicCore).not.toHaveProperty("Message");
-    expect(publicCore).not.toHaveProperty("UserContent");
-    expect(publicCore).not.toHaveProperty("AssistantContent");
-    expect(publicCore).not.toHaveProperty("ToolContent");
-    expect(publicCore).toMatchObject({
-      parseMessage: expect.any(Function),
-      parseMessages: expect.any(Function),
-      isMessage: expect.any(Function),
-      createMessageSchema: expect.any(Function),
-    });
   });
 });

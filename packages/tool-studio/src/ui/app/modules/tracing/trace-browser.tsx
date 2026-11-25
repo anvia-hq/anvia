@@ -22,23 +22,6 @@ import {
   traceTurns,
 } from "./trace-browser-detail";
 
-export {
-  compactTraceMetadata,
-  firstDeltaMsFromObservations,
-  jsonSyntaxTokens,
-  observationDetailMetadata,
-  observationStatusSummary,
-  observationUsageText,
-  plainTraceValue,
-  rawTraceJson,
-  selectedTraceDetail,
-  traceDetailMetadata,
-  traceObservationLabel,
-  traceObservationTree,
-  traceTurns,
-  turnUsageText,
-} from "./trace-browser-detail";
-
 import type { StudioConfig, StudioTrace } from "../../../../types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";

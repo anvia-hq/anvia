@@ -48,6 +48,42 @@ describe("provider-neutral graph primitives", () => {
         relationships: {},
       }),
     ).toThrow("not declared");
+    expect(() =>
+      defineGraphSchema({
+        nodes: {
+          Product: {
+            description: "A product.",
+            identity: ["id"],
+            properties: z.strictObject({ id: z.string(), __anvia_bad: z.string() }),
+          },
+        },
+        relationships: {},
+      }),
+    ).toThrow("reserved");
+  });
+
+  it("rejects schemas that can strip or alter stored property values", () => {
+    const graphSchema = (properties: z.ZodObject) => () =>
+      defineGraphSchema({
+        nodes: {
+          Product: {
+            description: "Product",
+            identity: ["id"],
+            properties,
+          },
+        },
+        relationships: {},
+      });
+
+    expect(graphSchema(z.looseObject({ id: z.string() }))).toThrow("strict Zod object");
+    expect(graphSchema(z.strictObject({ id: z.coerce.string() }))).toThrow("must not coerce");
+    expect(graphSchema(z.strictObject({ id: z.string().default("unknown") }))).toThrow(
+      "must not coerce",
+    );
+    expect(graphSchema(z.strictObject({ id: z.string().transform((value) => value) }))).toThrow(
+      "must not coerce",
+    );
+    expect(graphSchema(z.strictObject({ id: z.string().trim() }))).toThrow("must not normalize");
   });
 
   it("auto-strictens plain z.object schemas and allows omitting relationships or empty relationship properties", () => {

@@ -14,7 +14,6 @@ import {
 } from "../src/decision";
 import type { AgentRunStartArgs } from "../src/observability";
 import type { PipelineObserver } from "../src/pipeline";
-import * as publicPipeline from "../src/pipeline";
 import {
   Agent,
   AgentRunBlockedError,
@@ -977,29 +976,18 @@ describe("Pipeline", () => {
     expect(base.graph().nodes.map((node) => node.id)).toEqual(["$input", "increment", "$output"]);
   });
 
-  it("removes positional and arbitrary operation APIs", () => {
+  it("rejects positional pipeline signatures at compile time", () => {
     const pipeline = new Pipeline({ id: "types", inputSchema: z.number() });
-    expect("use" in pipeline).toBe(false);
-    expect("batch" in pipeline).toBe(false);
-    expect("PipelineOp" in publicPipeline).toBe(false);
 
     if (unreachable()) {
-      // @ts-expect-error - arbitrary PipelineOp composition was removed.
-      type RemovedPipelineOp = import("../src/pipeline").PipelineOp;
       // @ts-expect-error - step requires one options object.
       pipeline.step((input: number) => input + 1);
       // @ts-expect-error - run requires one options object.
       pipeline.run(1);
-      // @ts-expect-error - batch was replaced by runBatch.
-      pipeline.batch([1], { concurrency: 1 });
-      // @ts-expect-error - arbitrary operation composition was removed.
-      pipeline.use({ run: (input: number) => input });
       // @ts-expect-error - parallel requires stage metadata and branches.
       pipeline.parallel({ branch: pipeline });
       // @ts-expect-error - Agent stages require a request mapper and approval behavior.
       pipeline.agent(new Agent({ id: "old", model: new QueueModel([]) }));
-      const removed = undefined as unknown as RemovedPipelineOp;
-      void removed;
     }
   });
 });

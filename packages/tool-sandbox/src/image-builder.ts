@@ -57,7 +57,7 @@ export const defaultSandboxImageVersions: Readonly<SandboxImageVersions> = {
   playwright: "1.62.1",
 };
 
-export const artifactPythonPackages = [
+const artifactPythonPackages = [
   "matplotlib==3.11.1",
   "seaborn==0.13.2",
   "Pillow==12.3.0",

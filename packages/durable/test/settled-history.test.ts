@@ -7,14 +7,8 @@ import { Usage, type CompletionRequest, type Message } from "@anvia/core/complet
 import type { MemoryCompactor } from "@anvia/core/memory";
 import { DurableRuntime } from "../src/index.js";
 import { createRunRecord } from "../src/run-record.js";
-import { settledProgress } from "../src/settled-progress.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
-import type {
-  DurableAgentRegistration,
-  DurableOperation,
-  DurableRunRecord,
-  DurableTransaction,
-} from "../src/types.js";
+import type { DurableAgentRegistration, DurableOperation, DurableRunRecord } from "../src/types.js";
 import { done, lookup, makeAgent, toolResponse } from "./helpers.js";
 
 const directories: string[] = [];
@@ -147,58 +141,6 @@ describe("latestCompleted", () => {
     expect(
       await latestCompleted([await record({ requestId: "one", status: "failed" })]),
     ).toBeUndefined();
-  });
-});
-
-describe("settledProgress", () => {
-  const user = { role: "user", content: "hello" } as const;
-  const assistant = { role: "assistant", content: [{ type: "text", text: "partial" }] } as const;
-
-  function txWith(operations: { kind: string; key: string; input: unknown }[]): DurableTransaction {
-    return {
-      operations: () => operations,
-      getOperation: (_runId: string, key: string) =>
-        operations.find((operation) => operation.key === key),
-    } as unknown as DurableTransaction;
-  }
-
-  async function failedRun(overrides: Partial<DurableRunRecord> = {}): Promise<DurableRunRecord> {
-    return record({
-      requestId: "failed",
-      status: "failed",
-      startedAt: "2026-01-01T00:00:01.000Z",
-      input: { messages: [user] },
-      ...overrides,
-    });
-  }
-
-  it("returns the exhaustion tail when it contains an assistant message", async () => {
-    const run = await failedRun({
-      exhaustion: { reason: "max_turns", messages: [user, assistant] },
-    });
-    expect(await settledProgress(txWith([]), run)).toEqual([user, assistant]);
-  });
-
-  it("returns nothing when the exhaustion tail has no assistant message", async () => {
-    const run = await failedRun({
-      exhaustion: { reason: "max_turns", messages: [user, { role: "user", content: "again" }] },
-    });
-    expect(await settledProgress(txWith([]), run)).toEqual([]);
-  });
-
-  it("falls back to the latest context operation without exhaustion", async () => {
-    const run = await failedRun({ epoch: 2 });
-    const tx = txWith([
-      { kind: "context", key: "2:context:1", input: [user] },
-      { kind: "context", key: "2:context:3", input: [user, assistant] },
-      { kind: "model", key: "2:model:3", input: [user, assistant] },
-      { kind: "context", key: "1:context:9", input: [user, assistant] },
-    ]);
-    expect(await settledProgress(tx, run)).toEqual([user, assistant]);
-  });
-
-  it("returns nothing without exhaustion or context operations", async () => {
-    expect(await settledProgress(txWith([]), await failedRun())).toEqual([]);
   });
 });
 
@@ -403,5 +345,55 @@ describe("settled session history", () => {
     expect(completed).toMatchObject({ type: "response", output: "done" });
     const history = (await next.snapshot()).run.history;
     expect(history).toEqual([user, assistant]);
+  });
+
+  it("ignores an exhaustion tail with no assistant message and bare failed runs", async () => {
+    const user = { role: "user", content: "hello" } as const;
+    const exhaustionOnlyUserPath = database();
+    const store1 = new SqliteDurableStore(exhaustionOnlyUserPath);
+    await store1.acquire();
+    const agent = makeAgent(async () => done());
+    const failedWithUserTail = {
+      ...(await createRunRecord(
+        { ...submission, requestId: "failed-tail" },
+        { agent, version: "1" },
+      )),
+      status: "failed" as const,
+      startedAt: "2026-01-01T00:00:01.000Z",
+      exhaustion: {
+        reason: "max_turns" as const,
+        messages: [user, { role: "user" as const, content: "again" }],
+      },
+    };
+    const bareFailed = {
+      ...(await createRunRecord(
+        { ...submission, requestId: "bare-failed" },
+        { agent, version: "1" },
+      )),
+      status: "failed" as const,
+      startedAt: "2026-01-01T00:00:01.000Z",
+    };
+    await store1.transaction(async (tx) => {
+      await tx.putRun(failedWithUserTail);
+    });
+    await store1.close();
+
+    const runtime1 = await open(exhaustionOnlyUserPath);
+    const next1 = await runtime1.submit({ ...submission, requestId: "next-1", prompt: "continue" });
+    await expect(next1.result()).resolves.toMatchObject({ type: "response", output: "done" });
+    expect((await next1.snapshot()).run.history).toEqual([]);
+
+    const barePath = database();
+    const store2 = new SqliteDurableStore(barePath);
+    await store2.acquire();
+    await store2.transaction(async (tx) => {
+      await tx.putRun(bareFailed);
+    });
+    await store2.close();
+
+    const runtime2 = await open(barePath);
+    const next2 = await runtime2.submit({ ...submission, requestId: "next-2", prompt: "continue" });
+    await expect(next2.result()).resolves.toMatchObject({ type: "response", output: "done" });
+    expect((await next2.snapshot()).run.history).toEqual([]);
   });
 });

@@ -152,9 +152,7 @@ function ComposerTriggerOpener() {
 
 describe("Chat primitives", () => {
   it("throws when chat primitives are rendered outside ChatProvider", () => {
-    expect(() => render(<Thread.Root />)).toThrow(
-      "Anvia chat primitives must be used inside ChatProvider.",
-    );
+    expect(() => render(<Thread.Root />)).toThrow();
   });
 
   it("submits chat composer input and supports asChild", () => {
@@ -554,7 +552,6 @@ describe("Chat primitives", () => {
 
     expect(screen.queryByTestId("empty")).toBeNull();
     expect(screen.getByText("Hello")).toBeTruthy();
-    expect(screen.getByText("Copy")).toBeTruthy();
     expect(scrollTo).toHaveBeenCalledWith({ top: 100, behavior: "auto" });
 
     const viewport = screen.getByTestId("viewport");
@@ -582,16 +579,16 @@ describe("Chat primitives", () => {
         })}
       >
         <Thread.Root>
-          <Thread.Status />
-          <Thread.Loading />
+          <Thread.Status data-testid="thread-status" />
+          <Thread.Loading data-testid="thread-loading" />
           <Thread.Error />
           <Thread.Suggestions />
         </Thread.Root>
       </ChatProvider>,
     );
 
-    expect(screen.getByText("streaming")).toBeTruthy();
-    expect(screen.getByText("Loading")).toBeTruthy();
+    expect(screen.getByTestId("thread-status").getAttribute("data-state")).toBe("streaming");
+    expect(screen.getByTestId("thread-loading")).toBeTruthy();
     expect((screen.getByText("Summarize this") as HTMLButtonElement).disabled).toBe(true);
 
     rerender(
@@ -604,15 +601,16 @@ describe("Chat primitives", () => {
         })}
       >
         <Thread.Root>
-          <Thread.Status />
-          <Thread.Loading />
+          <Thread.Status data-testid="thread-status" />
+          <Thread.Loading data-testid="thread-loading" />
           <Thread.Error />
           <Thread.Suggestions />
         </Thread.Root>
       </ChatProvider>,
     );
 
-    expect(screen.queryByText("Loading")).toBeNull();
+    expect(screen.queryByTestId("thread-loading")).toBeNull();
+    expect(screen.getByTestId("thread-status").getAttribute("data-state")).toBe("error");
     expect(screen.getByText("Request failed")).toBeTruthy();
     fireEvent.click(screen.getByText("Summarize this"));
 

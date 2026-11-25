@@ -428,18 +428,16 @@ describe("generateCompletion", () => {
     Object.setPrototypeOf(customPrototypeArray, { toJSON: () => ["changed"] });
     // @ts-expect-error Undefined object properties are not strict JSON.
     const invalidJsonObject: JsonObject = { missing: undefined };
-    expect(invalidJsonObject).toHaveProperty("missing", undefined);
     const immutableProviderOptions = {
       stop: ["END"],
       reasoning: { enabled: true },
     } as const satisfies JsonObject;
-    expect(immutableProviderOptions.stop).toEqual(["END"]);
     const includeLimit = false;
     const omittedOptionalProperty: JsonObject = {};
 
     if (includeLimit) omittedOptionalProperty.limit = 10;
 
-    expect(omittedOptionalProperty).toEqual({});
+    void [invalidJsonObject, immutableProviderOptions, omittedOptionalProperty];
 
     for (const providerOptions of [
       { nested: { missing: undefined } },

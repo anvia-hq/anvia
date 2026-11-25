@@ -1,6 +1,14 @@
 import type { JsonObject, Message as MessageType } from "@anvia/core/completion";
 import { describe, expect, it } from "vitest";
-import { openaiMessageHelpers } from "../src/openai/responses";
+import { toOpenAIResponsesParams } from "../src/openai/responses";
+
+function toInput(message: MessageType) {
+  return toOpenAIResponsesParams("gpt-5", {
+    chatHistory: [message],
+    documents: [],
+    tools: [],
+  }).input;
+}
 
 function assistantFrom(
   provider: string,
@@ -27,7 +35,7 @@ function assistantFrom(
 describe("OpenAI Responses history after a provider switch", () => {
   it("keeps the function_call id for OpenAI-origin history", () => {
     expect(
-      openaiMessageHelpers.messageToResponsesInput(
+      toInput(
         assistantFrom("openai", [
           {
             type: "tool-call",
@@ -50,7 +58,7 @@ describe("OpenAI Responses history after a provider switch", () => {
   });
 
   it("does not send an Anthropic tool id as a Responses function_call id", () => {
-    const items = openaiMessageHelpers.messageToResponsesInput(
+    const items = toInput(
       assistantFrom("anthropic", [
         {
           type: "tool-call",
@@ -73,7 +81,7 @@ describe("OpenAI Responses history after a provider switch", () => {
   });
 
   it("does not send a Chat Completions call id as a Responses function_call id", () => {
-    const items = openaiMessageHelpers.messageToResponsesInput(
+    const items = toInput(
       assistantFrom("openai", [
         {
           type: "tool-call",
@@ -96,7 +104,7 @@ describe("OpenAI Responses history after a provider switch", () => {
   });
 
   it("does not send an Azure Chat Completions call id as a Responses function_call id", () => {
-    const items = openaiMessageHelpers.messageToResponsesInput(
+    const items = toInput(
       assistantFrom("azure-openai", [
         {
           type: "tool-call",
@@ -119,7 +127,7 @@ describe("OpenAI Responses history after a provider switch", () => {
   });
 
   it("does not replay Anthropic thinking as a Responses reasoning item", () => {
-    const items = openaiMessageHelpers.messageToResponsesInput(
+    const items = toInput(
       assistantFrom("anthropic", [
         {
           type: "reasoning",

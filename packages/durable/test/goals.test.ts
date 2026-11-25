@@ -12,8 +12,6 @@ import {
   type DurableTaskHandle,
 } from "../src/index.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
-import { DurableRecoveryError } from "../src/errors.js";
-import { journaledDecision } from "../src/goals/definition.js";
 import { done, lookup, makeAgent, makeStreamingAgent, response, toolResponse } from "./helpers.js";
 import { z } from "zod";
 
@@ -506,10 +504,49 @@ it("passes an assessment's context to the next session inside previous", async (
   );
 });
 
-it("treats a journaled decision that does not validate as recoverable", () => {
-  const valid = { ...decision("continue"), context: "Earlier answer" };
-  expect(journaledDecision(valid)).toEqual(valid);
-  expect(() => journaledDecision({ status: "done" })).toThrow(DurableRecoveryError);
+it("treats a journaled decision that does not validate as recoverable", async () => {
+  let assessments = 0;
+  const store = new SqliteDurableStore(":memory:");
+  const goal = defineGoal({
+    name: "corrupt-journal-decision",
+    version: 1,
+    agentId: "researcher",
+    assess: async () => {
+      assessments++;
+      throw new Error("Verification temporarily unavailable");
+    },
+  });
+  const runtime = await DurableRuntime.open({
+    store,
+    tasks: [goal],
+    agents: [{ agent: makeAgent(async () => done()), version: "1" }],
+  });
+  runtimes.push(runtime);
+  const handle = await runtime.submitGoal(goal, input);
+  await expect.poll(async () => (await handle.snapshot()).task.status).toBe("needs_attention");
+  await expect.poll(() => runtime.health().activeTasks).toBe(0);
+  expect(assessments).toBe(1);
+
+  const existing = (await handle.snapshot({ operations: true })).operations.find(
+    (operation) => operation.key === "assess:1",
+  );
+
+  if (existing === undefined) throw new Error("Expected assess:1 operation.");
+
+  await store.transaction((tx) =>
+    tx.putOperation(handle.id, {
+      ...existing,
+      status: "completed",
+      result: { status: "done" },
+    }),
+  );
+
+  await handle.retry();
+  await expect.poll(async () => (await handle.snapshot()).task.status).toBe("needs_attention");
+  expect((await handle.snapshot()).task.error).toContain(
+    "Goal assessment journal holds an invalid decision.",
+  );
+  expect(assessments).toBe(1);
 });
 
 const userText = (message: { role: string; content: unknown }) =>

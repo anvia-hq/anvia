@@ -12,10 +12,7 @@ import type { DurableRunRecord, DurableTransaction } from "./types.js";
  * Approval continuations already committed their preceding segment to history,
  * so their progress starts after that segment and may consist only of tool results.
  */
-export async function settledProgress(
-  tx: DurableTransaction,
-  run: DurableRunRecord,
-): Promise<Message[]> {
+async function settledProgress(tx: DurableTransaction, run: DurableRunRecord): Promise<Message[]> {
   const input = run.input.messages;
   const continued = !Array.isArray(input);
   const compacted = run.contextCheckpoint?.compactedMessageCount;

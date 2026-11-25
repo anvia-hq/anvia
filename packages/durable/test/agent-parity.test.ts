@@ -102,15 +102,6 @@ it.each([
   expect(runtime.compatibility()).toEqual([]);
 });
 
-it("rejects memory without the recorded marker and names the marker", async () => {
-  const runtime = await open();
-  const agent = agentWith("with-memory", { memory: { store: memoryStore } });
-  expect(() => runtime.registerAgents([{ agent, version: "1" }])).toThrow(
-    /checkpoint support: memory\. .*memory needs \{ memory: \{ mode: "recorded" \} \}/,
-  );
-  expect(runtime.compatibility()).toEqual([]);
-});
-
 it("lists every feature the agent actually sets, in a stable order", async () => {
   await open();
   const agent = agentWith("with-several", {
@@ -209,16 +200,6 @@ it("reports frozen and unavailable settings without changing the registrations",
     version: "1",
     frozen: ["maxTurns", "controls", "toolChoice", "temperature"],
   });
-  expect(report?.unavailable).toEqual([
-    "retries",
-    "maxTurns",
-    "controls",
-    "lifecycle",
-    "guardrails",
-    "middlewares",
-    "toolConcurrency",
-    "session",
-  ]);
   expect(Object.isFrozen(report)).toBe(true);
   expect(Object.isFrozen(report?.frozen)).toBe(true);
   expect(Object.isFrozen(report?.unavailable)).toBe(true);

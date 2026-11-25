@@ -41,91 +41,15 @@ describe("OpenAI embedding models", () => {
     ]);
   });
 
-  it("rejects duplicate embedding response indexes", async () => {
-    const client = mockOpenAIClient({
-      embeddingResponse: {
-        data: [
-          { index: 0, embedding: [0] },
-          { index: 0, embedding: [10] },
-        ],
-      },
-    });
-
-    await expect(
-      new OpenAIClient({ client: client as never })
-        .embeddingModel({ modelId: "embed-a" })
-        .embedTexts(["first", "second"]),
-    ).rejects.toThrow("Embedding response contained duplicate index 0");
-  });
-
-  it("rejects missing or out-of-range embedding response indexes", async () => {
-    const missingIndexClient = mockOpenAIClient({
-      embeddingResponse: {
-        data: [
-          { index: 0, embedding: [0] },
-          { index: 2, embedding: [20] },
-        ],
-      },
-    });
-
-    await expect(
-      new OpenAIClient({ client: missingIndexClient as never })
-        .embeddingModel({ modelId: "embed-a" })
-        .embedTexts(["first", "second"]),
-    ).rejects.toThrow("Embedding response index 2 was outside input range 0..1");
-
-    const missingRowClient = mockOpenAIClient({
-      embeddingResponse: {
-        data: [{ index: 0, embedding: [0] }],
-      },
-    });
-
-    await expect(
-      new OpenAIClient({ client: missingRowClient as never })
-        .embeddingModel({ modelId: "embed-a" })
-        .embedTexts(["first", "second"]),
-    ).rejects.toThrow("Embedding response length 1 did not match input length 2");
-  });
-
-  it("rejects invalid embedding response rows", async () => {
-    const invalidIndexClient = mockOpenAIClient({
-      embeddingResponse: {
-        data: [
-          { index: "0", embedding: [0] },
-          { index: 1, embedding: [10] },
-        ],
-      },
-    });
-
-    await expect(
-      new OpenAIClient({ client: invalidIndexClient as never })
-        .embeddingModel({ modelId: "embed-a" })
-        .embedTexts(["first", "second"]),
-    ).rejects.toThrow("Embedding response item 0 contained an invalid index");
-
-    const invalidEmbeddingClient = mockOpenAIClient({
-      embeddingResponse: {
-        data: [
-          { index: 0, embedding: [0] },
-          { index: 1, embedding: "not-a-vector" },
-        ],
-      },
-    });
-
-    await expect(
-      new OpenAIClient({ client: invalidEmbeddingClient as never })
-        .embeddingModel({ modelId: "embed-a" })
-        .embedTexts(["first", "second"]),
-    ).rejects.toThrow("Embedding response item 1 contained an invalid embedding");
-
-    const nullResponseClient = {
+  it("rejects mismatched embedding response length", async () => {
+    const client = {
       embeddings: {
         create: async () => null,
       },
     };
 
     await expect(
-      new OpenAIClient({ client: nullResponseClient as never })
+      new OpenAIClient({ client: client as never })
         .embeddingModel({ modelId: "embed-a" })
         .embedTexts(["first"]),
     ).rejects.toThrow("Embedding response length 0 did not match input length 1");

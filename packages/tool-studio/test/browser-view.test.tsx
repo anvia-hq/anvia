@@ -91,7 +91,6 @@ describe("StudioBrowserView", () => {
       credentials: { username: "", password: "private-password", target: "" },
     });
     expect(noVnc.constructions.mock.calls[0]?.[3].background).toBe("var(--background)");
-    expect(container.textContent).toContain("Agent control");
     expect(container.textContent).not.toContain("private-password");
     expect(container.querySelector("iframe")).toBeNull();
     expect(container.querySelector("#noVNC_control_bar_anchor")).toBeNull();

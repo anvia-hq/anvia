@@ -17,7 +17,6 @@ import {
   fromOpenAIResponse,
   fromOpenAIStreamEvent,
   OpenAIResponsesCompletionModel,
-  openaiMessageHelpers,
   toOpenAIResponsesParams,
 } from "../src/openai/responses";
 
@@ -366,16 +365,20 @@ describe("OpenAI Responses mapping", () => {
 
   it("maps image and document attachments to Responses input parts", () => {
     expect(
-      openaiMessageHelpers.messageToResponsesInput(
-        Message.user([
-          UserContent.text("Inspect these."),
-          UserContent.imageUrl("https://example.com/image.png", { detail: "auto" }),
-          UserContent.imageBase64("abc123", "image/png"),
-          UserContent.documentUrl("https://example.com/report.pdf", "application/pdf"),
-          UserContent.documentBase64("pdf123", "application/pdf", { filename: "report.pdf" }),
-          UserContent.documentText("Plain document text."),
-        ]),
-      ),
+      toOpenAIResponsesParams("gpt-5", {
+        chatHistory: [
+          Message.user([
+            UserContent.text("Inspect these."),
+            UserContent.imageUrl("https://example.com/image.png", { detail: "auto" }),
+            UserContent.imageBase64("abc123", "image/png"),
+            UserContent.documentUrl("https://example.com/report.pdf", "application/pdf"),
+            UserContent.documentBase64("pdf123", "application/pdf", { filename: "report.pdf" }),
+            UserContent.documentText("Plain document text."),
+          ]),
+        ],
+        documents: [],
+        tools: [],
+      }).input,
     ).toEqual([
       {
         role: "user",
@@ -397,15 +400,19 @@ describe("OpenAI Responses mapping", () => {
 
   it("rejects unsupported OpenAI attachment history", () => {
     expect(() =>
-      openaiMessageHelpers.messageToResponsesInput(
-        Message.user([UserContent.documentBase64("abc123", "text/csv")]),
-      ),
+      toOpenAIResponsesParams("gpt-5", {
+        chatHistory: [Message.user([UserContent.documentBase64("abc123", "text/csv")])],
+        documents: [],
+        tools: [],
+      }),
     ).toThrow("OpenAI Responses only supports image and PDF file attachments");
 
     expect(() =>
-      openaiMessageHelpers.messageToResponsesInput(
-        Message.assistant([AssistantContent.imageBase64("abc123", "image/png")]),
-      ),
+      toOpenAIResponsesParams("gpt-5", {
+        chatHistory: [Message.assistant([AssistantContent.imageBase64("abc123", "image/png")])],
+        documents: [],
+        tools: [],
+      }),
     ).toThrow("OpenAI Responses does not support image or file content in assistant history");
   });
 
@@ -911,27 +918,15 @@ describe("OpenAI Responses mapping", () => {
     ]);
   });
 
-  it("exposes helper conversion for assistant function call history", () => {
-    expect(
-      openaiMessageHelpers.messageToResponsesInput(
-        Message.assistant([AssistantContent.toolCall("call_1", "lookup", { query: "x" }, "fc_1")]),
-      ),
-    ).toEqual([
-      {
-        type: "function_call",
-        id: "call_1",
-        call_id: "fc_1",
-        name: "lookup",
-        arguments: '{"query":"x"}',
-      },
-    ]);
-  });
-
   it("serializes valid scalar tool arguments in Responses assistant history as JSON", () => {
     expect(
-      openaiMessageHelpers.messageToResponsesInput(
-        Message.assistant([AssistantContent.toolCall("tool_0", "Echo", "hello", "call_abc")]),
-      ),
+      toOpenAIResponsesParams("gpt-5", {
+        chatHistory: [
+          Message.assistant([AssistantContent.toolCall("tool_0", "Echo", "hello", "call_abc")]),
+        ],
+        documents: [],
+        tools: [],
+      }).input,
     ).toEqual([
       {
         type: "function_call",
@@ -945,12 +940,16 @@ describe("OpenAI Responses mapping", () => {
 
   it("preserves assistant reasoning items before dependent function calls", () => {
     expect(
-      openaiMessageHelpers.messageToResponsesInput(
-        Message.assistant([
-          AssistantContent.reasoning("", "rs_1"),
-          AssistantContent.toolCall("fc_1", "search", { query: "x" }, "call_1"),
-        ]),
-      ),
+      toOpenAIResponsesParams("gpt-5", {
+        chatHistory: [
+          Message.assistant([
+            AssistantContent.reasoning("", "rs_1"),
+            AssistantContent.toolCall("fc_1", "search", { query: "x" }, "call_1"),
+          ]),
+        ],
+        documents: [],
+        tools: [],
+      }).input,
     ).toEqual([
       {
         type: "reasoning",
@@ -969,18 +968,22 @@ describe("OpenAI Responses mapping", () => {
 
   it("preserves structured assistant reasoning history", () => {
     expect(
-      openaiMessageHelpers.messageToResponsesInput(
-        Message.assistant([
-          AssistantContent.reasoningFromContent(
-            [
-              { type: "text", text: "Visible reasoning." },
-              { type: "summary", text: "Short summary." },
-              { type: "encrypted", data: "encrypted" },
-            ],
-            "rs_1",
-          ),
-        ]),
-      ),
+      toOpenAIResponsesParams("gpt-5", {
+        chatHistory: [
+          Message.assistant([
+            AssistantContent.reasoningFromContent(
+              [
+                { type: "text", text: "Visible reasoning." },
+                { type: "summary", text: "Short summary." },
+                { type: "encrypted", data: "encrypted" },
+              ],
+              "rs_1",
+            ),
+          ]),
+        ],
+        documents: [],
+        tools: [],
+      }).input,
     ).toEqual([
       {
         type: "reasoning",

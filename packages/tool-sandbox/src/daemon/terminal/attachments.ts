@@ -11,7 +11,7 @@ export interface TerminalExitInfo {
  * shell can take SIGHUP and go back to waiting for input (seen under load, with the handler
  * installed and nothing pending), so one SIGHUP is not a kill on its own.
  */
-export const hangupGraceMs = 1_000;
+const hangupGraceMs = 1_000;
 
 /** Ask the PTY to hang up, and kill it outright if it is still running after the grace period. */
 export function killPty(pty: PtyProcess, hasExited: () => boolean): void {

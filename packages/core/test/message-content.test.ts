@@ -5,7 +5,6 @@ import {
   getAssistantGenerationMetadata,
   isJsonValue,
   isMessage,
-  type JsonValue,
   type Message,
   parseMessage,
   parseMessages,
@@ -287,10 +286,5 @@ describe("generation metadata", () => {
     };
     invalid.metadata.anvia.generation.usage.inputTokens = -1;
     expect(getAssistantGenerationMetadata(invalid as unknown as Message)).toBeUndefined();
-  });
-
-  it("keeps JsonValue metadata compile-time safe", () => {
-    const metadata = { tenantId: "acme" } satisfies JsonValue;
-    expect(metadata).toEqual({ tenantId: "acme" });
   });
 });

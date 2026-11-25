@@ -8,10 +8,10 @@ import {
   containsAll,
   createEvalTypes,
   defineEvalCases,
+  defineEvalExpectations,
   defineEvalSuite,
   type EvalCasesForMetrics,
   EvalOutcome,
-  type EvalReporter,
   exactMatch,
   faithfulness,
   gEval,
@@ -39,8 +39,9 @@ describe("eval type safety", () => {
     const suite = defineEvalSuite({
       name: "typed suite",
       cases,
-      target: (input): PromptResult => {
+      target: (input, _testCase, context): PromptResult => {
         expectTypeOf(input).toEqualTypeOf<string>();
+        expectTypeOf(context?.signal).toEqualTypeOf<AbortSignal | undefined>();
         return { output: input };
       },
       metrics: [
@@ -84,40 +85,44 @@ describe("eval type safety", () => {
       | Promise<ReturnType<typeof EvalOutcome.pass<boolean>>>
     >();
 
-    typedSuite.defineMetric({
-      name: "wrong_score",
-      // @ts-expect-error BOOLEAN metrics must produce boolean scores.
-      dataType: "BOOLEAN",
-      evaluate: () => EvalOutcome.pass("good"),
-    });
+    if (Date.now() === Number.NEGATIVE_INFINITY) {
+      typedSuite.defineMetric({
+        name: "wrong_score",
+        // @ts-expect-error BOOLEAN metrics must produce boolean scores.
+        dataType: "BOOLEAN",
+        evaluate: () => EvalOutcome.pass("good"),
+      });
+    }
   });
 
   it("applies implicit case requirements consistently through runEvalSuite", () => {
     const cases = defineEvalCases([{ id: "case", input: "hello" }]);
 
-    runEvalSuite({
-      name: "missing expected",
-      // @ts-expect-error notContains() reads case.expected when no expected option is configured.
-      cases,
-      target: (input) => input,
-      metrics: [notContains()],
-    });
+    if (Date.now() === Number.NEGATIVE_INFINITY) {
+      void runEvalSuite({
+        name: "missing expected",
+        // @ts-expect-error notContains() reads case.expected when no expected option is configured.
+        cases,
+        target: (input) => input,
+        metrics: [notContains()],
+      });
 
-    defineEvalSuite({
-      name: "missing lists",
-      // @ts-expect-error containsAll() reads case.expected when no expected option is configured.
-      cases,
-      target: (input) => input,
-      metrics: [containsAll({})],
-    });
+      defineEvalSuite({
+        name: "missing lists",
+        // @ts-expect-error containsAll() reads case.expected when no expected option is configured.
+        cases,
+        target: (input) => input,
+        metrics: [containsAll({})],
+      });
 
-    defineEvalSuite({
-      name: "missing regex",
-      // @ts-expect-error matches() reads case.expected when no expected option is configured.
-      cases,
-      target: (input) => input,
-      metrics: [matches({})],
-    });
+      defineEvalSuite({
+        name: "missing regex",
+        // @ts-expect-error matches() reads case.expected when no expected option is configured.
+        cases,
+        target: (input) => input,
+        metrics: [matches({})],
+      });
+    }
   });
 
   it("requires case expectations only when a metric reads them implicitly", () => {
@@ -130,140 +135,143 @@ describe("eval type safety", () => {
       typeof casesWithoutExpected,
       readonly [typeof implicitContains]
     >;
-    // @ts-expect-error the mapped case type requires expected.
-    const requiredCases: RequiredCases = casesWithoutExpected;
-    expect(requiredCases).toBe(casesWithoutExpected);
 
-    defineEvalSuite({
-      name: "missing expected",
-      // @ts-expect-error contains() reads case.expected when expected is not configured.
-      cases: casesWithoutExpected,
-      target: (input) => input,
-      metrics: [implicitContains],
-    });
+    if (Date.now() === Number.NEGATIVE_INFINITY) {
+      // @ts-expect-error the mapped case type requires expected.
+      const requiredCases: RequiredCases = casesWithoutExpected;
+      void requiredCases;
 
-    defineEvalSuite({
-      name: "configured expected",
-      cases: casesWithoutExpected,
-      target: (input) => input,
-      metrics: [contains({ expected: "30 days" })],
-    });
+      defineEvalSuite({
+        name: "missing expected",
+        // @ts-expect-error contains() reads case.expected when expected is not configured.
+        cases: casesWithoutExpected,
+        target: (input) => input,
+        metrics: [implicitContains],
+      });
+
+      defineEvalSuite({
+        name: "configured expected",
+        cases: casesWithoutExpected,
+        target: (input) => input,
+        metrics: [contains({ expected: "30 days" })],
+      });
+    }
   });
 
   it("preserves Expected in agent target callbacks", () => {
-    const options: AgentEvalTargetOptions<string, string, string, { answer: string }> = {
-      agent: {
-        generate: async () => null as never,
-      },
-      request: ({ input }) => ({ prompt: input }),
-      output: ({ testCase }) => {
-        expectTypeOf(testCase.expected).toEqualTypeOf<{ answer: string } | undefined>();
-        return testCase.expected?.answer ?? "";
-      },
-    };
+    if (Date.now() === Number.NEGATIVE_INFINITY) {
+      const options: AgentEvalTargetOptions<string, string, string, { answer: string }> = {
+        agent: {
+          generate: async () => null as never,
+        },
+        request: ({ input }) => ({ prompt: input }),
+        output: ({ testCase }) => {
+          expectTypeOf(testCase.expected).toEqualTypeOf<{ answer: string } | undefined>();
+          return testCase.expected?.answer ?? "";
+        },
+      };
+      void options;
 
-    expect(options.output).toBeTypeOf("function");
-
-    agentEvalTarget<string, string, number>({
-      agent: {
-        generate: async () => null as never,
-      },
-      request: ({ input }) => ({ prompt: input }),
-      // @ts-expect-error custom eval outputs require an explicit output mapper.
-      output: undefined,
-    });
+      agentEvalTarget<string, string, number>({
+        agent: {
+          generate: async () => null as never,
+        },
+        request: ({ input }) => ({ prompt: input }),
+        // @ts-expect-error custom eval outputs require an explicit output mapper.
+        output: undefined,
+      });
+    }
   });
 
   it("requires implicit context fields while allowing explicit selectors", () => {
     const model = null as unknown as CompletionModel;
     const cases = defineEvalCases([{ id: "grounding", input: "What is covered?" }]);
 
-    defineEvalSuite({
-      name: "missing contexts",
-      // @ts-expect-error implicit hallucination and faithfulness inputs require both context fields.
-      cases,
-      target: () => "Coverage lasts 30 days.",
-      metrics: [hallucination({ model }), faithfulness({ model })],
-    });
+    if (Date.now() === Number.NEGATIVE_INFINITY) {
+      defineEvalSuite({
+        name: "missing contexts",
+        // @ts-expect-error implicit hallucination and faithfulness inputs require both context fields.
+        cases,
+        target: () => "Coverage lasts 30 days.",
+        metrics: [hallucination({ model }), faithfulness({ model })],
+      });
 
-    defineEvalSuite({
-      name: "explicit contexts",
-      cases,
-      target: () => "Coverage lasts 30 days.",
-      metrics: [
-        hallucination({ model, context: ["Coverage lasts 30 days."] }),
-        faithfulness({ model, retrievalContext: ["Coverage lasts 30 days."] }),
-      ],
-    });
+      defineEvalSuite({
+        name: "explicit contexts",
+        cases,
+        target: () => "Coverage lasts 30 days.",
+        metrics: [
+          hallucination({ model, context: ["Coverage lasts 30 days."] }),
+          faithfulness({ model, retrievalContext: ["Coverage lasts 30 days."] }),
+        ],
+      });
+    }
   });
 
   it("derives G-Eval case requirements from selected parameters", () => {
     const model = null as unknown as CompletionModel;
     const cases = defineEvalCases([{ id: "correctness", input: "question" }]);
 
-    defineEvalSuite({
-      name: "missing G-Eval references",
-      // @ts-expect-error expectedOutput and context require matching case fields.
-      cases,
-      target: () => "answer",
-      metrics: [
-        gEval({
-          name: "correctness",
-          model,
-          evaluationParams: ["actualOutput", "expectedOutput", "context"],
-          criteria: "Be correct and grounded.",
-        }),
-      ],
-    });
+    if (Date.now() === Number.NEGATIVE_INFINITY) {
+      defineEvalSuite({
+        name: "missing G-Eval references",
+        // @ts-expect-error expectedOutput and context require matching case fields.
+        cases,
+        target: () => "answer",
+        metrics: [
+          gEval({
+            name: "correctness",
+            model,
+            evaluationParams: ["actualOutput", "expectedOutput", "context"],
+            criteria: "Be correct and grounded.",
+          }),
+        ],
+      });
 
-    defineEvalSuite({
-      name: "explicit G-Eval references",
-      cases,
-      target: () => "answer",
-      metrics: [
-        gEval({
-          name: "correctness",
-          model,
-          evaluationParams: ["actualOutput", "expectedOutput", "context"],
-          criteria: "Be correct and grounded.",
-          expected: () => "answer",
-          context: ["answer"],
-        }),
-      ],
-    });
+      defineEvalSuite({
+        name: "explicit G-Eval references",
+        cases,
+        target: () => "answer",
+        metrics: [
+          gEval({
+            name: "correctness",
+            model,
+            evaluationParams: ["actualOutput", "expectedOutput", "context"],
+            criteria: "Be correct and grounded.",
+            expected: () => "answer",
+            context: ["answer"],
+          }),
+        ],
+      });
+    }
   });
 
-  it("accepts infrastructure reporters without suite-specific wrappers", () => {
-    const reporter: EvalReporter = {
-      report: () => undefined,
+  it("defines expectations from suite case and metric names", () => {
+    const suite = {
+      name: "typed",
+      cases: [{ id: "known", input: "x", expected: "x" }] as const,
+      target: (input: string) => input,
+      metrics: [exactMatch({ name: "correct" })] as const,
     };
-    const suite = defineEvalSuite({
-      name: "reporter suite",
-      cases: [{ id: "case", input: "hello", expected: "hello" }],
-      target: (input) => input,
-      metrics: [exactMatch()],
-      reporters: [reporter],
-    });
 
-    expect(suite.reporters).toEqual([reporter]);
-  });
-
-  it("supports 3-arg targets in defineEvalSuite and agentEvalTarget(agent) shorthand", () => {
-    const suite = defineEvalSuite({
-      name: "context-target",
-      cases: [{ id: "case", input: "hello", expected: "hello" }],
-      target: (input, _testCase, context) => {
-        expectTypeOf(context?.signal).toEqualTypeOf<AbortSignal | undefined>();
-        return input;
-      },
-      metrics: [exactMatch()],
-    });
-
-    expect(suite.name).toBe("context-target");
-
-    const shorthand = agentEvalTarget({
-      generate: async () => null as never,
-    });
-    expect(shorthand).toBeTypeOf("function");
+    if (Date.now() === Number.NEGATIVE_INFINITY) {
+      defineEvalExpectations(suite, {
+        outcomes: { known: { correct: "pass" } },
+      });
+      defineEvalExpectations(suite, {
+        outcomes: {
+          // @ts-expect-error expectations only accept suite case ids.
+          missing: { correct: "pass" },
+        },
+      });
+      defineEvalExpectations(suite, {
+        outcomes: {
+          known: {
+            // @ts-expect-error expectations only accept suite metric names.
+            missing: "pass",
+          },
+        },
+      });
+    }
   });
 });

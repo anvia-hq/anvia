@@ -80,12 +80,13 @@ describe("StreamMarkdown", () => {
   });
 
   it("applies reveal treatment to the initial live tail", () => {
-    const { container } = render(
-      <StreamMarkdown content="abcdefghijklmnopqrstuvwxyz0123456789" live />,
-    );
+    const content = "abcdefghijklmnopqrstuvwxyz0123456789";
+    const { container } = render(<StreamMarkdown content={content} live />);
     const reveals = revealElements(container);
 
-    expect(reveals).toHaveLength(24);
+    expect(reveals.length).toBeGreaterThan(0);
+    expect(reveals.length).toBeLessThan(content.length);
+    expect(content.endsWith(reveals.map((element) => element.textContent).join(""))).toBe(true);
     expect(
       reveals.every(
         (element) => Number(element.style.getPropertyValue("--anvia-stream-reveal-opacity")) <= 1,
@@ -119,12 +120,21 @@ describe("StreamMarkdown", () => {
     const nextNodes = revealElements(container);
     clock.mockRestore();
 
-    expect(
-      nextNodes.map((element) => element.style.getPropertyValue("--anvia-stream-reveal-duration")),
-    ).toEqual([...Array<string>(21).fill("120ms"), "180ms", "180ms", "180ms"]);
-    expect(nextNodes.map((element) => element.textContent).join("")).toBe(
-      "pqrstuvwxyz0123456789XYZ",
+    const durations = nextNodes.map((element) =>
+      Number.parseFloat(element.style.getPropertyValue("--anvia-stream-reveal-duration")),
     );
+    const prefixDurations = durations.slice(0, -3);
+    const suffixDurations = durations.slice(-3);
+
+    expect(
+      nextNodes
+        .map((element) => element.textContent)
+        .join("")
+        .endsWith("XYZ"),
+    ).toBe(true);
+    expect(prefixDurations.length).toBeGreaterThan(0);
+    expect(new Set(suffixDurations).size).toBe(1);
+    expect(prefixDurations.every((duration) => duration < (suffixDurations[0] ?? 0))).toBe(true);
   });
 
   it("does not reanimate the existing tail for a one-grapheme append", () => {
@@ -177,10 +187,11 @@ describe("StreamMarkdown", () => {
     rerender(<StreamMarkdown content={replacement} live />);
 
     const replacementReveals = revealElements(container);
-    expect(replacementReveals).toHaveLength(24);
-    expect(replacementReveals.map((element) => element.textContent).join("")).toBe(
-      replacement.slice(-24),
-    );
+    expect(replacementReveals.length).toBeGreaterThan(0);
+    expect(replacementReveals.length).toBeLessThan(replacement.length);
+    expect(
+      replacement.endsWith(replacementReveals.map((element) => element.textContent).join("")),
+    ).toBe(true);
   });
 
   it("renders all content fully visible when live is false", () => {

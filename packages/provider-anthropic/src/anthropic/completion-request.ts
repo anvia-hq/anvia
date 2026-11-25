@@ -413,8 +413,3 @@ function toolChoiceToAnthropic(toolChoice: ToolChoice): unknown {
     name: toolChoice.name,
   };
 }
-
-export const anthropicMessageHelpers = {
-  messageToAnthropicMessages,
-  toolDefinitionToAnthropic,
-};

@@ -65,13 +65,15 @@ describe("HumanInput primitives", () => {
         })}
       >
         <HumanInput.Panel>
-          <HumanInput.Status />
+          <HumanInput.Status data-testid="status">
+            {(state) => `${state.approvals.pending.length}:${state.questions.pending.length}`}
+          </HumanInput.Status>
           <HumanInput.Approvals />
         </HumanInput.Panel>
       </ChatProvider>,
     );
 
-    expect(screen.getByText("1 pending")).toBeTruthy();
+    expect(screen.getByTestId("status").textContent).toBe("1:0");
     fireEvent.change(screen.getByLabelText("Approval reason"), {
       target: { value: "looks safe" },
     });

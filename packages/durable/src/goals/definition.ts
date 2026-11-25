@@ -327,7 +327,7 @@ function pause(
  * that no longer validates, such as one an operator recorded by hand, needs attention rather
  * than failing the goal.
  */
-export function journaledDecision(value: JsonValue): GoalDecision {
+function journaledDecision(value: JsonValue): GoalDecision {
   const parsed = goalDecisionSchema.safeParse(value);
 
   if (!parsed.success)

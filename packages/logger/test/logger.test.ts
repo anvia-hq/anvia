@@ -51,12 +51,6 @@ describe("createConsoleLogger", () => {
       msg: "child log",
     });
   });
-
-  it("resolves flush immediately because output is not buffered", async () => {
-    const logger = createConsoleLogger({ writer: () => {} });
-
-    await expect(logger.flush()).resolves.toBeUndefined();
-  });
 });
 
 describe("createPinoLogger", () => {

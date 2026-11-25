@@ -315,7 +315,7 @@ export function createDesktopTools(options: CreateDesktopToolsOptions): readonly
 }
 
 /** The size of the screenshots the model sees for a display this big. */
-export function viewOf(
+function viewOf(
   displayWidth: number,
   displayHeight: number,
   policy: { maxEdge: number; maxPixels: number },

@@ -221,10 +221,7 @@ export function getStreamSmoothingSnapshot<T>(
   };
 }
 
-export function getBufferedPlaybackTarget(
-  samples: readonly StreamSourceSample[],
-  nowMs: number,
-): number {
+function getBufferedPlaybackTarget(samples: readonly StreamSourceSample[], nowMs: number): number {
   const playbackAtMs = nowMs - streamSmoothingConfig.targetBufferMs;
   const firstSample = samples[0];
 

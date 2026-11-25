@@ -178,6 +178,7 @@ describe("evals DX improvements", () => {
       expect(err.outcome).toBe("fail");
       expect(err.caseResult?.output).toBe("bad");
       expect(err.partialResults.map((entry) => entry.case.id)).toEqual(["c1", "c2"]);
+      expect(err.partialResults).toHaveLength(2);
     });
 
     it("filters cases by tags and computes numeric metric summaries", async () => {

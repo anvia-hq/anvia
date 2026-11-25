@@ -8,7 +8,7 @@ import WebSocket from "ws";
 import { findExecutable } from "../src/daemon/desktop/exec";
 import type { SandboxDaemonDesktopOptions } from "../src/daemon/desktop/options";
 import { DesktopService } from "../src/daemon/desktop/service";
-import { createDesktopTools, viewOf } from "../src/desktop-tools";
+import { createDesktopTools } from "../src/desktop-tools";
 import { relayTicket, type SandboxDesktop } from "../src/remote/index";
 import {
   type RemoteHarness,
@@ -250,15 +250,13 @@ for (const backend of backends) {
       it("click where the model pointed in a scaled screenshot, and respect the lock", async () => {
         const h = await start({ resolution: { width: 2560, height: 1440 } });
         const tools = createDesktopTools({ sandbox: h.desktop });
-        const view = viewOf(2560, 1440, { maxEdge: 1568, maxPixels: 1_150_000 });
-        expect(view.scale).toBeLessThan(1);
 
         const shot = (await callTool(tools, "desktop_screenshot", {})) as {
           content: Array<{ type: string; text?: string; data?: { data: string } }>;
         };
-        const meta = JSON.parse(shot.content[0]?.text ?? "{}") as { width: number; height: number };
-        expect(meta).toEqual({ width: view.imageWidth, height: view.imageHeight });
-        expect(pngSize(Buffer.from(shot.content[1]?.data?.data ?? "", "base64"))).toEqual(meta);
+        const view = JSON.parse(shot.content[0]?.text ?? "{}") as { width: number; height: number };
+        expect(view.width).toBeLessThan(2560);
+        expect(pngSize(Buffer.from(shot.content[1]?.data?.data ?? "", "base64"))).toEqual(view);
 
         const status = await h.desktop.start();
         const xev = await h.runtime.startProcess({
@@ -274,7 +272,7 @@ for (const backend of backends) {
         await callTool(
           tools,
           "desktop_click",
-          { coordinate: [view.imageWidth / 2, view.imageHeight / 2] },
+          { coordinate: [view.width / 2, view.height / 2] },
           { operationId: "run/click-1" },
         );
         await eventually(async () => (await log()).includes("ButtonPress"));
@@ -283,11 +281,11 @@ for (const backend of backends) {
         expect(Math.abs(Number(clicked?.[2]) - 720)).toBeLessThanOrEqual(2);
 
         expect(await callTool(tools, "desktop_cursor_position", {})).toEqual({
-          coordinate: [Math.floor(view.imageWidth / 2), Math.floor(view.imageHeight / 2)],
+          coordinate: [Math.floor(view.width / 2), Math.floor(view.height / 2)],
         });
 
         await expect(
-          callTool(tools, "desktop_click", { coordinate: [view.imageWidth, 0] }),
+          callTool(tools, "desktop_click", { coordinate: [view.width, 0] }),
         ).rejects.toThrow(/outside the/);
 
         await h.desktop.takeover({ holder: "alice" });

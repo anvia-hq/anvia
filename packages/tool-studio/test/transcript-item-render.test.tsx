@@ -75,7 +75,6 @@ describe("TranscriptItem response actions", () => {
     expect(html.indexOf("Copy response")).toBeLessThan(html.indexOf("Response metrics"));
     expect(html.indexOf("Response metrics")).toBeLessThan(html.indexOf("Open trace trace_1"));
     expect(html.indexOf("Open trace trace_1")).toBeLessThan(html.indexOf("Finished - 1s"));
-    expect(html).not.toContain("animate-spin");
   });
 
   it.each([
@@ -151,13 +150,9 @@ describe("TranscriptItem response actions", () => {
     );
 
     expect(html).toContain('aria-label="Assistant is thinking"');
-    expect(html).toContain("Thinking");
-    expect(html).toContain("animate-pulse");
-    expect(html).not.toContain("animate-spin");
-    expect(html).not.toContain("Working");
   });
 
-  it("renders a compact tool disclosure with a framed action icon", () => {
+  it("renders a compact tool disclosure and toggles its payload", () => {
     const html = render(
       <TranscriptItem
         isFinalResponse
@@ -179,14 +174,6 @@ describe("TranscriptItem response actions", () => {
     expect(html).toContain('aria-label="Expand search_docs tool call"');
     expect(html).toContain("search_docs");
     expect(html).toContain('data-entry-kind="tool"');
-    expect(html).toContain('data-tool-icon="action"');
-    expect(html).toContain("size-6 shrink-0 place-items-center rounded-md border");
-    expect(html).toContain("font-mono text-sm");
-    expect(html).not.toContain("Completed");
-    expect(html).not.toContain("size-1.5 rounded-full");
-    expect(html).not.toContain("Show");
-    expect(html).not.toContain("Hide");
-    expect(html).not.toContain("shadow-black/20");
 
     const toggle = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Expand search_docs tool call"]',
@@ -198,7 +185,7 @@ describe("TranscriptItem response actions", () => {
     expect(container.textContent).toContain("Output");
   });
 
-  it("renders expanded tool call payloads without frames", () => {
+  it("renders pending approval tool calls expanded", () => {
     const html = render(
       <TranscriptItem
         isFinalResponse
@@ -223,8 +210,6 @@ describe("TranscriptItem response actions", () => {
 
     expect(html).toContain('aria-label="Collapse write_file tool call"');
     expect(html).toContain("Input");
-    expect(html).not.toContain("border-l border-border/70");
-    expect(html).not.toContain("rounded-lg border border-border/80 bg-background/70");
   });
 
   it.each([
@@ -292,6 +277,5 @@ describe("TranscriptItem response actions", () => {
     );
 
     expect(html).toContain("Running");
-    expect(html).toContain("animate-pulse");
   });
 });

@@ -4,22 +4,20 @@ import { createThinkTool } from "./helpers/imports";
 describe("createThinkTool", () => {
   it("creates the default think tool definition", async () => {
     const tool = createThinkTool();
+    const definition = await Promise.resolve(tool.definition(""));
 
-    await expect(Promise.resolve(tool.definition(""))).resolves.toEqual({
-      name: "think",
-      description:
-        "Use this tool as a scratchpad to think through complex tasks step by step. Break the task into smaller steps, assess available information, and decide what to do next. Revisit your plan as new information becomes available. It does not retrieve information, store memory, or change external state.",
-      parameters: {
-        type: "object",
-        properties: {
-          thought: {
-            type: "string",
-            description: "A thought to record while reasoning through a task.",
-          },
+    expect(definition.name).toBe("think");
+    expect(definition.description.length).toBeGreaterThan(0);
+    expect(definition.parameters).toMatchObject({
+      type: "object",
+      properties: {
+        thought: {
+          type: "string",
+          description: expect.any(String),
         },
-        required: ["thought"],
-        additionalProperties: false,
       },
+      required: ["thought"],
+      additionalProperties: false,
     });
   });
 

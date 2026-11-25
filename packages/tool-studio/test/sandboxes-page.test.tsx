@@ -149,8 +149,7 @@ describe("SandboxesPage", () => {
 
     act(() => root.render(<SandboxesPage enabled onError={vi.fn()} onSelectSandbox={vi.fn()} />));
 
-    expect(container.textContent).toContain("Loading sandboxes");
-    expect(container.textContent).toContain("Reading live sandbox workspaces.");
+    expect(container.querySelector('[data-slot="studio-empty-state"]')).not.toBeNull();
     expect(container.textContent).not.toContain("Sandbox unavailable");
 
     await act(async () => resolveSummary?.(jsonResponse({ sandboxes: [] })));

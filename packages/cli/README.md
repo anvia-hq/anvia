@@ -17,6 +17,11 @@ This creates local `skills/` trees and adds references to `AGENTS.md`. Choose `-
 or multiple target flags to integrate with other coding agents. Skills cover agents, chat, RAG, MCP,
 pipelines, Studio, evaluations, channels, and experimental durable workflows.
 
+The skills are manual-only: Claude Code and Codex do not load them on their own. Invoke one by name,
+for example `/anvia-agent` in Claude Code or `$anvia-agent` in Codex. The `AGENTS.md` references and
+Cursor rules that `skills init` generates still point agents at the skills, so those agents may read
+them without being asked.
+
 ## Add UI components
 
 In an existing Next.js or Vite application:

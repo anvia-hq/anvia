@@ -1,6 +1,11 @@
 export type { AttachmentContextValue } from "./attachment";
 export { InternalAttachmentProvider, useAttachment, useOptionalAttachment } from "./attachment";
-export type { ChatController, ChatProviderProps } from "./chat";
+export type {
+  ChatController,
+  ChatProviderControllerProps,
+  ChatProviderProps,
+  ChatProviderTransportProps,
+} from "./chat";
 export { ChatProvider, useChatContext, useHumanInput } from "./chat";
 export type { CompletionController, CompletionProviderProps } from "./completion";
 export { CompletionProvider, useCompletionContext } from "./completion";

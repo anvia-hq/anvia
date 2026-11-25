@@ -1,6 +1,7 @@
 ---
 name: anvia-agent
 description: Build Anvia agents and tools — Agent options, tool definitions, approvals, memory, streaming, multi-agent teams, and provider wiring.
+disable-model-invocation: true
 ---
 
 # Anvia Agent Skill

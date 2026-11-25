@@ -1,6 +1,7 @@
 ---
 name: anvia-evals
 description: Evaluate Anvia agents and retrieval — deterministic metrics, semantic similarity, LLM judges, RAG quality, and CLI eval runs.
+disable-model-invocation: true
 ---
 
 # Anvia Evals Skill

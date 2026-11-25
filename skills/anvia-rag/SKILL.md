@@ -1,6 +1,7 @@
 ---
 name: anvia-rag
 description: Build retrieval and RAG with Anvia — chunking, embeddings, vector stores, knowledge graphs, filters, and search tools.
+disable-model-invocation: true
 ---
 
 # Anvia RAG Skill

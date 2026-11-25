@@ -1,6 +1,7 @@
 ---
 name: anvia-chat
 description: Wire an Anvia chat UI end to end — server stream route, client transport, React hook, and UI primitives.
+disable-model-invocation: true
 ---
 
 # Anvia Chat Skill

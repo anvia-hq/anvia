@@ -1,6 +1,7 @@
 ---
 name: anvia-durable
 description: Build recoverable Anvia workflows with @anvia/durable — durable main agents, owned subagents, task graphs, tool/effect recovery, persisted waits, and remote controls. Use when execution must survive restarts; ordinary agent streaming, AgentTeam, and session memory alone are not durable execution.
+disable-model-invocation: true
 ---
 
 # Anvia Durable Skill

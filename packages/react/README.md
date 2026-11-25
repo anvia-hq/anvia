@@ -59,6 +59,14 @@ export function Chat() {
 }
 ```
 
+If you don't need the controller in the component that renders the provider, pass `transport` (and
+any other `useChat` option) to `ChatProvider` and skip the `useChat` call. Read the controller with
+`useChatContext()`:
+
+```tsx
+<ChatProvider transport={transport}>{/* primitives */}</ChatProvider>
+```
+
 Style primitives with `className`, or use `asChild` to compose your own elements. The package ships
 semantic attributes and behavior; it has no package stylesheet. Use `@anvia/server` to create the
 matching response on your server. Provider credentials and Agent continuations stay on the server.

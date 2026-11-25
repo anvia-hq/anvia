@@ -8,7 +8,8 @@ import type {
   AgentToolApprovalRequest,
   AgentToolQuestionRequest,
 } from "@anvia/core/agent/interactions";
-import type { UseChatResult } from "../types";
+import type { UseChatOptions, UseChatResult } from "../types";
+import { useChat } from "../use-chat";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
 
 export type ChatController<
@@ -16,23 +17,72 @@ export type ChatController<
   Data extends ClientDataMap = ClientDataMap,
 > = UseChatResult<ClientTransport<ClientStreamRequest, Data, Metadata>>;
 
-export type ChatProviderProps<
+type ChatTransport<Metadata extends ClientMetadata, Data extends ClientDataMap> = ClientTransport<
+  ClientStreamRequest,
+  Data,
+  Metadata
+>;
+
+export type ChatProviderControllerProps<
   Metadata extends ClientMetadata = ClientMetadata,
   Data extends ClientDataMap = ClientDataMap,
 > = {
   controller: ChatController<Metadata, Data>;
+  transport?: never;
   children?: ReactNode;
 };
+
+/**
+ * Let the provider create the chat with `useChat`. Accepts the same options as `useChat`; read the
+ * controller with `useChatContext()`.
+ */
+export type ChatProviderTransportProps<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+> = UseChatOptions<ChatTransport<Metadata, Data>> & {
+  controller?: never;
+  children?: ReactNode;
+};
+
+export type ChatProviderProps<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+> = ChatProviderControllerProps<Metadata, Data> | ChatProviderTransportProps<Metadata, Data>;
 
 const ChatContext = createContext<ChatController | undefined>(undefined);
 
 export function ChatProvider<
   Metadata extends ClientMetadata = ClientMetadata,
   Data extends ClientDataMap = ClientDataMap,
->({ controller, children }: ChatProviderProps<Metadata, Data>): ReactElement {
+>(props: ChatProviderProps<Metadata, Data>): ReactElement {
+  if (props.controller !== undefined) {
+    return createElement(
+      ChatControllerProvider,
+      { controller: props.controller as unknown as ChatController },
+      props.children,
+    );
+  }
+
+  return createElement(ChatTransportProvider, props as unknown as ChatProviderTransportProps);
+}
+
+function ChatControllerProvider({
+  controller,
+  children,
+}: {
+  controller: ChatController;
+  children?: ReactNode;
+}): ReactElement {
+  return createElement(ChatContext.Provider, { value: controller }, children);
+}
+
+function ChatTransportProvider({ children, ...options }: ChatProviderTransportProps): ReactElement {
+  const controller = useChat(
+    options as UseChatOptions<ChatTransport<ClientMetadata, ClientDataMap>>,
+  );
   return createElement(
-    ChatContext.Provider,
-    { value: controller as unknown as ChatController },
+    ChatControllerProvider,
+    { controller: controller as unknown as ChatController },
     children,
   );
 }

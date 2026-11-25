@@ -22,6 +22,7 @@ import {
   ChatProvider,
   ComposerPrimitive as Composer,
   ThreadPrimitive as Thread,
+  useChatContext,
   useComposer,
 } from "../src";
 import { createChatController, textMessage } from "./helpers";
@@ -153,6 +154,42 @@ function ComposerTriggerOpener() {
 describe("Chat primitives", () => {
   it("throws when chat primitives are rendered outside ChatProvider", () => {
     expect(() => render(<Thread.Root />)).toThrow();
+  });
+
+  it("creates the chat from a transport when no controller is given", async () => {
+    const send = vi.fn(async function* () {
+      yield {
+        type: "stream_end",
+        streamId: "stream_1",
+        eventId: 0,
+        status: "completed",
+      } satisfies ClientStreamFrame;
+    });
+    const transport: ClientTransport<ClientStreamRequest> = { send };
+
+    function Probe() {
+      const chat = useChatContext();
+      return (
+        <button type="button" onClick={() => void chat.sendMessage({ text: "hi" })}>
+          {chat.messages.map((message) => message.id).join(",")}
+        </button>
+      );
+    }
+
+    render(
+      <ChatProvider transport={transport} initialMessages={[textMessage("m1", "user", "seed")]}>
+        <Probe />
+      </ChatProvider>,
+    );
+
+    const button = screen.getByRole("button");
+    expect(button.textContent).toBe("m1");
+
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(send).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("submits chat composer input and supports asChild", () => {

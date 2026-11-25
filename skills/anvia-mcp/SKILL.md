@@ -1,6 +1,7 @@
 ---
 name: anvia-mcp
 description: Connect MCP servers to Anvia agents — clients, transports, tool discovery, URL safety, and lifecycle.
+disable-model-invocation: true
 ---
 
 # Anvia MCP Skill

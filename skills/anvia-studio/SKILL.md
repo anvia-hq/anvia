@@ -1,6 +1,7 @@
 ---
 name: anvia-studio
 description: Run and inspect Anvia agents in Studio — local serving, playground, traces, approvals, sessions, evals, and observability.
+disable-model-invocation: true
 ---
 
 # Anvia Studio Skill

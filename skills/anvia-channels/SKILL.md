@@ -1,6 +1,7 @@
 ---
 name: anvia-channels
 description: Connect Discord, Slack, and Telegram to Anvia agents — channel adapters, agent-backed bots, proactive delivery, sessions, streaming, and platform actions.
+disable-model-invocation: true
 ---
 
 # Anvia Channels Skill

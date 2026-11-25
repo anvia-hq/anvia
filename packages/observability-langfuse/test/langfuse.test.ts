@@ -2499,7 +2499,12 @@ describe("LangfuseGenerationObserver.update", () => {
 });
 
 describe("ScoreQueue", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
   afterEach(() => {
+    vi.clearAllTimers();
     vi.useRealTimers();
   });
 
@@ -2587,11 +2592,11 @@ describe("ScoreQueue", () => {
     await flush;
 
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
     expect(queue.depth()).toBe(0);
   });
 
   it("retries on 429 and 5xx with exponential backoff", async () => {
-    vi.useFakeTimers();
     const fetchMock = vi
       .mocked(fetch)
       .mockResolvedValueOnce(new Response(null, { status: 429 }))
@@ -2646,7 +2651,6 @@ describe("ScoreQueue", () => {
   });
 
   it("gives up after maxAttempts and throws LangfuseScoreError", async () => {
-    vi.useFakeTimers();
     const fetchMock = vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 500 }));
     const queue = makeQueue({ maxAttempts: 3 });
 
@@ -2663,7 +2667,6 @@ describe("ScoreQueue", () => {
   });
 
   it("does not start an unbounded background retry loop", async () => {
-    vi.useFakeTimers();
     const fetchMock = vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 500 }));
     const queue = makeQueue({ batchSize: 1, maxAttempts: 2 });
 
@@ -2680,13 +2683,14 @@ describe("ScoreQueue", () => {
 
     queue.enqueue(scoreArgs());
     queue.enqueue(scoreArgs({ name: "latency" }));
-    await vi.waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(0);
 
+    expect(vi.mocked(fetch)).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
     expect(queue.depth()).toBe(0);
   });
 
   it("shutdown flushes pending scores and clears the timer", async () => {
-    vi.useFakeTimers();
     const queue = makeQueue({ flushIntervalMs: 1_000 });
 
     queue.enqueue(scoreArgs());
@@ -2732,6 +2736,7 @@ describe("score queue integration", () => {
     await tracing.score({ traceId: "t", name: "n", value: 1 });
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     expect(tracing.scoreQueueDepth()).toBe(1);
+    await tracing.close();
   });
 
   it("flush() drains the queue and posts one batched request", async () => {

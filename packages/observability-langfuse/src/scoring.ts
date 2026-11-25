@@ -84,6 +84,7 @@ export class ScoreQueue {
         await this.flushing;
 
         if (this.pending.length === 0) {
+          this.clearScheduledTimer();
           return;
         }
 
@@ -91,9 +92,11 @@ export class ScoreQueue {
       }
 
       if (this.pending.length === 0) {
+        this.clearScheduledTimer();
         return;
       }
 
+      this.clearScheduledTimer();
       const draining = this.drain();
       this.flushing = draining;
       try {

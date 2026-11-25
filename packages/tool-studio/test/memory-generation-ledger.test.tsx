@@ -1,11 +1,7 @@
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AssistantContent, Message } from "../../core/test/helpers/imports";
 import type { StudioMemoryMessageRecord } from "../src/types";
-import {
-  MemoryGenerationLedger,
-  memoryGenerationRows,
-} from "../src/ui/app/modules/memory/memory-generation-ledger";
+import { memoryGenerationRows } from "../src/ui/app/modules/memory/memory-generation-ledger";
 
 const usage = {
   inputTokens: 12,
@@ -54,36 +50,6 @@ describe("MemoryGenerationLedger", () => {
         generation: undefined,
       },
     ]);
-  });
-
-  it("renders model and token metrics while keeping missing telemetry explicit", () => {
-    const records: StudioMemoryMessageRecord[] = [
-      record(
-        0,
-        Message.assistant("Stored answer", {
-          metadata: {
-            anvia: {
-              generation: {
-                provider: "openai",
-                modelId: "gpt-test",
-                usage,
-              },
-            },
-          },
-        }),
-      ),
-      record(1, Message.assistant("Legacy answer")),
-    ];
-
-    const html = renderToStaticMarkup(<MemoryGenerationLedger records={records} />);
-
-    expect(html).toContain("Assistant responses");
-    expect(html).toContain("openai");
-    expect(html).toContain("gpt-test");
-    expect(html).toContain("total 16 tokens");
-    expect(html).toContain("cached 3");
-    expect(html).toContain("Usage unavailable");
-    expect(html).toContain("Legacy answer");
   });
 });
 

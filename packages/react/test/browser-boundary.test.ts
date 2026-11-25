@@ -63,7 +63,11 @@ describe("browser package boundary", () => {
           input.includes("node_modules/@modelcontextprotocol/") ||
           input.includes("core/src/agent/agent.ts") ||
           input.includes("core/src/internal/agent-runtime/") ||
-          input.includes("core/src/mcp/"),
+          input.includes("core/src/mcp/") ||
+          input.includes("src/sandbox-terminal") ||
+          input.includes("src/sandbox-desktop") ||
+          input.includes("@xterm/") ||
+          input.includes("@novnc/"),
       ),
     ).toEqual([]);
   });

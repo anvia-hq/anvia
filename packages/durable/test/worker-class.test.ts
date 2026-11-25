@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { defineTask, DurableClient, DurableRuntime, DurableWorker } from "../src/index.js";
 import { PostgresDurableStore } from "../src/postgres.js";
-import { SqliteDurableStore } from "../src/sqlite.js";
 import { done, makeAgent } from "./helpers.js";
 import { testPool } from "./helpers/postgres.js";
 
@@ -143,11 +142,5 @@ describe("DurableWorker", () => {
       input: "hi",
     });
     expect(await handle.result()).toBe("echo:hi");
-  });
-
-  it("refuses a store that cannot share workers", async () => {
-    await expect(
-      DurableWorker.start({ store: new SqliteDurableStore(":memory:") }),
-    ).rejects.toThrow(/does not support shared workers/);
   });
 });

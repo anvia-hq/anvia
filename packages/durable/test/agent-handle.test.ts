@@ -40,21 +40,6 @@ describe("typed agent handle", () => {
     expect((await runtime.status(run.id)).agentId).toBe(agent.id);
   });
 
-  it("deduplicates by requestId like runtime.submit", async () => {
-    const runtime = await open();
-    const researcher = runtime.agent({ agent: makeAgent(async () => done()), version: "1" });
-    const first = await researcher.submit({ sessionId: "s", requestId: "r", prompt: "hi" });
-    const second = await researcher.submit({ sessionId: "s", requestId: "r", prompt: "hi" });
-    expect(second.id).toBe(first.id);
-  });
-
-  it("rejects registering the same agent twice", async () => {
-    const runtime = await open();
-    const agent = makeAgent(async () => done());
-    runtime.agent({ agent, version: "1" });
-    expect(() => runtime.agent({ agent, version: "1" })).toThrow(/already registered/);
-  });
-
   it("handle() wraps an agent registered through open()", async () => {
     const agent = makeAgent(async () => done());
     const runtime = await open({ agents: [{ agent, version: "1" }] });

@@ -2499,31 +2499,18 @@ describe("LangfuseGenerationObserver.update", () => {
 });
 
 describe("ScoreQueue", () => {
-  type QueueHandle = {
-    queue: ScoreQueue;
-    fetchMock: ReturnType<typeof vi.fn>;
-    sleepMock: ReturnType<typeof vi.fn>;
-  };
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   function makeQueue(
     overrides: Partial<{
-      fetchImpl: typeof fetch;
-      sleep: (ms: number) => Promise<void>;
-      setTimer: (handler: () => void, ms: number) => unknown;
-      clearTimer: (handle: unknown) => void;
       flushIntervalMs: number;
       batchSize: number;
       maxAttempts: number;
     }> = {},
-  ): QueueHandle {
-    const fetchMock = (overrides.fetchImpl ??
-      vi.fn(async () => new Response(null, { status: 204 }))) as
-      | typeof fetch
-      | ReturnType<typeof vi.fn>;
-    const sleepMock = (overrides.sleep ?? vi.fn(async () => {})) as
-      | ((ms: number) => Promise<void>)
-      | ReturnType<typeof vi.fn>;
-    const options: ConstructorParameters<typeof ScoreQueue>[0] = {
+  ): ScoreQueue {
+    return new ScoreQueue({
       baseUrl: "https://langfuse.test",
       publicKey: "pk",
       secretKey: "sk",
@@ -2531,20 +2518,7 @@ describe("ScoreQueue", () => {
       batchSize: overrides.batchSize ?? 3,
       flushIntervalMs: overrides.flushIntervalMs ?? 100,
       maxAttempts: overrides.maxAttempts ?? 3,
-      fetchImpl: fetchMock as typeof fetch,
-      sleep: sleepMock as (ms: number) => Promise<void>,
-    };
-
-    if (overrides.setTimer) options.setTimer = overrides.setTimer;
-
-    if (overrides.clearTimer) options.clearTimer = overrides.clearTimer;
-
-    const queue = new ScoreQueue(options);
-    return {
-      queue,
-      fetchMock: fetchMock as ReturnType<typeof vi.fn>,
-      sleepMock: sleepMock as ReturnType<typeof vi.fn>,
-    };
+    });
   }
 
   function scoreArgs(overrides: Partial<{ traceId: string; name: string; value: number }> = {}) {
@@ -2557,7 +2531,7 @@ describe("ScoreQueue", () => {
   }
 
   it("enqueue keeps depth accurate", () => {
-    const { queue } = makeQueue();
+    const queue = makeQueue();
     expect(queue.depth()).toBe(0);
     queue.enqueue(scoreArgs());
     queue.enqueue(scoreArgs({ name: "latency" }));
@@ -2565,14 +2539,14 @@ describe("ScoreQueue", () => {
   });
 
   it("flush posts a JSON array with all pending scores", async () => {
-    const { queue, fetchMock } = makeQueue();
+    const queue = makeQueue();
     queue.enqueue(scoreArgs());
     queue.enqueue(scoreArgs({ name: "latency", value: 0.5 }));
 
     await queue.flush();
 
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(vi.mocked(fetch)).toHaveBeenCalledOnce();
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
     expect(Array.isArray(body)).toBe(true);
     expect(body).toHaveLength(2);
     expect(body[0]).toMatchObject({ traceId: "trace-1", name: "quality", value: 1 });
@@ -2581,15 +2555,17 @@ describe("ScoreQueue", () => {
   });
 
   it("limits every request body to scoreBatchSize", async () => {
-    const { queue, fetchMock } = makeQueue({ batchSize: 2 });
+    const queue = makeQueue({ batchSize: 2 });
     for (let index = 0; index < 5; index += 1) {
       queue.enqueue(scoreArgs({ name: `score-${index}` }));
     }
 
     await queue.flush();
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    const sizes = fetchMock.mock.calls.map((call) => JSON.parse(String(call[1]?.body)).length);
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(3);
+    const sizes = vi
+      .mocked(fetch)
+      .mock.calls.map((call) => JSON.parse(String(call[1]?.body)).length);
     expect(sizes).toEqual([2, 2, 1]);
   });
 
@@ -2598,14 +2574,10 @@ describe("ScoreQueue", () => {
     const firstResponse = new Promise<Response>((resolve) => {
       releaseFirst = () => resolve(new Response(null, { status: 204 }));
     });
-    const fetchMock = vi
-      .fn()
+    vi.mocked(fetch)
       .mockReturnValueOnce(firstResponse)
       .mockResolvedValue(new Response(null, { status: 204 }));
-    const { queue } = makeQueue({
-      batchSize: 2,
-      fetchImpl: fetchMock as unknown as typeof fetch,
-    });
+    const queue = makeQueue({ batchSize: 2 });
     queue.enqueue(scoreArgs({ name: "first" }));
     queue.enqueue(scoreArgs({ name: "second" }));
     const flush = queue.flush();
@@ -2614,63 +2586,31 @@ describe("ScoreQueue", () => {
 
     await flush;
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
     expect(queue.depth()).toBe(0);
   });
 
-  it("flush returns when the response is 2xx and clears the queue", async () => {
-    const { queue, fetchMock } = makeQueue();
-    queue.enqueue(scoreArgs());
-    await expect(queue.flush()).resolves.toBeUndefined();
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(queue.depth()).toBe(0);
-  });
-
-  it("retries on 429 with exponential backoff", async () => {
+  it("retries on 429 and 5xx with exponential backoff", async () => {
+    vi.useFakeTimers();
     const fetchMock = vi
-      .fn()
+      .mocked(fetch)
       .mockResolvedValueOnce(new Response(null, { status: 429 }))
-      .mockResolvedValueOnce(new Response(null, { status: 429 }))
-      .mockResolvedValueOnce(new Response(null, { status: 204 }));
-    const sleepMock = vi.fn(async () => {});
-    const { queue } = makeQueue({
-      fetchImpl: fetchMock as unknown as typeof fetch,
-      sleep: sleepMock,
-    });
-
-    queue.enqueue(scoreArgs());
-    await queue.flush();
-
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(sleepMock).toHaveBeenCalledTimes(2);
-    const sleepCalls = sleepMock.mock.calls as unknown as Array<[number]>;
-    const first = sleepCalls[0]?.[0] ?? 0;
-    const second = sleepCalls[1]?.[0] ?? 0;
-    expect(first).toBeGreaterThan(0);
-    expect(second).toBeGreaterThanOrEqual(first);
-  });
-
-  it("retries on 500 with exponential backoff", async () => {
-    const fetchMock = vi
-      .fn()
       .mockResolvedValueOnce(new Response(null, { status: 503 }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
-    const sleepMock = vi.fn(async () => {});
-    const { queue } = makeQueue({
-      fetchImpl: fetchMock as unknown as typeof fetch,
-      sleep: sleepMock,
-    });
+    const queue = makeQueue();
 
     queue.enqueue(scoreArgs());
-    await queue.flush();
+    const flush = queue.flush();
+    await vi.runAllTimersAsync();
+    await flush;
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(sleepMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(queue.depth()).toBe(0);
   });
 
   it("does not retry on 400 and throws LangfuseScoreError with scores", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("bad", { status: 400 }));
-    const { queue } = makeQueue({ fetchImpl: fetchMock as unknown as typeof fetch });
+    vi.mocked(fetch).mockResolvedValue(new Response("bad", { status: 400 }));
+    const queue = makeQueue();
     const scores = [scoreArgs(), scoreArgs({ name: "latency" })];
 
     for (const s of scores) queue.enqueue(s);
@@ -2683,103 +2623,89 @@ describe("ScoreQueue", () => {
         expect.objectContaining({ name: "latency" }),
       ]),
     });
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(vi.mocked(fetch)).toHaveBeenCalledOnce();
     expect(queue.depth()).toBe(0);
   });
 
   it("drops a permanent poison batch and continues draining later scores", async () => {
-    const fetchMock = vi
-      .fn()
+    vi.mocked(fetch)
       .mockResolvedValueOnce(new Response("bad", { status: 400 }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
-    const { queue } = makeQueue({
-      batchSize: 2,
-      fetchImpl: fetchMock as unknown as typeof fetch,
-    });
+    const queue = makeQueue({ batchSize: 2 });
 
     queue.enqueue(scoreArgs({ name: "poison-1" }));
     queue.enqueue(scoreArgs({ name: "poison-2" }));
     queue.enqueue(scoreArgs({ name: "later" }));
 
     await expect(queue.flush()).rejects.toThrow(/HTTP 400/);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual([
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1]?.[1]?.body))).toEqual([
       expect.objectContaining({ name: "later" }),
     ]);
     expect(queue.depth()).toBe(0);
   });
 
   it("gives up after maxAttempts and throws LangfuseScoreError", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
-    const sleepMock = vi.fn(async () => {});
-    const { queue } = makeQueue({
-      fetchImpl: fetchMock as unknown as typeof fetch,
-      sleep: sleepMock,
-      maxAttempts: 3,
-    });
+    vi.useFakeTimers();
+    const fetchMock = vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 500 }));
+    const queue = makeQueue({ maxAttempts: 3 });
 
     queue.enqueue(scoreArgs());
-    await expect(queue.flush()).rejects.toMatchObject({
+    const flush = queue.flush();
+    const assertion = expect(flush).rejects.toMatchObject({
       name: "LangfuseScoreError",
       message: expect.stringMatching(/after 3 attempts/),
     });
+    await vi.runAllTimersAsync();
+    await assertion;
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(sleepMock).toHaveBeenCalledTimes(2);
     expect(queue.depth()).toBe(1);
   });
 
   it("does not start an unbounded background retry loop", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
-    const setTimer = vi.fn();
-    const { queue } = makeQueue({
-      batchSize: 1,
-      fetchImpl: fetchMock as unknown as typeof fetch,
-      maxAttempts: 2,
-      setTimer,
-    });
+    vi.useFakeTimers();
+    const fetchMock = vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 500 }));
+    const queue = makeQueue({ batchSize: 1, maxAttempts: 2 });
 
     queue.enqueue(scoreArgs());
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await vi.runAllTimersAsync();
 
-    expect(setTimer).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
     expect(queue.depth()).toBe(1);
   });
 
   it("size threshold triggers an immediate flush without waiting for the timer", async () => {
-    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
-    const { queue } = makeQueue({ fetchImpl: fetchMock as unknown as typeof fetch, batchSize: 2 });
+    const queue = makeQueue({ batchSize: 2, flushIntervalMs: 60_000 });
 
     queue.enqueue(scoreArgs());
     queue.enqueue(scoreArgs({ name: "latency" }));
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await vi.waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledOnce());
 
-    expect(fetchMock).toHaveBeenCalledOnce();
     expect(queue.depth()).toBe(0);
   });
 
   it("shutdown flushes pending scores and clears the timer", async () => {
-    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
-    const { queue } = makeQueue({ fetchImpl: fetchMock as unknown as typeof fetch });
+    vi.useFakeTimers();
+    const queue = makeQueue({ flushIntervalMs: 1_000 });
 
     queue.enqueue(scoreArgs());
     await queue.shutdown();
 
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(vi.mocked(fetch)).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
     expect(queue.depth()).toBe(0);
     expect(() => queue.enqueue(scoreArgs())).toThrow(/shut down/);
   });
 
   it("shutdown reports when pending scores cannot be delivered", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
-    const { queue } = makeQueue({
-      fetchImpl: fetchMock as unknown as typeof fetch,
-      maxAttempts: 1,
-    });
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 500 }));
+    const queue = makeQueue({ maxAttempts: 1 });
 
     queue.enqueue(scoreArgs());
     await expect(queue.shutdown()).rejects.toMatchObject({ name: "LangfuseScoreError" });
 
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(vi.mocked(fetch)).toHaveBeenCalledOnce();
     expect(queue.depth()).toBe(1);
     expect(() => queue.enqueue(scoreArgs())).toThrow(/shut down/);
   });

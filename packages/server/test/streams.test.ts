@@ -1,6 +1,5 @@
 import type { ClientStream, ClientStreamEvent, ClientStreamFrame } from "@anvia/client";
 import { describe, expect, it, vi } from "vitest";
-import * as publicServer from "../src";
 import {
   InvalidResumableAfterError,
   type ClientResumableEvent,
@@ -22,14 +21,6 @@ function CompileServerBoundary() {
   createJsonlStream(events);
 }
 void CompileServerBoundary;
-
-describe("public boundary", () => {
-  it("does not retain ambiguous response aliases", () => {
-    expect(publicServer).not.toHaveProperty("createEventStream");
-    expect(publicServer).not.toHaveProperty("createUIStreamResponse");
-    expect(publicServer).not.toHaveProperty("resumeEventStream");
-  });
-});
 
 describe("error events", () => {
   it("keeps well-known diagnostic fields that live on the Error prototype", () => {

@@ -348,18 +348,6 @@ describe("public boundary", () => {
       { role: "system", metadata: compaction.metadata },
     ]);
   });
-
-  it("does not re-export client protocol or transport ownership", () => {
-    expect(publicReact).not.toHaveProperty("createHttpClientTransport");
-    expect(publicReact).not.toHaveProperty("createDirectClientTransport");
-    expect(publicReact).not.toHaveProperty("parseClientStreamEvent");
-    expect(publicReact).not.toHaveProperty("fetchEventStream");
-  });
-
-  it("does not expose endpoint or request-factory shortcuts", () => {
-    expect(publicReact).not.toHaveProperty("createRequest");
-    expect(publicReact).not.toHaveProperty("endpoint");
-  });
 });
 
 describe("useChat", () => {

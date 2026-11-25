@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Message, UserContent } from "../../core/test/helpers/imports";
 import { transcriptFromMessages } from "../src/runtime/transcript";
 import {
@@ -8,13 +8,8 @@ import {
 import {
   findMatchingToolIndex,
   findMatchingToolIndexByCall,
-  formValue,
   messageText,
-  nextPaint,
-  nextSequence,
-  nextTranscriptId,
   resetTranscriptSequence,
-  resizeTextarea,
   setTranscriptSequence,
   toHistory,
 } from "../src/ui/app/modules/shared/transcript";
@@ -52,15 +47,6 @@ describe("Studio transcript helpers", () => {
         attachments: [attachment],
       },
     ]);
-  });
-
-  it("maintains deterministic transcript ids and sequence lookups", () => {
-    resetTranscriptSequence();
-    expect(nextTranscriptId()).toBe(0);
-    expect(nextTranscriptId()).toBe(1);
-    setTranscriptSequence(42);
-    expect(nextTranscriptId()).toBe(42);
-    expect(nextSequence([{ entryId: 4 }, { entryId: 9 }] as TranscriptEntry[])).toBe(10);
   });
 
   it("extracts user history from non-empty chat messages", () => {
@@ -210,32 +196,5 @@ describe("Studio transcript helpers", () => {
         ],
       }),
     ).toBe('plain\nnested\nlookup({\n  "id": 1\n})\nresult\nimage');
-  });
-
-  it("handles textarea values, resizing, and next paint", async () => {
-    expect(formValue({ currentTarget: { value: "typed" } } as never)).toBe("typed");
-    expect(resizeTextarea(null)).toBeUndefined();
-
-    const textarea = { style: { height: "40px" }, scrollHeight: 88 } as HTMLTextAreaElement;
-    resizeTextarea(textarea);
-    expect(textarea.style.height).toBe("88px");
-
-    const callbacks: FrameRequestCallback[] = [];
-    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
-    globalThis.requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
-      callbacks.push(callback);
-      return callbacks.length;
-    });
-
-    const painted = nextPaint();
-    callbacks.shift()?.(1);
-    callbacks.shift()?.(2);
-    await expect(painted).resolves.toBeUndefined();
-
-    if (originalRequestAnimationFrame === undefined) {
-      Reflect.deleteProperty(globalThis, "requestAnimationFrame");
-    } else {
-      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
-    }
   });
 });

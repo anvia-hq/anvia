@@ -16,7 +16,6 @@ import {
 } from "../../core/test/helpers/imports";
 import {
   AnthropicCompletionModel,
-  anthropicMessageHelpers,
   fromAnthropicMessage,
   fromAnthropicStreamEvent,
   toAnthropicMessagesParams,
@@ -288,16 +287,20 @@ describe("Anthropic Messages mapping", () => {
 
   it("maps image and document attachments to Anthropic content blocks", () => {
     expect(
-      anthropicMessageHelpers.messageToAnthropicMessages(
-        Message.user([
-          UserContent.text("Inspect these."),
-          UserContent.imageUrl("https://example.com/image.png"),
-          UserContent.imageBase64("abc123", "image/png"),
-          UserContent.documentUrl("https://example.com/report.pdf", "application/pdf"),
-          UserContent.documentBase64("pdf123", "application/pdf"),
-          UserContent.documentText("Plain document text."),
-        ]),
-      ),
+      toAnthropicMessagesParams("claude-test", {
+        chatHistory: [
+          Message.user([
+            UserContent.text("Inspect these."),
+            UserContent.imageUrl("https://example.com/image.png"),
+            UserContent.imageBase64("abc123", "image/png"),
+            UserContent.documentUrl("https://example.com/report.pdf", "application/pdf"),
+            UserContent.documentBase64("pdf123", "application/pdf"),
+            UserContent.documentText("Plain document text."),
+          ]),
+        ],
+        documents: [],
+        tools: [],
+      }).messages,
     ).toEqual([
       {
         role: "user",
@@ -327,15 +330,19 @@ describe("Anthropic Messages mapping", () => {
 
   it("rejects unsupported Anthropic attachment history", () => {
     expect(() =>
-      anthropicMessageHelpers.messageToAnthropicMessages(
-        Message.user([UserContent.documentBase64("abc123", "text/csv")]),
-      ),
+      toAnthropicMessagesParams("claude-test", {
+        chatHistory: [Message.user([UserContent.documentBase64("abc123", "text/csv")])],
+        documents: [],
+        tools: [],
+      }),
     ).toThrow("Anthropic Messages only supports image and PDF file attachments");
 
     expect(() =>
-      anthropicMessageHelpers.messageToAnthropicMessages(
-        Message.assistant([AssistantContent.imageBase64("abc123", "image/png")]),
-      ),
+      toAnthropicMessagesParams("claude-test", {
+        chatHistory: [Message.assistant([AssistantContent.imageBase64("abc123", "image/png")])],
+        documents: [],
+        tools: [],
+      }),
     ).toThrow("Anthropic Messages does not support image or file content in assistant history");
   });
 
@@ -488,37 +495,21 @@ describe("Anthropic Messages mapping", () => {
     ]);
   });
 
-  it("exposes helper conversion for assistant tool-use history", () => {
-    expect(
-      anthropicMessageHelpers.messageToAnthropicMessages(
-        Message.assistant([AssistantContent.toolCall("toolu_1", "lookup", { query: "x" })]),
-      ),
-    ).toEqual([
-      {
-        role: "assistant",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_1",
-            name: "lookup",
-            input: { query: "x" },
-          },
-        ],
-      },
-    ]);
-  });
-
   it("preserves structured thinking blocks in assistant history", () => {
     expect(
-      anthropicMessageHelpers.messageToAnthropicMessages(
-        Message.assistant([
-          AssistantContent.reasoningFromContent([
-            { type: "text", text: "Think.", signature: "sig_1" },
-            { type: "redacted", data: "redacted" },
+      toAnthropicMessagesParams("claude-test", {
+        chatHistory: [
+          Message.assistant([
+            AssistantContent.reasoningFromContent([
+              { type: "text", text: "Think.", signature: "sig_1" },
+              { type: "redacted", data: "redacted" },
+            ]),
+            AssistantContent.toolCall("toolu_1", "lookup", { query: "x" }),
           ]),
-          AssistantContent.toolCall("toolu_1", "lookup", { query: "x" }),
-        ]),
-      ),
+        ],
+        documents: [],
+        tools: [],
+      }).messages,
     ).toEqual([
       {
         role: "assistant",

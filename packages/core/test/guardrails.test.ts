@@ -92,7 +92,8 @@ function response(choice: CompletionResponse["choice"]): CompletionResponse {
 }
 
 describe("guardrails", () => {
-  it("preserves concrete text-pattern helper types by boundary", () => {
+  it("blocks matching input text via guardrails.blockText", async () => {
+    const model = new QueueModel([response([AssistantContent.text("unreachable")])]);
     const inputGuardrail: InputGuardrail = guardrails.blockText({
       id: "block-input-text",
       boundary: "input",
@@ -106,8 +107,18 @@ describe("guardrails", () => {
       reason: "secret_output",
     });
 
-    expect(inputGuardrail.id).toBe("block-input-text");
-    expect(outputGuardrail.id).toBe("redact-output-text");
+    const agent = new Agent({
+      id: "guarded",
+      model,
+      guardrails: defineGuardrailPolicy({
+        id: "block-policy",
+        input: [inputGuardrail],
+        output: [outputGuardrail],
+      }),
+    });
+    const blocked = await agent.generate({ prompt: "this is blocked content" });
+    expect(blocked).toMatchObject({ type: "blocked", reason: "blocked_input" });
+    expect(model.requests).toHaveLength(0);
   });
 
   it("rewrites input before model execution", async () => {

@@ -231,14 +231,10 @@ describe("extract", () => {
     expect(aborted.requests).toHaveLength(0);
   });
 
-  it("exposes only the function API", () => {
+  it("rejects invalid extract call shapes at compile time", () => {
     expect(publicExtractor.extract).toBe(extract);
-    expect("Extractor" in publicExtractor).toBe(false);
-    expect("ExtractorBuilder" in publicExtractor).toBe(false);
 
     if (unreachable()) {
-      // @ts-expect-error - the stateful Extractor class was removed.
-      new publicExtractor.Extractor({ model: new QueueModel([]), outputSchema: z.string() });
       // @ts-expect-error - extract accepts one object argument.
       extract(new QueueModel([]), "text", z.string());
       // @ts-expect-error - extraction accepts plain text only.

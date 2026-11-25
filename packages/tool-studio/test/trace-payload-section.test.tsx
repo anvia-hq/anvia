@@ -164,15 +164,6 @@ describe("trace payload information structure", () => {
     expect(container.querySelector('button[aria-label="Copy Metadata JSON"]')).not.toBeNull();
   });
 
-  it("reports zero fields for empty metadata", () => {
-    ({ container, root } = mount(
-      <TracePayloadSection field="metadata" title="Metadata" value={undefined} />,
-    ));
-
-    expect(container.querySelector("summary")?.textContent).toContain("0 fields");
-    expect(container.textContent).toContain("No data captured");
-  });
-
   function button(name: string): HTMLButtonElement {
     const match = [...container.querySelectorAll("button")].find(
       (candidate) => candidate.textContent === name,

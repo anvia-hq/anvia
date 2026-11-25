@@ -1,5 +1,6 @@
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -14,19 +15,6 @@ import { describe, expect, it } from "vitest";
 import { initSkills, inspectInstalledSkills, skillNames, updateSkills } from "../src";
 
 const skillsDirectory = join(import.meta.dirname, "../../../skills");
-
-const expectedSkills = [
-  "anvia-agent",
-  "anvia-channels",
-  "anvia-chat",
-  "anvia-durable",
-  "anvia-evals",
-  "anvia-mcp",
-  "anvia-pipeline",
-  "anvia-rag",
-  "anvia-studio",
-  "release-notes",
-];
 
 function createProject(): string {
   return mkdtempSync(join(tmpdir(), "anvia-skills-"));
@@ -54,17 +42,27 @@ function expectExecutableScript(path: string): void {
 }
 
 describe("skillNames", () => {
-  it("lists every bundled skill", () => {
-    expect(skillNames({ skillsDirectory })).toEqual(expectedSkills);
+  it("discovers sorted skill directories while skipping plain files", () => {
+    const dir = createProject();
+    try {
+      mkdirSync(join(dir, "zeta"));
+      mkdirSync(join(dir, "alpha"));
+      writeFileSync(join(dir, "README.md"), "# ignore\n");
+      expect(skillNames({ skillsDirectory: dir })).toEqual(["alpha", "zeta"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
 describe("initSkills", () => {
   it("copies every skill with executable scripts and no folder README", () => {
     const cwd = createProject();
+    const bundled = skillNames({ skillsDirectory });
     const { created, report } = initSkills({ cwd, skillsDirectory });
     expect(created.length).toBeGreaterThan(0);
-    expect(report.map((skill) => skill.name)).toEqual(expectedSkills);
+    expect(bundled.length).toBeGreaterThan(0);
+    expect(report.map((skill) => skill.name)).toEqual(bundled);
     expect(report.every((skill) => skill.installed && skill.complete)).toBe(true);
     expect(existsSync(skillPath(cwd, "anvia-agent", "SKILL.md"))).toBe(true);
     expectExecutableScript(skillPath(cwd, "anvia-agent", "scripts/check-agent.sh"));
@@ -224,7 +222,7 @@ describe("adapter targets", () => {
     expect(content).toContain("alwaysApply: false");
     expect(content).toContain("`skills/anvia-agent/SKILL.md`");
     expect(result.targets.find((target) => target.target === "cursor")?.created.length).toBe(
-      expectedSkills.length,
+      skillNames({ skillsDirectory }).length,
     );
     writeFileSync(rule, '---\ndescription: "locally edited"\n---\n');
     const blocked = initSkills({ cwd, targets: ["cursor"], skillsDirectory });
@@ -264,7 +262,7 @@ describe("adapter targets", () => {
     expect(rule).toContain("`agents/anvia-rag/SKILL.md`");
     expect(rule).not.toContain("`skills/anvia-rag");
     expect(result.targets.find((target) => target.target === "cursor")?.created.length).toBe(
-      expectedSkills.length,
+      skillNames({ skillsDirectory }).length,
     );
     const again = initSkills({
       cwd,

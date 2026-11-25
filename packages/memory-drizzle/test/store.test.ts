@@ -374,21 +374,6 @@ describe("Drizzle memory public API", () => {
     await expect(store.compaction.snapshot({ scope: context })).resolves.toMatchObject({
       messages: [replacement, userMessage, assistantMessage],
     });
-
-    const [conversation] = await store.inspector.listConversations({ limit: 1 });
-    const inspected =
-      conversation === undefined
-        ? undefined
-        : await store.inspector.getConversation({ ref: conversation.ref });
-    expect(inspected).toMatchObject({
-      messageCount: 4,
-      messages: [
-        { position: 0, runId: "run-1", turn: 1, message: userMessage },
-        { position: 1, runId: "run-1", turn: 1, message: assistantMessage },
-        { position: 2, runId: "run-2", turn: 1, message: userMessage },
-        { position: 3, runId: "run-2", turn: 2, message: assistantMessage },
-      ],
-    });
   });
 
   it("inspects persisted conversations with ordered message records", async () => {

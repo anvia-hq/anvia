@@ -186,6 +186,8 @@ describe("Agent construction", () => {
       primaryTrace: "test",
       errorPolicy: "throw",
     });
+    expect(Object.isFrozen(agent.context)).toBe(true);
+    expect(Object.isFrozen(agent.context[1])).toBe(true);
     expect(Object.isFrozen(agent.middlewares)).toBe(true);
     expect(Object.isFrozen(agent.observability)).toBe(true);
     expect(Object.isFrozen(agent.observability?.observers)).toBe(true);
@@ -421,11 +423,10 @@ describe("Agent construction", () => {
     expect(Object.isFrozen(agent.context[0])).toBe(true);
   });
 
-  it("uses the existing max-turn default without requiring build", () => {
+  it("uses the existing max-turn default", () => {
     const agent = new Agent({ id: "agent", model: new QueueModel([]) });
 
     expect(agent.defaultMaxTurns).toBe(20);
-    expect(agent).not.toHaveProperty("build");
   });
 
   it("rejects duplicate executable names across tool indexes", () => {
@@ -508,31 +509,6 @@ describe("Agent construction", () => {
         description: "Current definition for hello",
       }),
     ]);
-  });
-
-  it("registers documents and context indexes through Agent options", () => {
-    const index = createVectorContext({
-      store: emptyStore<string>(),
-      model: embeddingModel,
-      topK: 2,
-    });
-    const agent = new Agent({
-      id: "agent",
-      model: new QueueModel([]),
-      context: [
-        { id: "policy", text: "Keep answers short." },
-        index,
-        { id: "generated", text: "Generated id" },
-      ],
-    });
-
-    expect(agent.context).toEqual([
-      { id: "policy", text: "Keep answers short." },
-      index,
-      { id: "generated", text: "Generated id" },
-    ]);
-    expect(Object.isFrozen(agent.context)).toBe(true);
-    expect(Object.isFrozen(index)).toBe(true);
   });
 });
 

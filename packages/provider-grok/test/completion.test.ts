@@ -22,23 +22,6 @@ class GrokChatCompletionModel extends GrokCompletionModel {
 }
 
 describe("Grok completion models", () => {
-  it("exposes Responses capability metadata with Grok provider identity", () => {
-    const model = new GrokResponsesCompletionModel({} as never, "grok-test");
-
-    expect(model.provider).toBe("grok");
-    expect(model.modelId).toBe("grok-test");
-    expect(model.capabilities).toEqual({
-      streaming: true,
-      tools: true,
-      toolChoice: true,
-      imageInput: true,
-      documentInput: true,
-      outputSchema: true,
-      reasoning: true,
-      providerTools: true,
-    });
-  });
-
   it("exposes model-specific context limits", () => {
     const model = new GrokClient({ apiKey: "test" }).completionModel({
       modelId: "grok-4.6",
@@ -214,22 +197,6 @@ describe("Grok completion models", () => {
     expect(JSON.stringify(trace)).not.toContain("secret-token");
     expect(JSON.stringify(trace)).not.toContain("secret-header");
     expect(trace).toMatchObject({ toolNames: ["mcp"], toolCount: 1 });
-  });
-
-  it("exposes Chat capability metadata with Grok provider identity", () => {
-    const model = new GrokChatCompletionModel({} as never, "grok-chat-test");
-
-    expect(model.provider).toBe("grok");
-    expect(model.modelId).toBe("grok-chat-test");
-    expect(model.capabilities).toEqual({
-      streaming: true,
-      tools: true,
-      toolChoice: true,
-      imageInput: true,
-      documentInput: false,
-      outputSchema: true,
-      reasoning: true,
-    });
   });
 
   it("sends Grok Chat requests through the OpenAI-compatible adapter", async () => {

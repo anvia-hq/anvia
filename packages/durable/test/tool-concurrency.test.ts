@@ -75,19 +75,15 @@ async function runWith(toolConcurrency: number | undefined) {
 }
 
 it("runs one tool at a time by default", async () => {
-  const { state } = await runWith(undefined);
+  const { state, runtime } = await runWith(undefined);
   expect(state).toMatchObject({ calls: 2, peak: 1 });
+  expect(runtime.compatibility()[0]).toMatchObject({ toolConcurrency: 1 });
 });
 
 it("runs the tool calls of one turn concurrently when registered", async () => {
   const { state, runtime } = await runWith(2);
   expect(state).toMatchObject({ calls: 2, peak: 2 });
   expect(runtime.compatibility()[0]).toMatchObject({ toolConcurrency: 2 });
-});
-
-it("reports the default concurrency", async () => {
-  const { runtime } = await runWith(undefined);
-  expect(runtime.compatibility()[0]).toMatchObject({ toolConcurrency: 1 });
 });
 
 it("rejects an invalid toolConcurrency", async () => {

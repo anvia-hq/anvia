@@ -98,11 +98,6 @@ function managed(client: MemgraphClient) {
 }
 
 describe("MemgraphClient", () => {
-  it("keeps tool creation in the provider-neutral graph package", () => {
-    const graph = managed(new MemgraphClient({ driver: fakeDriver().value }));
-    expect(graph).not.toHaveProperty("createSearchTool");
-  });
-
   it("keeps a caller-owned driver open", async () => {
     const driver = fakeDriver();
     const client = new MemgraphClient({ driver: driver.value });

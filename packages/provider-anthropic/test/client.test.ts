@@ -99,33 +99,6 @@ describe("Anthropic client", () => {
     ]);
   });
 
-  it("creates an Anthropic Vertex client with explicit routing and authentication", () => {
-    const anthropic = new AnthropicVertexClient({
-      projectId: "project",
-      region: "global",
-      authClient: {} as never,
-    });
-
-    expectTypeOf(anthropic).not.toHaveProperty("client");
-    expect(anthropic.completionModel({ modelId: "claude-sonnet-5" }).modelId).toBe(
-      "claude-sonnet-5",
-    );
-    anthropic.completionModel({ modelId: "claude-sonnet-4-5@20250929" });
-  });
-
-  it("allows the Anthropic Vertex SDK to resolve project and region from the environment", () => {
-    vi.stubEnv("ANTHROPIC_VERTEX_PROJECT_ID", "environment-project");
-    vi.stubEnv("CLOUD_ML_REGION", "us");
-
-    const anthropic = new AnthropicVertexClient({
-      authClient: {} as never,
-    });
-
-    expect(anthropic.completionModel({ modelId: "claude-sonnet-5" }).modelId).toBe(
-      "claude-sonnet-5",
-    );
-  });
-
   it("uses an injected Anthropic Vertex Messages client for completions and streams", async () => {
     const calls: Array<Record<string, unknown>> = [];
     const anthropic = new AnthropicVertexClient({

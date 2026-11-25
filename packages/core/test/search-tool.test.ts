@@ -173,12 +173,22 @@ describe("searchTool", () => {
   });
 
   it("keeps the recent-hit cache bounded", async () => {
-    const index = searchTool({ name: "search_runbooks", entities: runbooks });
-    for (let turn = 0; turn < 200; turn += 1) {
+    const model = new KeywordEmbeddingModel();
+    const index = searchTool({ name: "search_runbooks", entities: runbooks, model });
+    for (let turn = 0; turn < 40; turn += 1) {
       await index.search({ query: `deploy ${turn}` });
     }
 
-    expect(await index.tools[0]!.call({ query: "deploy 0" })).toContain("Rolling deployment");
+    const callsAfterSearch = model.texts.length;
+    await expect(index.tools[0]!.call({ query: "deploy 39" })).resolves.toContain(
+      "Rolling deployment",
+    );
+    expect(model.texts).toHaveLength(callsAfterSearch);
+
+    await expect(index.tools[0]!.call({ query: "deploy 0" })).resolves.toContain(
+      "Rolling deployment",
+    );
+    expect(model.texts).toHaveLength(callsAfterSearch + 1);
   });
 
   it("resolves promised entities once", async () => {

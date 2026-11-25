@@ -398,8 +398,3 @@ function toolChoiceToOpenAI(toolChoice: ToolChoice): unknown {
     name: toolChoice.name,
   };
 }
-
-export const openaiMessageHelpers = {
-  messageToResponsesInput,
-  toolDefinitionToOpenAI,
-};

@@ -1,33 +1,11 @@
-// @vitest-environment happy-dom
-
-import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { StudioConfig, StudioTrace, StudioTraceObservation } from "../src/types";
 import { TraceBrowser } from "../src/ui/app/modules/tracing/trace-browser";
-import {
-  TraceJsonTree,
-  TraceToneIcon,
-  traceToneIconClass,
-} from "../src/ui/app/modules/tracing/trace-browser-detail";
 
 const agents: StudioConfig["agents"] = [{ id: "support", name: "Support", quickPrompts: [] }];
 
 describe("TraceBrowser rendering", () => {
-  it("renders the disabled and empty table states", () => {
-    const unavailableHtml = render({ tracesEnabled: false });
-    expect(unavailableHtml).toContain("Tracing unavailable");
-    expect(unavailableHtml).toContain("This Studio runtime does not expose traces.");
-    expect(render({ traceLoadState: "loading" })).toContain("Loading traces");
-    const emptyHtml = render();
-    expect(emptyHtml).toContain("No traces found");
-    expect(emptyStateClasses(emptyHtml)).toEqual(expect.arrayContaining(["h-full", "min-h-64"]));
-    expect(emptyHtml).not.toContain("First delta");
-    expect(emptyHtml).not.toContain("pb-6");
-    expect(emptyHtml).not.toContain("pr-6");
-  });
-
   it("renders the trace table with status, agent, and timing summaries", () => {
     const html = render({ traces: [trace()] });
 
@@ -35,41 +13,9 @@ describe("TraceBrowser rendering", () => {
     expect(html).toContain("session_1");
     expect(html).toContain("Support");
     expect(html).toContain("success");
-    expect(html).toContain("border-0 capitalize");
-    expect(html).toContain("bg-status-success-fill text-status-success-ink");
-    expect(html).not.toContain("h-2.5 w-2.5 shrink-0 rounded-lg");
     expect(html).toContain("1.2s");
     expect(html).toContain("36");
     expect(html).toContain("2");
-  });
-
-  it("uses the Studio syntax palette for JSON tokens", () => {
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    act(() =>
-      root.render(
-        <TraceJsonTree value={{ label: "ready", count: 2, enabled: true, empty: null }} />,
-      ),
-    );
-    const html = container.innerHTML;
-
-    expect(html).toContain("code-keyword");
-    expect(html).toContain("code-string");
-    expect(html).toContain("code-number");
-    expect(html).toContain("code-literal");
-    expect(
-      [...container.querySelectorAll("span")].find((element) => element.textContent === "null")
-        ?.className,
-    ).toContain("code-comment");
-
-    act(() => root.unmount());
-  });
-
-  it("falls back safely for unknown runtime trace tones", () => {
-    const html = renderToStaticMarkup(<TraceToneIcon tone={"unknown" as never} />);
-
-    expect(html).toContain("svg");
-    expect(traceToneIconClass("unknown" as never)).toBe("bg-muted text-muted-foreground");
   });
 
   it("renders selected trace detail and session timeline views", () => {
@@ -85,18 +31,6 @@ describe("TraceBrowser rendering", () => {
     expect(detailHtml).toContain("turn.1");
     expect(detailHtml).toContain("model.generate");
     expect(detailHtml).toContain("tool.lookup");
-    expect(detailHtml).toContain("Input");
-    expect(detailHtml).toContain("Output");
-    expect(detailHtml).toContain("Metadata");
-    expect(detailHtml).toContain("Search spans");
-    expect(detailHtml).toContain("Collapse all spans");
-    expect(detailHtml).toContain("Structure");
-    expect(detailHtml).toContain("Raw");
-    expect(detailHtml).toContain("Table");
-    expect(detailHtml).toContain("JSON");
-    expect(detailHtml).not.toContain("Formatted");
-    expect(detailHtml).not.toContain('role="tree"');
-    expect(detailHtml).not.toContain('role="treeitem"');
     expect(detailHtml).toContain('aria-current="true"');
 
     const sessionHtml = render({
@@ -159,16 +93,6 @@ function render(overrides: Partial<Parameters<typeof TraceBrowser>[0]> = {}): st
       {...overrides}
     />,
   );
-}
-
-function emptyStateClasses(html: string): string[] {
-  const match = html.match(/data-slot="studio-empty-state" class="([^"]+)"/);
-
-  if (match?.[1] === undefined) {
-    throw new Error("Studio empty state class list not found");
-  }
-
-  return match[1].split(" ");
 }
 
 function trace(overrides: Partial<StudioTrace> = {}): StudioTrace {

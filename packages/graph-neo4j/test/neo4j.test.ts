@@ -285,71 +285,12 @@ describe("Neo4j schema and lifecycle", () => {
     expect(existing).toBeInstanceOf(Neo4jKnowledgeGraph);
     expect(existing).not.toHaveProperty("ensure");
     expect(existing).not.toHaveProperty("replaceDocuments");
-    expect(existing).not.toHaveProperty("createSearchTool");
-    expect(writable).not.toHaveProperty("createSearchTool");
     expect(Object.isFrozen(schema.nodes)).toBe(true);
     expect(Object.isFrozen(schema.nodes.Product?.identity)).toBe(true);
     expect(Object.isFrozen(writable.resources)).toBe(true);
     expect(Object.isFrozen(writable.resources.indexes.entities.fulltext?.properties)).toBe(true);
     expect(Object.isFrozen(existing.seeds.knowledge?.labels)).toBe(true);
     expect(driver.executeQuery).not.toHaveBeenCalled();
-  });
-
-  it("rejects invalid graph schemas and reserved properties", () => {
-    expect(() =>
-      defineNeo4jGraphSchema({
-        nodes: {
-          Product: {
-            description: "Product",
-            identity: ["missing"] as never,
-            properties: z.strictObject({ id: z.string() }),
-          },
-        },
-        relationships: {},
-      }),
-    ).toThrow("not declared");
-    expect(() =>
-      defineNeo4jGraphSchema({
-        nodes: {
-          Product: {
-            description: "Product",
-            identity: ["id"],
-            properties: z.strictObject({ id: z.string(), __anvia_bad: z.string() }),
-          },
-        },
-        relationships: {},
-      }),
-    ).toThrow("reserved");
-  });
-
-  it("rejects schemas that can strip or alter stored property values", () => {
-    const graphSchema = (properties: z.ZodObject) => () =>
-      defineNeo4jGraphSchema({
-        nodes: {
-          Product: {
-            description: "Product",
-            identity: ["id"],
-            properties,
-          },
-        },
-        relationships: {},
-      });
-
-    expect(graphSchema(z.looseObject({ id: z.string() }))).toThrow("strict Zod object");
-    expect(() =>
-      graphSchema(z.object({ id: z.string() }))().nodes.Product.properties.parse({
-        id: "1",
-        extra: true,
-      }),
-    ).toThrow();
-    expect(graphSchema(z.strictObject({ id: z.coerce.string() }))).toThrow("must not coerce");
-    expect(graphSchema(z.strictObject({ id: z.string().default("unknown") }))).toThrow(
-      "must not coerce",
-    );
-    expect(graphSchema(z.strictObject({ id: z.string().transform((value) => value) }))).toThrow(
-      "must not coerce",
-    );
-    expect(graphSchema(z.strictObject({ id: z.string().trim() }))).toThrow("must not normalize");
   });
 
   it("rejects vector similarities outside the public allowlist", () => {

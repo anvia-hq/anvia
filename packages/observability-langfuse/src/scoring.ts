@@ -25,20 +25,6 @@ export type ScoreQueueOptions = {
   batchSize: number;
   flushIntervalMs: number;
   maxAttempts: number;
-  fetchImpl?: typeof fetch;
-  sleep?: (ms: number) => Promise<void>;
-  setTimer?: (handler: () => void, ms: number) => unknown;
-  clearTimer?: (handle: unknown) => void;
-};
-
-const defaultSleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-
-const defaultSetTimer = (handler: () => void, ms: number): unknown => setTimeout(handler, ms);
-const defaultClearTimer = (handle: unknown): void => {
-  clearTimeout(handle as ReturnType<typeof setTimeout>);
 };
 
 export function computeBackoff(attempt: number, jitter: number = Math.random()): number {
@@ -51,7 +37,7 @@ export function computeBackoff(attempt: number, jitter: number = Math.random()):
 
 export class ScoreQueue {
   private readonly pending: LangfuseScoreArgs[] = [];
-  private timer: unknown = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
   private flushing: Promise<void> | null = null;
   private closed = false;
   private readonly baseUrl: string;
@@ -61,10 +47,6 @@ export class ScoreQueue {
   private readonly batchSize: number;
   private readonly flushIntervalMs: number;
   private readonly maxAttempts: number;
-  private readonly fetchImpl: typeof fetch;
-  private readonly sleep: (ms: number) => Promise<void>;
-  private readonly setTimer: (handler: () => void, ms: number) => unknown;
-  private readonly clearTimer: (handle: unknown) => void;
 
   constructor(options: ScoreQueueOptions) {
     this.baseUrl = options.baseUrl;
@@ -74,10 +56,6 @@ export class ScoreQueue {
     this.batchSize = options.batchSize;
     this.flushIntervalMs = options.flushIntervalMs;
     this.maxAttempts = options.maxAttempts;
-    this.fetchImpl = options.fetchImpl ?? fetch;
-    this.sleep = options.sleep ?? defaultSleep;
-    this.setTimer = options.setTimer ?? defaultSetTimer;
-    this.clearTimer = options.clearTimer ?? defaultClearTimer;
   }
 
   enqueue(score: LangfuseScoreArgs): void {
@@ -139,7 +117,7 @@ export class ScoreQueue {
       return;
     }
 
-    this.timer = this.setTimer(() => {
+    this.timer = setTimeout(() => {
       this.timer = null;
       this.triggerBackgroundFlush();
     }, this.flushIntervalMs);
@@ -151,7 +129,7 @@ export class ScoreQueue {
 
   private clearScheduledTimer(): void {
     if (this.timer !== null) {
-      this.clearTimer(this.timer);
+      clearTimeout(this.timer);
       this.timer = null;
     }
   }
@@ -161,7 +139,7 @@ export class ScoreQueue {
     let lastError: unknown;
     for (let attempt = 0; attempt < this.maxAttempts; attempt += 1) {
       try {
-        const response = await this.fetchImpl(`${this.baseUrl}/api/public/scores`, {
+        const response = await fetch(`${this.baseUrl}/api/public/scores`, {
           method: "POST",
           headers: {
             Authorization: `Basic ${Buffer.from(`${this.publicKey}:${this.secretKey}`).toString("base64")}`,
@@ -193,7 +171,9 @@ export class ScoreQueue {
       }
 
       if (attempt < this.maxAttempts - 1) {
-        await this.sleep(computeBackoff(attempt));
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, computeBackoff(attempt));
+        });
       }
     }
     throw new RetryableLangfuseScoreError(

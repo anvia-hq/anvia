@@ -36,7 +36,7 @@ import {
   type AnthropicPromptCacheSettings,
 } from "./prompt-cache";
 
-export { anthropicMessageHelpers, toAnthropicMessagesParams } from "./completion-request";
+export { toAnthropicMessagesParams } from "./completion-request";
 export { fromAnthropicMessage } from "./completion-response";
 export { fromAnthropicStreamEvent } from "./completion-stream";
 

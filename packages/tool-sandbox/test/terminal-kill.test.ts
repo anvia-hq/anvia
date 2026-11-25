@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ShellSession, ShellViewer, hangupGraceMs } from "../src/daemon/terminal/attachments";
+import { ShellSession, ShellViewer } from "../src/daemon/terminal/attachments";
 import { type FakePty, fakeSpawner } from "./support/fake-pty";
+
+const hangupGraceMs = 1_000;
 
 afterEach(() => {
   vi.useRealTimers();

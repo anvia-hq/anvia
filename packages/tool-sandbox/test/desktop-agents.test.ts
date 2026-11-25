@@ -59,37 +59,43 @@ async function waitFor(condition: () => boolean, timeoutMs = 3_000): Promise<voi
 const exited = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null;
 
 describe("stopDesktopAgents", () => {
-  it("stops the agents of one desktop and leaves other agents and programs alone", async () => {
-    const agent = await fakeProgram("ssh-agent", exitsOnTerm);
-    const gpg = await fakeProgram("gpg-agent", exitsOnTerm);
-    const helper = await fakeProgram("xdg-helper", exitsOnTerm);
-    const session = "desktop-a";
+  it.runIf(process.platform === "linux")(
+    "stops the agents of one desktop and leaves other agents and programs alone",
+    async () => {
+      const agent = await fakeProgram("ssh-agent", exitsOnTerm);
+      const gpg = await fakeProgram("gpg-agent", exitsOnTerm);
+      const helper = await fakeProgram("xdg-helper", exitsOnTerm);
+      const session = "desktop-a";
 
-    const ours = [start(agent, session), start(gpg, session)];
-    const otherDesktop = start(agent, "desktop-b");
-    const userAgent = start(agent, undefined);
-    const notAnAgent = start(helper, session);
-    await sleep(500);
+      const ours = [start(agent, session), start(gpg, session)];
+      const otherDesktop = start(agent, "desktop-b");
+      const userAgent = start(agent, undefined);
+      const notAnAgent = start(helper, session);
+      await sleep(500);
 
-    await stopDesktopAgents(session, { graceMs: 2_000 });
+      await stopDesktopAgents(session, { graceMs: 2_000 });
 
-    for (const child of ours) expect(exited(child)).toBe(true);
-    expect(exited(otherDesktop)).toBe(false);
-    expect(exited(userAgent)).toBe(false);
-    expect(exited(notAnAgent)).toBe(false);
-  });
+      for (const child of ours) expect(exited(child)).toBe(true);
+      expect(exited(otherDesktop)).toBe(false);
+      expect(exited(userAgent)).toBe(false);
+      expect(exited(notAnAgent)).toBe(false);
+    },
+  );
 
-  it("kills an agent that ignores SIGTERM after the grace period", async () => {
-    const agent = await fakeProgram("ssh-agent", ignoresTerm);
-    const session = "desktop-stubborn";
-    const child = start(agent, session);
-    await sleep(500);
+  it.runIf(process.platform === "linux")(
+    "kills an agent that ignores SIGTERM after the grace period",
+    async () => {
+      const agent = await fakeProgram("ssh-agent", ignoresTerm);
+      const session = "desktop-stubborn";
+      const child = start(agent, session);
+      await sleep(500);
 
-    await stopDesktopAgents(session, { graceMs: 200 });
+      await stopDesktopAgents(session, { graceMs: 200 });
 
-    await waitFor(() => exited(child));
-    expect(child.signalCode).toBe("SIGKILL");
-  });
+      await waitFor(() => exited(child));
+      expect(child.signalCode).toBe("SIGKILL");
+    },
+  );
 
   it("does nothing when no agent of the session is running", async () => {
     await expect(stopDesktopAgents("nothing-here")).resolves.toBeUndefined();
@@ -119,18 +125,21 @@ describe("DesktopSupervisor.stop", () => {
     expect(first.DISPLAY).toBe(":98");
   });
 
-  it("stops an agent started with the desktop's environment, when the desktop stops", async () => {
-    const supervisor = new DesktopSupervisor(supervisorOptions());
-    const agent = await fakeProgram("ssh-agent", exitsOnTerm);
-    const child = spawn(agent, [], { env: supervisor.environment(), stdio: "ignore" });
-    children.push(child);
-    await sleep(500);
+  it.runIf(process.platform === "linux")(
+    "stops an agent started with the desktop's environment, when the desktop stops",
+    async () => {
+      const supervisor = new DesktopSupervisor(supervisorOptions());
+      const agent = await fakeProgram("ssh-agent", exitsOnTerm);
+      const child = spawn(agent, [], { env: supervisor.environment(), stdio: "ignore" });
+      children.push(child);
+      await sleep(500);
 
-    await supervisor.stop();
+      await supervisor.stop();
 
-    await waitFor(() => exited(child));
-    expect(exited(child)).toBe(true);
-  });
+      await waitFor(() => exited(child));
+      expect(exited(child)).toBe(true);
+    },
+  );
 });
 
 describe("findDesktopAgents", () => {

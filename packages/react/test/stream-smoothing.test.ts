@@ -4,7 +4,6 @@ import {
   advanceStreamSmoothing,
   createStreamSmoothingState,
   flushStreamSmoothing,
-  getBufferedPlaybackTarget,
   getStreamSmoothingSnapshot,
   type SmoothStreamItemAdapter,
   streamSmoothingConfig,
@@ -23,14 +22,32 @@ const adapter: SmoothStreamItemAdapter<Item> = {
 
 describe("stream smoothing state", () => {
   it("interpolates the delayed source timeline", () => {
-    const samples = [
-      { atMs: 0, totalChars: 0 },
-      { atMs: 100, totalChars: 20 },
-    ];
+    const initial: Item[] = [{ id: "text", kind: "text", text: "" }];
+    const updatedTarget: Item[] = [{ id: "text", kind: "text", text: "a".repeat(20) }];
+    let state = createStreamSmoothingState(initial, { isStreaming: true, nowMs: 0 }, adapter);
+    state = updateStreamSmoothingTarget(
+      state,
+      updatedTarget,
+      { isStreaming: true, nowMs: 100 },
+      adapter,
+    );
 
-    expect(getBufferedPlaybackTarget(samples, 225)).toBe(0);
-    expect(getBufferedPlaybackTarget(samples, 275)).toBe(10);
-    expect(getBufferedPlaybackTarget(samples, 325)).toBe(20);
+    state = advanceStreamSmoothing(state, streamSmoothingConfig.targetBufferMs, adapter);
+    expect(state.displayedItems[0]?.kind === "text" ? state.displayedItems[0].text : "").toBe("");
+
+    state = advanceStreamSmoothing(state, streamSmoothingConfig.targetBufferMs + 50, adapter);
+    const midLength =
+      state.displayedItems[0]?.kind === "text" ? state.displayedItems[0].text.length : 0;
+    expect(midLength).toBeGreaterThan(0);
+    expect(midLength).toBeLessThanOrEqual(10);
+
+    for (let now = streamSmoothingConfig.targetBufferMs + 70; now <= 450; now += 20) {
+      state = advanceStreamSmoothing(state, now, adapter);
+    }
+
+    expect(state.displayedItems[0]?.kind === "text" ? state.displayedItems[0].text : "").toBe(
+      "a".repeat(20),
+    );
   });
 
   it("bounds the animated backlog without losing target content", () => {

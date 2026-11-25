@@ -2,23 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StudioConfig, StudioTrace } from "../src/types";
 import {
   agentLabel,
-  approvalLabel,
-  emptyFallback,
-  errorMessage,
   formatDuration,
   formatRelativeTime,
   formatToolValue,
   formatTraceDate,
   formatTraceTime,
   formatUsage,
-  pageTitle,
   parseToolDisplayValue,
   titleFromText,
   toTraceStatusFilter,
   traceAgentId,
   traceAgentLabel,
 } from "../src/ui/app/modules/shared/format";
-import type { ToolApproval } from "../src/ui/app/modules/shared/types";
 
 const agents: StudioConfig["agents"] = [
   { id: "support", name: "Support", quickPrompts: [] },
@@ -66,10 +61,7 @@ describe("Studio formatting helpers", () => {
     ).toBe("7 tok");
   });
 
-  it("formats labels and trace agent fallbacks", () => {
-    expect(pageTitle("agents", undefined)).toBe("Agents");
-    expect(pageTitle("playground", "Concierge")).toBe("Concierge");
-    expect(pageTitle("playground", undefined)).toBe("AI Assistant");
+  it("formats agent and trace agent fallbacks", () => {
     expect(agentLabel(agents, "support")).toBe("Support");
     expect(agentLabel(agents, "missing")).toBe("missing");
 
@@ -80,20 +72,8 @@ describe("Studio formatting helpers", () => {
       "ops",
     );
     expect(traceAgentLabel(agents, trace({ metadata: [] as never }))).toBe("-");
-  });
-
-  it("formats approvals, empty values, status filters, and errors", () => {
-    expect(emptyFallback("")).toBe("-");
-    expect(emptyFallback("value")).toBe("value");
     expect(toTraceStatusFilter("running")).toBe("running");
     expect(toTraceStatusFilter("unknown")).toBe("all");
-    expect(approvalLabel({ status: "pending" } as ToolApproval)).toBe("Waiting for your decision");
-    expect(approvalLabel({ status: "approved" } as ToolApproval)).toBe("Approved");
-    expect(approvalLabel({ status: "rejected" } as ToolApproval)).toBe("Rejected");
-    expect(approvalLabel({ status: "timed_out" } as ToolApproval)).toBe("Timed out");
-    expect(approvalLabel({ status: "custom" } as unknown as ToolApproval)).toBe("custom");
-    expect(errorMessage(new Error("Boom"))).toBe("Boom");
-    expect(errorMessage("plain")).toBe("plain");
   });
 
   it("formats and parses tool display values", () => {

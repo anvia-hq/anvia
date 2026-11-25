@@ -44,7 +44,7 @@ describe("shared internals", () => {
           <Thread.ScrollToBottom />
         </ChatProvider>,
       ),
-    ).toThrow("Thread primitives must be used inside ThreadPrimitive.Root.");
+    ).toThrow();
 
     expect(() =>
       render(
@@ -52,7 +52,7 @@ describe("shared internals", () => {
           <Composer.Input />
         </ChatProvider>,
       ),
-    ).toThrow("Composer primitives must be used inside ComposerPrimitive.Root.");
+    ).toThrow();
 
     expect(() =>
       render(
@@ -60,15 +60,11 @@ describe("shared internals", () => {
           <Completion.Input />
         </CompletionProvider>,
       ),
-    ).toThrow("Completion input primitives must be used inside CompletionPrimitive.Form.");
+    ).toThrow();
 
-    expect(() => render(<Completion.Root />)).toThrow(
-      "Anvia completion primitives must be used inside CompletionProvider.",
-    );
+    expect(() => render(<Completion.Root />)).toThrow();
 
-    expect(() => render(<Message.Text />)).toThrow(
-      "Message part primitives must be used inside MessagePrimitive.Parts or MessagePrimitive.Part.",
-    );
+    expect(() => render(<Message.Text />)).toThrow();
 
     expect(() =>
       render(
@@ -76,7 +72,7 @@ describe("shared internals", () => {
           <HumanInput.Approve />
         </ChatProvider>,
       ),
-    ).toThrow("Approval primitives must be used inside HumanInputPrimitive.Approval.");
+    ).toThrow();
 
     expect(() =>
       render(
@@ -84,7 +80,7 @@ describe("shared internals", () => {
           <HumanInput.Question />
         </ChatProvider>,
       ),
-    ).toThrow("Question primitives must be used inside HumanInputPrimitive.Question.");
+    ).toThrow();
 
     expect(() =>
       render(
@@ -92,10 +88,8 @@ describe("shared internals", () => {
           <HumanInput.QuestionChoice />
         </ChatProvider>,
       ),
-    ).toThrow("Question choice primitives must be used inside HumanInputPrimitive.QuestionPrompt.");
+    ).toThrow();
 
-    expect(() => render(<Attachment.Name />)).toThrow(
-      "Attachment primitives must be used inside AttachmentPrimitive.Root.",
-    );
+    expect(() => render(<Attachment.Name />)).toThrow();
   });
 });

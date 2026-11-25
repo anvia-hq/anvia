@@ -8,7 +8,6 @@ import {
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
-  cancelRun,
   createHook,
   createMiddleware,
   createQuestionTool,
@@ -16,7 +15,6 @@ import {
   MaxTurnsError,
   Message,
   parseAgentContinuation,
-  requestToolApproval,
   type ToolCallContext,
   ToolCallError,
   ToolOutput,
@@ -1244,39 +1242,6 @@ describe("Agent execution", () => {
     expect(model.requests).toHaveLength(1);
   });
 
-  it("suspends when an internal tool hook requests approval", async () => {
-    let executed = false;
-    const guardedTool = createTool({
-      name: "guarded",
-      description: "A guarded tool",
-      inputSchema: z.object({}),
-      outputSchema: z.string(),
-      execute() {
-        executed = true;
-        return "should not run";
-      },
-    });
-    const model = new QueueModel([
-      response([AssistantContent.toolCall("call_1", "guarded", {})]),
-      response([AssistantContent.text("should not be requested")]),
-    ]);
-    const hook = createHook({
-      onToolCall({ tool }) {
-        return tool.requestApproval({ reason: "Guarded action." });
-      },
-    });
-    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
-
-    await expect(
-      agent.generate({ prompt: "run guarded", ...withInternalAgentRunOptions({}, { hook }) }),
-    ).resolves.toMatchObject({
-      type: "interaction",
-      interaction: { type: "tool-approval", toolName: "guarded", reason: "Guarded action." },
-    });
-    expect(executed).toBe(false);
-    expect(model.requests).toHaveLength(1);
-  });
-
   it("routes hook-based approval requests through the approval handler", async () => {
     let executed = false;
     const guardedTool = createTool({
@@ -1304,6 +1269,13 @@ describe("Agent execution", () => {
       prompt: "run guarded",
       ...withInternalAgentRunOptions({}, { hook }),
     });
+
+    expect(pending).toMatchObject({
+      type: "interaction",
+      interaction: { type: "tool-approval", toolName: "guarded", reason: "Guarded action." },
+    });
+    expect(executed).toBe(false);
+    expect(model.requests).toHaveLength(1);
 
     if (pending.type !== "interaction" || pending.interaction.type !== "tool-approval") {
       throw new Error("Expected approval suspension");
@@ -1724,7 +1696,7 @@ describe("Agent execution", () => {
 
     const interactionOutputEvents: string[] = [];
     const result = await agent.generate({
-      continuation: pending.continuation,
+      continuation: parseAgentContinuation(JSON.parse(JSON.stringify(pending.continuation))),
       response: {
         type: "tool-question",
         answers: [
@@ -1994,44 +1966,6 @@ describe("Agent execution", () => {
     expect(executed).toBe(true);
   });
 
-  it("returns resumable approval state for new Agent instances", async () => {
-    let executed = false;
-    const guardedTool = createTool({
-      name: "guarded",
-      description: "A guarded tool",
-      inputSchema: z.object({}),
-      outputSchema: z.string(),
-      requiresApproval: true,
-      execute() {
-        executed = true;
-        return "request approved";
-      },
-    });
-    const model = new QueueModel([
-      response([AssistantContent.toolCall("call_1", "guarded", {})]),
-      response([AssistantContent.text("done")]),
-    ]);
-    const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
-    const pending = await agent.generate({ prompt: "run guarded" });
-    expect(pending).toMatchObject({
-      type: "interaction",
-      interaction: { type: "tool-approval", toolName: "guarded", input: {} },
-    });
-
-    if (pending.type !== "interaction") throw new Error("Expected suspension");
-
-    await expect(
-      agent.generate({
-        continuation: pending.continuation,
-        response: { type: "tool-approval", approved: true },
-      }),
-    ).resolves.toMatchObject({
-      type: "response",
-      output: "done",
-    });
-    expect(executed).toBe(true);
-  });
-
   it("rejects resumable approvals without executing the tool", async () => {
     let executed = false;
     const guardedTool = createTool({
@@ -2212,14 +2146,6 @@ describe("Agent execution", () => {
         },
       ]),
     );
-  });
-
-  it("keeps low-level hook action helpers available", () => {
-    expect(cancelRun("blocked")).toEqual({ type: "terminate", reason: "blocked" });
-    expect(requestToolApproval({ reason: "review" })).toEqual({
-      type: "approval_request",
-      reason: "review",
-    });
   });
 
   it("composes agent and request lifecycle callbacks", async () => {

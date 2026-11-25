@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  artifactPythonPackages,
   renderSandboxImageContext,
   resolveSandboxImageSpec,
   unpinnedSandboxImagePackages,
@@ -45,9 +44,8 @@ describe("sandbox image builder", () => {
     expect(dockerfile).toContain("ENV PATH=/opt/anvia-python/.venv/bin:$PATH");
     expect(dockerfile).toContain("WORKDIR /workspace");
     expect(dockerfile).toContain("ENTRYPOINT []");
-    for (const requirement of artifactPythonPackages) {
-      expect(pythonProject).toContain(JSON.stringify(requirement));
-    }
+    expect(pythonProject).toContain('"matplotlib==3.11.1"');
+    expect(pythonProject).toContain('"python-docx==1.2.0"');
     expect(packageJson.dependencies).toEqual({ playwright: "1.62.1" });
     expect(context.manifest).toMatchObject({
       schemaVersion: 1,

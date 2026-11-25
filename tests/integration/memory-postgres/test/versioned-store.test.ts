@@ -193,5 +193,40 @@ describe.skipIf(!baseUrl)("versioned memory against PostgreSQL", () => {
       expect(results.filter((result) => result.status === "duplicate")).toHaveLength(5);
       expect(await store().load({ scope: context })).toEqual([user("once")]);
     });
+
+    it("inspects persisted conversations with ordered message records", async () => {
+      const context = { ...scope(), metadata: { tenantId: "tenant-1" } };
+      await store().append({
+        scope: context,
+        runId: "run-1",
+        turn: 2,
+        messages: [user("one"), { role: "assistant", content: "two" }],
+      });
+
+      const conversations = await store().inspector!.listConversations({
+        limit: 10,
+        userId: context.userId,
+      });
+      expect(conversations).toHaveLength(1);
+      expect(conversations[0]).toMatchObject({
+        sessionId: context.sessionId,
+        userId: context.userId,
+        metadata: { tenantId: "tenant-1" },
+        messageCount: 2,
+      });
+      const inspected = await store().inspector!.getConversation({ ref: conversations[0]!.ref });
+      expect(inspected).toMatchObject({
+        messageCount: 2,
+        messages: [
+          { position: 0, runId: "run-1", turn: 2, message: user("one") },
+          {
+            position: 1,
+            runId: "run-1",
+            turn: 2,
+            message: { role: "assistant", content: "two" },
+          },
+        ],
+      });
+    });
   });
 });

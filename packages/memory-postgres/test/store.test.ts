@@ -502,58 +502,6 @@ describe("PostgresMemoryStore", () => {
     await expect(store.compaction.snapshot({ scope: context })).resolves.toMatchObject({
       messages: [replacement, userMessage, assistantMessage],
     });
-
-    const [conversation] = await store.inspector.listConversations({ limit: 1 });
-    const inspected =
-      conversation === undefined
-        ? undefined
-        : await store.inspector.getConversation({ ref: conversation.ref });
-    expect(inspected).toMatchObject({
-      messageCount: 4,
-      messages: [
-        { position: 0, runId: "run-1", turn: 1, message: userMessage },
-        { position: 1, runId: "run-1", turn: 1, message: assistantMessage },
-        { position: 2, runId: "run-2", turn: 1, message: userMessage },
-        { position: 3, runId: "run-2", turn: 2, message: assistantMessage },
-      ],
-    });
-  });
-
-  it("inspects persisted conversations with message storage metadata", async () => {
-    const client = new FakePgClient();
-    const store = await createTestMemoryStore({ client });
-    await store.append({
-      scope: {
-        sessionId: "thread-1",
-        userId: "user-1",
-        metadata: { tenantId: "tenant-1" },
-      },
-      runId: "run-1",
-      turn: 4,
-      messages: [userMessage, assistantMessage],
-    });
-
-    const conversations = await store.inspector.listConversations({
-      limit: 10,
-      userId: "user-1",
-    });
-    expect(conversations).toEqual([
-      {
-        ref: "session-1",
-        sessionId: "thread-1",
-        userId: "user-1",
-        metadata: { tenantId: "tenant-1" },
-        createdAt: "2026-07-17T01:00:00.000Z",
-        updatedAt: "2026-07-17T01:05:00.000Z",
-        messageCount: 2,
-      },
-    ]);
-    await expect(store.inspector.getConversation({ ref: "session-1" })).resolves.toMatchObject({
-      messages: [
-        { position: 0, runId: "run-1", turn: 4, message: userMessage },
-        { position: 1, runId: "run-1", turn: 4, message: assistantMessage },
-      ],
-    });
   });
 
   it("rejects a conversation list limit that is not a positive integer", async () => {

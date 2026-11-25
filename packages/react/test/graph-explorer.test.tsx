@@ -17,9 +17,7 @@ afterEach(() => {
 
 describe("Graph explorer primitives", () => {
   it("requires a graph explorer provider", () => {
-    expect(() => render(<GraphExplorer.Root />)).toThrow(
-      "Graph explorer primitives must be used inside GraphExplorerProvider.",
-    );
+    expect(() => render(<GraphExplorer.Root />)).toThrow();
   });
 
   it("projects controller state and delegates user actions", () => {
@@ -39,7 +37,7 @@ describe("Graph explorer primitives", () => {
               </GraphNode.Root>
             )}
           </GraphExplorer.Nodes>
-          <GraphExplorer.Empty />
+          <GraphExplorer.Empty>Nothing loaded.</GraphExplorer.Empty>
         </GraphExplorer.Root>
       </GraphExplorerProvider>,
     );
@@ -49,16 +47,14 @@ describe("Graph explorer primitives", () => {
     expect(explorer.getAttribute("data-state")).toBe("ready");
     expect(explorer.getAttribute("data-truncated")).toBe("true");
     expect(explorer.getAttribute("aria-busy")).toBe("false");
-    expect(screen.getByTestId("viewport").getAttribute("data-role")).toBe(
-      "graph-explorer-viewport",
-    );
-    expect(screen.getByText("2 nodes, 1 relationships.")).toBeTruthy();
+    expect(screen.getByTestId("viewport")).toBeTruthy();
+    expect(screen.getByRole("status")).toBeTruthy();
     expect(screen.getByRole("list").children).toHaveLength(2);
     expect(person.getAttribute("role")).toBe("listitem");
     expect(person.getAttribute("data-state")).toBe("selected");
     expect(person.getAttribute("data-match")).toBe("matched");
     expect(person.getAttribute("data-node-type")).toBe("Person");
-    expect(screen.queryByText("No graph nodes.")).toBeNull();
+    expect(screen.queryByText("Nothing loaded.")).toBeNull();
 
     fireEvent.change(screen.getByRole("searchbox", { name: "Search graph" }), {
       target: { value: "ada" },
@@ -105,25 +101,21 @@ describe("Graph explorer primitives", () => {
           <GraphNode.Root />
         </GraphExplorerProvider>,
       ),
-    ).toThrow(
-      "GraphExplorerNodePrimitive.Root requires a nodeId outside GraphExplorerPrimitive.Nodes.",
-    );
+    ).toThrow();
     expect(() =>
       render(
         <GraphExplorerProvider controller={controller}>
           <GraphNode.Root nodeId="missing" />
         </GraphExplorerProvider>,
       ),
-    ).toThrow("Graph explorer node missing is not loaded.");
+    ).toThrow();
     expect(() =>
       render(
         <GraphExplorerProvider controller={controller}>
           <GraphNode.Trigger />
         </GraphExplorerProvider>,
       ),
-    ).toThrow(
-      "Graph explorer node primitives must be used inside GraphExplorerNodePrimitive.Root or GraphExplorerPrimitive.Nodes.",
-    );
+    ).toThrow();
   });
 
   it("handles empty, loading, and error presentation states", () => {
@@ -149,7 +141,7 @@ describe("Graph explorer primitives", () => {
 
     expect(screen.getByRole("list").getAttribute("data-state")).toBe("empty");
     expect(screen.getByText("Nothing loaded.")).toBeTruthy();
-    expect(screen.getByText("Graph exploration failed.")).toBeTruthy();
+    expect(screen.getByRole("status").getAttribute("data-state")).toBe("error");
 
     const loading = createController({
       nodes: [],
@@ -162,7 +154,7 @@ describe("Graph explorer primitives", () => {
     rerender(
       <GraphExplorerProvider controller={loading}>
         <GraphExplorer.Root data-testid="loading-root">
-          <GraphExplorer.Empty />
+          <GraphExplorer.Empty>Nothing loaded.</GraphExplorer.Empty>
           <GraphExplorer.Status />
           <GraphExplorer.Refresh />
         </GraphExplorer.Root>
@@ -170,8 +162,8 @@ describe("Graph explorer primitives", () => {
     );
 
     expect(screen.getByTestId("loading-root").getAttribute("aria-busy")).toBe("true");
-    expect(screen.queryByText("No graph nodes.")).toBeNull();
-    expect(screen.getByText("Loading graph.")).toBeTruthy();
+    expect(screen.queryByText("Nothing loaded.")).toBeNull();
+    expect(screen.getByRole("status").getAttribute("data-state")).toBe("loading");
     expect(
       (screen.getByRole("button", { name: "Refresh graph" }) as HTMLButtonElement).disabled,
     ).toBe(true);

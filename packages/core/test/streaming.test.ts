@@ -1340,40 +1340,6 @@ describe("Agent streaming", () => {
     expect(resumed.at(-1)).toMatchObject({ type: "response", output: "prioritized" });
   });
 
-  it("always emits provider tool call deltas", async () => {
-    const model = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call_delta",
-          id: "call_1",
-          name: "add",
-          argumentsDelta: '{"x":2,"y":5}',
-        },
-        streamFinal([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })], "tool-calls"),
-      ],
-      successfulTextStream("7"),
-    ]);
-    const agent = new Agent({ id: "test-agent", model, tools: [addTool] });
-
-    const events = await collect(agent.stream({ prompt: "add" }));
-
-    expect(events).toContainEqual(expect.objectContaining({ type: "tool_call_delta" }));
-    expect(events).toContainEqual({
-      type: "tool_call",
-      turn: 1,
-      toolCall: AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 }),
-    });
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: "tool_result",
-        toolName: "add",
-        toolCallId: "call_1",
-        result: "7",
-      }),
-    );
-    expect(events.at(-1)).toMatchObject({ type: "response", output: "7" });
-  });
-
   it("emits tool call deltas by default before response middleware completes", async () => {
     let providerFinished = false;
     const firstTurn = (async function* (): AsyncIterable<CompletionModelStreamEvent> {
@@ -1749,7 +1715,18 @@ describe("Agent streaming", () => {
     const events = await collect(parentAgent.stream({ prompt: "delegate" }));
     const childEvents = events.filter((event) => event.type === "agent_tool_event");
 
-    expect(childEvents.map((event) => eventType(event.event))).toContain("tool_call_delta");
+    expect(childEvents).toContainEqual(
+      expect.objectContaining({
+        type: "agent_tool_event",
+        event: {
+          type: "tool_call_delta",
+          turn: 1,
+          id: "call_add",
+          name: "add",
+          argumentsDelta: '{"x":2,"y":5}',
+        },
+      }),
+    );
     expect(childEvents).toContainEqual(
       expect.objectContaining({
         type: "agent_tool_event",
@@ -1774,63 +1751,6 @@ describe("Agent streaming", () => {
         type: "tool_result",
         toolName: "ask_child",
         result: "7",
-      }),
-    );
-  });
-
-  it("propagates tool call deltas through streaming agent tools by default", async () => {
-    const parentCall = AssistantContent.toolCall("call_child", "ask_child", { prompt: "add" });
-    const parentModel = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call",
-          toolCall: parentCall,
-        },
-        streamFinal([parentCall], "tool-calls"),
-      ],
-      successfulTextStream("parent done"),
-    ]);
-    const childModel = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call_delta",
-          id: "call_add",
-          name: "add",
-          argumentsDelta: '{"x":2,"y":5}',
-        },
-        streamFinal([AssistantContent.toolCall("call_add", "add", { x: 2, y: 5 })], "tool-calls"),
-      ],
-      successfulTextStream("7"),
-    ]);
-    const childAgent = new Agent({ id: "child", model: childModel, tools: [addTool], maxTurns: 2 });
-    const parentAgent = new Agent({
-      id: "parent",
-      model: parentModel,
-      tools: [childAgent.asTool({ name: "ask_child", stream: true, suspension: "reject" })],
-    });
-
-    const events = await collect(parentAgent.stream({ prompt: "delegate" }));
-    const childEvents = events.filter((event) => event.type === "agent_tool_event");
-
-    expect(childEvents).toContainEqual(
-      expect.objectContaining({
-        type: "agent_tool_event",
-        event: {
-          type: "tool_call_delta",
-          turn: 1,
-          id: "call_add",
-          name: "add",
-          argumentsDelta: '{"x":2,"y":5}',
-        },
-      }),
-    );
-    expect(childEvents).toContainEqual(
-      expect.objectContaining({
-        type: "agent_tool_event",
-        event: expect.objectContaining({
-          type: "tool_call",
-          toolCall: AssistantContent.toolCall("call_add", "add", { x: 2, y: 5 }),
-        }),
       }),
     );
   });
@@ -2426,12 +2346,6 @@ function rejectAfter<T>(ms: number, message: string): Promise<T> {
   return new Promise((_, reject) => {
     setTimeout(() => reject(new Error(message)), ms);
   });
-}
-
-function eventType(event: unknown): string | undefined {
-  return typeof event === "object" && event !== null && "type" in event
-    ? String(event.type)
-    : undefined;
 }
 
 async function readAll(readable: ReadableStream<Uint8Array>): Promise<string> {

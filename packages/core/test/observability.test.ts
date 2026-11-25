@@ -43,10 +43,6 @@ import {
   withInternalAgentRunOptions,
 } from "./helpers/imports";
 
-// @ts-expect-error - Langfuse moved to @anvia/langfuse.
-const removedLangfuseExport = anvia.langfuse;
-void removedLangfuseExport;
-
 class QueueModel implements CompletionModel {
   readonly provider = "test";
   readonly modelId = "test";
@@ -1440,11 +1436,11 @@ describe("active agent observer groups", () => {
     expect(cleanup).toHaveBeenCalledOnce();
   });
 
-  it("swallows nested observer failures in non-strict mode", async () => {
+  it("swallows nested observer failures and logs ignored error phases", async () => {
     const error = new Error("nested failed");
     const active = await startAgentRunObservers(
       {
-        broken: {
+        startupBroken: {
           startRun: () =>
             createRunObserver({
               startGeneration: () => {
@@ -1453,78 +1449,33 @@ describe("active agent observer groups", () => {
               startTool: () => {
                 throw error;
               },
-              end: () => {
-                throw error;
-              },
-              error: () => {
-                throw error;
-              },
             }),
         },
-      },
-      runStartArgs(),
-      { errorPolicy: "ignore" },
-    );
-
-    await expect(active.startGeneration(generationStartArgs())).resolves.toBeInstanceOf(
-      ActiveGenerationObservers,
-    );
-    await expect(active.startTool(toolStartArgs())).resolves.toBeInstanceOf(ActiveToolObservers);
-    await expect(active.end(runEndArgs())).resolves.toBeUndefined();
-    await expect(active.error(runErrorArgs())).resolves.toBeUndefined();
-
-    const consoleError = vi.mocked(console.error);
-    expect(consoleError).toHaveBeenCalledWith(
-      '[anvia] observer "broken" failed during end: nested failed',
-    );
-  });
-
-  it("logs ignored failures on the run error phase", async () => {
-    const error = new Error("run failed");
-    const active = await startAgentRunObservers(
-      {
-        broken: {
-          startRun: () =>
-            createRunObserver({
-              end: () => {
-                throw error;
-              },
-              error: () => {
-                throw error;
-              },
-            }),
-        },
-      },
-      runStartArgs(),
-      { errorPolicy: "ignore" },
-    );
-
-    await expect(active.error(runErrorArgs())).resolves.toBeUndefined();
-
-    expect(vi.mocked(console.error)).toHaveBeenCalledWith(
-      '[anvia] observer "broken" failed during error: run failed',
-    );
-  });
-
-  it("logs ignored failures on generation and tool error phases", async () => {
-    const error = new Error("phase failed");
-    const active = await startAgentRunObservers(
-      {
         broken: {
           startRun: () =>
             createRunObserver({
               startGeneration: () => ({
-                end() {},
+                end() {
+                  throw error;
+                },
                 error() {
                   throw error;
                 },
               }),
               startTool: () => ({
-                end() {},
+                end() {
+                  throw error;
+                },
                 error() {
                   throw error;
                 },
               }),
+              end: () => {
+                throw error;
+              },
+              error: () => {
+                throw error;
+              },
             }),
         },
       },
@@ -1534,17 +1485,27 @@ describe("active agent observer groups", () => {
 
     const generation = await active.startGeneration(generationStartArgs());
     const tool = await active.startTool(toolStartArgs());
-
     await expect(generation.error(generationErrorArgs())).resolves.toBeUndefined();
     await expect(tool.error(toolErrorArgs())).resolves.toBeUndefined();
+    await expect(active.end(runEndArgs())).resolves.toBeUndefined();
 
-    const consoleError = vi.mocked(console.error);
-    expect(consoleError).toHaveBeenCalledWith(
-      '[anvia] observer "broken" failed during generation.error: phase failed',
+    const erroredRun = await startAgentRunObservers(
+      {
+        broken: {
+          startRun: () =>
+            createRunObserver({
+              error: () => {
+                throw error;
+              },
+            }),
+        },
+      },
+      runStartArgs(),
+      { errorPolicy: "ignore" },
     );
-    expect(consoleError).toHaveBeenCalledWith(
-      '[anvia] observer "broken" failed during tool.error: phase failed',
-    );
+    await expect(erroredRun.error(runErrorArgs())).resolves.toBeUndefined();
+
+    expect(vi.mocked(console.error)).toHaveBeenCalledTimes(6);
   });
 
   it("routes ignored failures to a custom sink instead of the console", async () => {
@@ -2038,18 +1999,3 @@ async function collect<T>(events: AsyncIterable<T>): Promise<T[]> {
   }
   return result;
 }
-
-describe("AgentRunPromptRef", () => {
-  it("is accepted on AgentRunStartArgs", () => {
-    const promptRef: AgentRunPromptRef = { name: "support.system", version: 3 };
-    const args: AgentRunStartArgs = {
-      runId: "run_1",
-      prompt: { role: "user", content: [{ type: "text", text: "hi" }] },
-      history: [],
-      maxTurns: 1,
-      promptRef,
-    };
-    expect(args.promptRef?.name).toBe("support.system");
-    expect(args.promptRef?.version).toBe(3);
-  });
-});

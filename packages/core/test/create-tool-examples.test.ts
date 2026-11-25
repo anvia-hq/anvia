@@ -62,13 +62,13 @@ describe("tool examples", () => {
     const tool = createTool({
       name: "count",
       description: "Count things.",
-      inputSchema: z.object({ amount: z.number(), label: z.string() }),
-      examples: [{ input: { amount: 2, label: "boxes" } }],
+      inputSchema: z.object({ id: z.any(), tags: z.array(z.any()) }),
+      examples: [{ input: { id: 2n, tags: ["boxes", undefined] } }],
       handler: () => "2",
     });
 
     expect((await tool.definition("")).description).toBe(
-      ["Count things.", "", "Examples:", '- count({"amount":2,"label":"boxes"})'].join("\n"),
+      ["Count things.", "", "Examples:", '- count({"id":"2","tags":["boxes",null]})'].join("\n"),
     );
   });
 

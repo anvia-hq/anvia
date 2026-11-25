@@ -126,20 +126,6 @@ describe("provider-executed tools", () => {
     expect(request.providerTools).not.toBe(tools);
   });
 
-  it("partitions unified completion tools into local and provider collections", () => {
-    const request = createCompletionRequest(Message.user("research"), {
-      tools: [
-        { name: "local", description: "Local tool", parameters: { type: "object" } },
-        searchTool,
-      ],
-    });
-
-    expect(request.tools).toEqual([
-      { name: "local", description: "Local tool", parameters: { type: "object" } },
-    ]);
-    expect(request.providerTools).toEqual([searchTool]);
-  });
-
   it("accepts provider tools in generateCompletion", async () => {
     const model = new ProviderToolModel();
 
@@ -169,6 +155,7 @@ describe("provider-executed tools", () => {
     const result = await agent.generate({ prompt: "research" });
     assertCompleted(result);
 
+    expect(agent.tools).toEqual([localTool]);
     expect(agent.getTool("local")).toBe(localTool);
     expect(agent.getTool("web_search")).toBeUndefined();
     expect(model.requests[0]?.tools.map((tool) => tool.name)).toEqual(["local"]);
@@ -177,22 +164,6 @@ describe("provider-executed tools", () => {
     expect(result.providerToolCalls).toEqual([
       { id: "search_1", name: "web_search", status: "completed" },
     ]);
-  });
-
-  it("partitions provider tools passed to the public Agent constructor", async () => {
-    const model = new ProviderToolModel();
-    const localTool = createTool({
-      name: "local",
-      description: "Local tool",
-      inputSchema: z.object({}),
-      execute: () => "done",
-    });
-    const agent = new Agent({ id: "researcher", model, tools: [localTool, searchTool] });
-
-    await agent.generate({ prompt: "research" });
-
-    expect(agent.tools).toEqual([localTool]);
-    expect(model.requests[0]?.providerTools).toEqual([searchTool]);
   });
 
   it("rejects provider tools when the model does not advertise support", async () => {

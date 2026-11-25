@@ -68,13 +68,6 @@ describe("GrokClient", () => {
     expect(() => new GrokClient({} as never)).toThrow("Missing Grok credentials");
   });
 
-  it("accepts custom transport configuration without exposing the native client", () => {
-    const fetchFn = (async () => new Response()) as typeof fetch;
-    const client = new GrokClient({ apiKey: "key", fetch: fetchFn });
-
-    expect(client.imageGenerationModel({ modelId: "grok-imagine-image" }).provider).toBe("grok");
-  });
-
   it("creates Responses completion models explicitly", () => {
     const client = injectedClient(fakeSdk());
     const model = client.completionModel({ modelId: GROK_4_5, api: "responses" });

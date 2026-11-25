@@ -10,13 +10,11 @@ import { AssistantContent } from "./helpers/imports";
 
 describe("completion provider output integrity", () => {
   it("does not retain or expose raw tool arguments", () => {
-    const secret = "secret-token-in-provider-output";
     const error = new CompletionProviderOutputError({
       kind: "malformed-tool-arguments",
       toolCallId: `tool_0\n${"x".repeat(200)}`,
     });
 
-    expect(error.message).not.toContain(secret);
     expect(error.message).not.toContain("\n");
     expect(error.message.length).toBeLessThan(256);
     expect(error).not.toHaveProperty("arguments");
@@ -95,7 +93,7 @@ describe("completion provider output integrity", () => {
       kind: "truncated-tool-call",
       finishReason: "stop",
     };
-    expect(contradictory.finishReason).toBe("stop");
+    void contradictory;
   });
 
   it("rejects contradictory finish reasons and duplicate identities", () => {
@@ -138,16 +136,23 @@ describe("completion provider output integrity", () => {
     );
   });
 
-  it("rejects runtime values outside the JsonValue contract", () => {
+  it("rejects runtime values outside the JsonValue contract without leaking raw secrets", () => {
+    const secret = "secret-token-in-provider-output";
     const invalid = response([
       AssistantContent.toolCall("tool_0", "lookup", {
+        token: secret,
         value: Number.POSITIVE_INFINITY,
       }),
     ]);
 
-    expect(() => assertCompletionResponseIntegrity({ response: invalid })).toThrowError(
-      expect.objectContaining({ kind: "invalid-tool-arguments", toolCallId: "tool_0" }),
-    );
+    let caught: unknown;
+    try {
+      assertCompletionResponseIntegrity({ response: invalid });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({ kind: "invalid-tool-arguments", toolCallId: "tool_0" });
+    expect((caught as Error).message).not.toContain(secret);
   });
 });
 

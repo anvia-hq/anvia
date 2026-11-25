@@ -101,11 +101,16 @@ describe("durable observer", () => {
   it("cannot be used as an owner, and an owner cannot be observed through the same instance", async () => {
     const path = database();
     await owner(path);
-    const store = new SqliteDurableStore(path, { readOnly: true });
-    await store.connect();
-    closers.push(() => store.close());
-    await expect(store.acquire()).rejects.toThrow(/already acquired|can only be connected/);
-    await expect(store.connect()).rejects.toThrow(/already open/);
+    const reader = new SqliteDurableStore(path, { readOnly: true });
+    await reader.connect();
+    closers.push(() => reader.close());
+    await expect(reader.acquire()).rejects.toThrow(/already acquired|can only be connected/);
+    await expect(reader.connect()).rejects.toThrow(/already open/);
+
+    const writer = new SqliteDurableStore(database());
+    await writer.acquire();
+    closers.push(() => writer.close());
+    await expect(writer.connect()).rejects.toThrow(/already open|readOnly: true/);
   });
 
   it("rejects reads after close", async () => {

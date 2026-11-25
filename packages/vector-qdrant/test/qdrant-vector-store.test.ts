@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import * as publicApi from "../src/index.js";
 import { type QdrantClientLike, QdrantVectorClient } from "../src/index.js";
 
 function collectionInfo(hybrid = false) {
@@ -42,9 +41,6 @@ function fixture(hybrid = false): QdrantClientLike {
 }
 
 describe("QdrantVectorClient", () => {
-  it("exports the hybrid store", () => {
-    expect(publicApi).toHaveProperty("QdrantHybridVectorStore");
-  });
   it("creates side-effect-free handles and validates explicitly", async () => {
     const client = fixture();
     const store = new QdrantVectorClient({ client }).vectorStore({

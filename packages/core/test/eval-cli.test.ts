@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   assertEvalOutcomes,
   assertEvalTotals,
-  defineEvalExpectations,
   evalExitCode,
   exactMatch,
   formatEvalResult,
@@ -57,18 +56,25 @@ describe("eval CLI result handling", () => {
   });
 
   it("runs suites in quiet mode without mutating exit state unless requested", async () => {
+    const previousExitCode = process.exitCode;
     let output = "";
-    const result = await runEvalCli({
-      name: "quiet",
-      cases: [{ id: "case", input: "x", expected: "x" }],
-      target: (input) => input,
-      metrics: [exactMatch()],
-      format: "quiet",
-      output: { stdout: (value) => (output += value) },
-    });
+    try {
+      process.exitCode = undefined;
+      const result = await runEvalCli({
+        name: "quiet",
+        cases: [{ id: "case", input: "y", expected: "x" }],
+        target: (input) => input,
+        metrics: [exactMatch()],
+        format: "quiet",
+        output: { stdout: (value) => (output += value) },
+      });
 
-    expect(result.cases.passed).toBe(1);
-    expect(output).toBe("");
+      expect(result.cases.failed).toBe(1);
+      expect(output).toBe("");
+      expect(process.exitCode).toBeUndefined();
+    } finally {
+      process.exitCode = previousExitCode;
+    }
   });
 
   it("formats results without writing and supports truncation and redaction", async () => {
@@ -97,35 +103,6 @@ describe("eval CLI result handling", () => {
     expect(parsed.results[0].scores.exact_match).toMatchObject({
       score: "[score]",
       comment: "[comment]",
-    });
-  });
-
-  it("defines expectations from suite case and metric names", () => {
-    const suite = {
-      name: "typed",
-      cases: [{ id: "known", input: "x", expected: "x" }] as const,
-      target: (input: string) => input,
-      metrics: [exactMatch({ name: "correct" })] as const,
-    };
-
-    const expectations = defineEvalExpectations(suite, {
-      outcomes: { known: { correct: "pass" } },
-    });
-    expect(expectations.outcomes?.known?.correct).toBe("pass");
-
-    defineEvalExpectations(suite, {
-      outcomes: {
-        // @ts-expect-error expectations only accept suite case ids.
-        missing: { correct: "pass" },
-      },
-    });
-    defineEvalExpectations(suite, {
-      outcomes: {
-        known: {
-          // @ts-expect-error expectations only accept suite metric names.
-          missing: "pass",
-        },
-      },
     });
   });
 });

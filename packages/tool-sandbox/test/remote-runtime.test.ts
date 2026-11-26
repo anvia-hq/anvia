@@ -1,4 +1,5 @@
 import { access, readFile, writeFile } from "node:fs/promises";
+import http from "node:http";
 import net from "node:net";
 import path from "node:path";
 import { EventEmitter } from "node:events";
@@ -6,7 +7,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket, { WebSocketServer } from "ws";
 import { SandboxDaemon } from "../src/daemon/index";
 import { HubConnection, LinkClosedError } from "../src/remote/connection";
-import { RemoteSandboxHub } from "../src/remote/index";
+import {
+  RemoteSandboxHub,
+  SandboxError,
+  createRelayTicketStore,
+  isSandboxError,
+} from "../src/remote/index";
 import { RemoteSandboxRuntime } from "../src/remote/runtime";
 import {
   type RemoteHarness,
@@ -455,6 +461,144 @@ describe.skipIf(process.platform === "win32")("remote sandbox", () => {
       expect(h.runtime.workdir).toBe(h.workdir);
       expect(h.runtime.provider).toBe("remote");
       expect(h.runtime.publishedPorts).toEqual([]);
+    });
+
+    it("emits onConnect, onDisconnect, onError and exposes capabilities and waitForConnection", async () => {
+      const connectedEvents: Array<{ sandboxId: string; capabilities: readonly string[] }> = [];
+      const disconnectedEvents: Array<{ sandboxId: string; replaced: boolean }> = [];
+      const errors: Array<{ stage: string; sandboxId?: string }> = [];
+
+      const hub = newHub({
+        authorize: (candidate) => {
+          if (candidate === "boom") throw new Error("db down");
+
+          return candidate === token ? { sandboxId } : null;
+        },
+        onConnect: (event) =>
+          connectedEvents.push({ sandboxId: event.sandboxId, capabilities: event.capabilities }),
+        onDisconnect: (event) => disconnectedEvents.push(event),
+        onError: (_error, context) => errors.push(context),
+        connectTimeoutMs: 5_000,
+      });
+      const { port } = await hub.listen({ host: "127.0.0.1", path: "/daemon" });
+
+      const status = await new Promise<number | undefined>((resolve) => {
+        const socket = new WebSocket(`ws://127.0.0.1:${port}/daemon`, {
+          headers: { authorization: "Bearer boom" },
+        });
+        socket.on("unexpected-response", (_, response) => resolve(response.statusCode));
+        socket.on("error", () => undefined);
+      });
+      expect(status).toBe(500);
+      expect(errors).toContainEqual({ stage: "authorize" });
+
+      const root = await createRemoteHarness({ connect: false });
+      harnesses.push(root);
+      const waiting = hub.waitForConnection(sandboxId, { timeoutMs: 5_000 });
+      expect(hub.capabilities(sandboxId)).toBeUndefined();
+
+      await using daemon = new SandboxDaemon({
+        controlUrl: `ws://127.0.0.1:${port}/daemon`,
+        token,
+        workdir: root.workdir,
+        stateDir: root.stateDir,
+        terminal: false,
+        desktop: false,
+      });
+      daemon.start();
+      await waiting;
+
+      expect(connectedEvents).toHaveLength(1);
+      expect(connectedEvents[0]?.sandboxId).toBe(sandboxId);
+      expect(hub.capabilities(sandboxId)).toContain("tunnel");
+
+      await daemon.stop();
+      await eventually(() => disconnectedEvents.length > 0);
+      expect(disconnectedEvents[0]).toEqual({ sandboxId, replaced: false });
+      expect(hub.capabilities(sandboxId)).toBeUndefined();
+    });
+
+    it("attaches upgrade routing to an existing HTTP server without hijacking unrelated routes", async () => {
+      const server = http.createServer();
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const { port } = server.address() as { port: number };
+      const otherPaths: string[] = [];
+
+      await using hub = new RemoteSandboxHub({ authorize, connectTimeoutMs: 5_000 });
+      const detach = hub.attach(server, { path: "/daemon" });
+      server.on("upgrade", (request, socket) => {
+        const pathname = new URL(request.url ?? "/", "http://x").pathname;
+
+        if (pathname !== "/daemon") {
+          otherPaths.push(pathname);
+          socket.write("HTTP/1.1 418 I'm a teapot\r\nConnection: close\r\n\r\n");
+          socket.destroy();
+        }
+      });
+
+      try {
+        const otherStatus = await new Promise<number | undefined>((resolve) => {
+          const socket = new WebSocket(`ws://127.0.0.1:${port}/other`);
+          socket.on("unexpected-response", (_, response) => resolve(response.statusCode));
+          socket.on("error", () => undefined);
+        });
+        expect(otherStatus).toBe(418);
+        expect(otherPaths).toEqual(["/other"]);
+
+        const root = await createRemoteHarness({ connect: false });
+        harnesses.push(root);
+        await using daemon = new SandboxDaemon({
+          controlUrl: `ws://127.0.0.1:${port}/daemon`,
+          token,
+          workdir: root.workdir,
+          stateDir: root.stateDir,
+          terminal: false,
+          desktop: false,
+        });
+        daemon.start();
+        await hub.waitForConnection(sandboxId);
+        expect(hub.isConnected(sandboxId)).toBe(true);
+      } finally {
+        detach();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+  });
+
+  describe("createRelayTicketStore and SandboxError helpers", () => {
+    it("mints single-use expiring tickets, prunes expired entries, and supports redeemRequest", () => {
+      let current = 1_000;
+      const store = createRelayTicketStore<{ sandboxId: string }>({
+        ttlMs: 500,
+        maxEntries: 2,
+        now: () => current,
+      });
+
+      const first = store.mint({ sandboxId: "a" });
+      const second = store.mint({ sandboxId: "b" });
+      expect(store.size).toBe(2);
+
+      const third = store.mint({ sandboxId: "c" });
+      expect(store.redeem(first)).toBeNull();
+      expect(
+        store.redeemRequest({
+          headers: { "sec-websocket-protocol": `anvia.desktop.v1, anvia.ticket.${second}` },
+          url: "/desktop",
+        } as http.IncomingMessage),
+      ).toEqual({ sandboxId: "b" });
+      expect(store.redeem(second)).toBeNull();
+
+      current += 600;
+      expect(store.size).toBe(0);
+      expect(store.redeem(third)).toBeNull();
+    });
+
+    it("exports SandboxError alias and isSandboxError type guard from remote", () => {
+      const error = new SandboxError("locked", "desktop_locked");
+      expect(isSandboxError(error)).toBe(true);
+      expect(isSandboxError(error, "desktop_locked")).toBe(true);
+      expect(isSandboxError(error, "timeout")).toBe(false);
+      expect(isSandboxError(new Error("plain"))).toBe(false);
     });
   });
 

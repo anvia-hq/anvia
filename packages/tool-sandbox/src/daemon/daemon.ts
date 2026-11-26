@@ -97,7 +97,7 @@ const defaultMaxPayloadBytes = 64 * 1024 * 1024;
  * Runs inside a sandbox. It dials out to the control plane, executes the operations it is sent,
  * and owns process state and logs, so a control-plane restart only has to reconnect.
  */
-export class SandboxDaemon {
+export class SandboxDaemon implements AsyncDisposable {
   private readonly sandbox: LocalSandbox;
   private readonly operations: OperationStore;
   private readonly stopController = new AbortController();
@@ -163,6 +163,10 @@ export class SandboxDaemon {
     features?.terminals?.dispose();
     await features?.desktop?.stop();
     await this.sandbox.dispose();
+  }
+
+  async [Symbol.asyncDispose](): Promise<void> {
+    await this.stop();
   }
 
   private async run(): Promise<void> {

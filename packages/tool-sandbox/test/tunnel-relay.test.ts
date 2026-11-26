@@ -22,6 +22,9 @@ function recordingTunnel() {
     },
     output: { [Symbol.asyncIterator]: () => ({ next: () => new Promise<never>(() => undefined) }) },
     close: () => undefined,
+    [Symbol.dispose]() {
+      this.close();
+    },
     exit: new Promise(() => undefined),
   };
   return { handle, written };
@@ -41,6 +44,9 @@ function slowTunnel() {
     write,
     output: { [Symbol.asyncIterator]: () => ({ next: () => new Promise<never>(() => undefined) }) },
     close: () => undefined,
+    [Symbol.dispose]() {
+      this.close();
+    },
     exit: new Promise(() => undefined),
   };
   return {

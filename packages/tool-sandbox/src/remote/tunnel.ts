@@ -26,7 +26,7 @@ export interface TunnelOpenOptions {
 }
 
 /** A raw TCP connection to a service on the sandbox's own loopback. */
-export interface TunnelHandle {
+export interface TunnelHandle extends Disposable {
   readonly port: number;
   /**
    * Send bytes to the service. Settles once there is room for them: while the service is slow to
@@ -245,6 +245,10 @@ class RemoteTunnelHandle implements TunnelHandle {
 
     this.trySend({ type: "tunnel.close", tunnelId: this.tunnelId });
     this.end({ reason: "closed" });
+  }
+
+  [Symbol.dispose](): void {
+    this.close();
   }
 
   private async waitForRoom(): Promise<void> {

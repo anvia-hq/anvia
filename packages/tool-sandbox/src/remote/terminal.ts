@@ -40,7 +40,7 @@ export interface TerminalExit {
 }
 
 /** One viewer of a terminal session. */
-export interface TerminalHandle {
+export interface TerminalHandle extends Disposable {
   readonly sessionName: string;
   /** Send keystrokes. Ignored once the terminal has ended. */
   write(data: string | Uint8Array): void;
@@ -278,6 +278,10 @@ class RemoteTerminalHandle implements TerminalHandle {
 
     this.trySend({ type: "pty.close", ptyId: this.ptyId });
     this.end({ reason: "closed" });
+  }
+
+  [Symbol.dispose](): void {
+    this.close();
   }
 
   private end(info: TerminalExit): void {

@@ -30,6 +30,43 @@ import { type TunnelAuthorization, relayTunnel, selectTunnelProtocol } from "./t
 /** Identifies which sandbox a daemon's token belongs to. */
 export type RemoteSandboxAuthorization = Readonly<{ sandboxId: string }>;
 
+export type RemoteSandboxConnectEvent = Readonly<{
+  sandboxId: string;
+  workdir: string;
+  daemonVersion: string;
+  capabilities: readonly string[];
+}>;
+
+export type RemoteSandboxDisconnectEvent = Readonly<{
+  sandboxId: string;
+  /** True when this connection was replaced by a newer daemon for the same sandbox. */
+  replaced: boolean;
+}>;
+
+export type RemoteSandboxHubErrorContext = Readonly<{
+  stage: "authorize" | "handshake" | "terminal" | "tunnel" | "desktop";
+  sandboxId?: string;
+}>;
+
+export interface WaitForConnectionOptions {
+  /** How long to wait before failing with `sandbox_unavailable`. Default: hub's `connectTimeoutMs`. */
+  timeoutMs?: number;
+  abortSignal?: AbortSignal;
+}
+
+export interface RemoteSandboxHubAttachOptions {
+  /** Upgrade path for daemon connections. Default: `/daemon` when other paths are set, otherwise any unmatched path. */
+  path?: string;
+  /** Upgrade path for browser terminals, handled by `handleTerminalUpgrade`. */
+  terminalPath?: string;
+  /** Upgrade path for browser tunnels, handled by `handleTunnelUpgrade`. */
+  tunnelPath?: string;
+  /** Upgrade path for browser desktops, handled by `handleDesktopUpgrade`. */
+  desktopPath?: string;
+  /** Reject unmatched upgrade paths with HTTP 404. Default false when attaching to an existing server. */
+  rejectUnmatched?: boolean;
+}
+
 export interface RemoteSandboxHubOptions {
   /**
    * Resolve a daemon's bearer token to its sandbox, or return null/undefined to refuse it.
@@ -92,6 +129,12 @@ export interface RemoteSandboxHubOptions {
    * connected to, which fails behind a proxy that rewrites Host, so set this there.
    */
   allowedOrigins?: readonly string[];
+  /** Called after a daemon completes its `hello`/`welcome` handshake. */
+  onConnect?(event: RemoteSandboxConnectEvent): void;
+  /** Called when a connected daemon disconnects. */
+  onDisconnect?(event: RemoteSandboxDisconnectEvent): void;
+  /** Called when an authorizer throws or a daemon handshake fails. */
+  onError?(error: unknown, context: RemoteSandboxHubErrorContext): void;
 }
 
 export interface RemoteSandboxHubListenOptions {
@@ -117,7 +160,7 @@ const defaultHandshakeTimeoutMs = 10_000;
  * routes; it creates, stops, and destroys nothing. Whatever starts sandboxes is responsible for
  * handing each daemon a token and a control URL.
  */
-export class RemoteSandboxHub {
+export class RemoteSandboxHub implements AsyncDisposable {
   private readonly connectTimeoutMs: number;
   private readonly heartbeatIntervalMs: number;
   private readonly handshakeTimeoutMs: number;
@@ -255,6 +298,80 @@ export class RemoteSandboxHub {
     return this.connections.get(sandboxId)?.isOpen === true;
   }
 
+  /** Capabilities advertised by the sandbox's live daemon, or `undefined` if not connected. */
+  capabilities(sandboxId: string): readonly string[] | undefined {
+    const connection = this.connections.get(sandboxId);
+    return connection?.isOpen === true ? Object.freeze([...connection.capabilities]) : undefined;
+  }
+
+  /** Resolve once a daemon is connected for `sandboxId`, or fail with `sandbox_unavailable`. */
+  async waitForConnection(
+    sandboxId: string,
+    options: WaitForConnectionOptions = {},
+  ): Promise<void> {
+    if (typeof sandboxId !== "string" || sandboxId.length === 0) {
+      throw new TypeError("sandboxId must be a non-empty string.");
+    }
+
+    const timeoutMs = options.timeoutMs ?? this.connectTimeoutMs;
+
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+      throw new RangeError("timeoutMs must be a positive safe integer.");
+    }
+
+    while (true) {
+      options.abortSignal?.throwIfAborted();
+
+      if (this.connections.get(sandboxId)?.isOpen === true) return;
+
+      if (this.closed) throw unavailable(sandboxId, "the hub is closed");
+
+      await this.waitForNextConnection(sandboxId, timeoutMs, options.abortSignal);
+    }
+  }
+
+  /**
+   * Attach upgrade routing to an existing `http.Server`, mirroring `listen()`. By default,
+   * requests whose path does not match any configured hub route are left untouched so other
+   * WebSocket handlers on the same server can handle them. Returns a function to detach.
+   */
+  attach(server: http.Server, options: RemoteSandboxHubAttachOptions = {}): () => void {
+    const listener = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+      const requested = new URL(request.url ?? "/", "http://hub").pathname;
+
+      if (options.terminalPath !== undefined && requested === options.terminalPath) {
+        this.handleTerminalUpgrade(request, socket, head);
+        return;
+      }
+
+      if (options.tunnelPath !== undefined && requested === options.tunnelPath) {
+        this.handleTunnelUpgrade(request, socket, head);
+        return;
+      }
+
+      if (options.desktopPath !== undefined && requested === options.desktopPath) {
+        this.handleDesktopUpgrade(request, socket, head);
+        return;
+      }
+
+      if (options.path !== undefined) {
+        if (requested === options.path) {
+          this.handleUpgrade(request, socket, head);
+        } else if (options.rejectUnmatched === true) {
+          rejectUpgrade(socket, 404, "Not Found");
+        }
+
+        return;
+      }
+
+      this.handleUpgrade(request, socket, head);
+    };
+    server.on("upgrade", listener);
+    return () => {
+      server.off("upgrade", listener);
+    };
+  }
+
   /** Complete a WebSocket upgrade for a request routed here by your own HTTP server. */
   handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
     socket.on("error", () => undefined);
@@ -269,7 +386,8 @@ export class RemoteSandboxHub {
       let authorization: RemoteSandboxAuthorization | null | undefined;
       try {
         authorization = await this.options.authorize(token);
-      } catch {
+      } catch (error) {
+        this.reportError(error, { stage: "authorize" });
         return rejectUpgrade(socket, 500, "Internal Server Error");
       }
 
@@ -306,6 +424,7 @@ export class RemoteSandboxHub {
         this.trackRelay(ws);
         relayTerminal(ws, { terminal: this.terminal(grant.sandboxId), authorization: grant });
       },
+      onError: (error) => this.reportError(error, { stage: "terminal" }),
     });
   }
 
@@ -329,6 +448,7 @@ export class RemoteSandboxHub {
         this.trackRelay(ws);
         relayTunnel(ws, { tunnel: this.tunnel(grant.sandboxId), authorization: grant });
       },
+      onError: (error) => this.reportError(error, { stage: "tunnel" }),
     });
   }
 
@@ -348,6 +468,7 @@ export class RemoteSandboxHub {
         this.trackRelay(ws);
         relayDesktop(ws, { desktop: this.desktop(grant.sandboxId), authorization: grant });
       },
+      onError: (error) => this.reportError(error, { stage: "desktop" }),
     });
   }
 
@@ -417,18 +538,41 @@ export class RemoteSandboxHub {
     await new Promise<void>((resolve) => this.desktopServer.close(() => resolve()));
   }
 
+  async [Symbol.asyncDispose](): Promise<void> {
+    await this.close();
+  }
+
   private accept(ws: WebSocket, sandboxId: string): void {
     ws.on("error", () => undefined);
-    const timer = setTimeout(() => ws.close(1008, "handshake timeout"), this.handshakeTimeoutMs);
+    const timer = setTimeout(() => {
+      this.reportError(new DockerSandboxError("Daemon handshake timed out.", "timeout"), {
+        stage: "handshake",
+        sandboxId,
+      });
+      ws.close(1008, "handshake timeout");
+    }, this.handshakeTimeoutMs);
     timer.unref?.();
     ws.once("close", () => clearTimeout(timer));
     ws.once("message", (data) => {
       clearTimeout(timer);
       const hello = parseHello(data);
 
-      if (hello === undefined) return ws.close(1002, "expected hello");
+      if (hello === undefined) {
+        this.reportError(
+          new DockerSandboxError("Daemon sent an invalid hello frame.", "protocol"),
+          { stage: "handshake", sandboxId },
+        );
+        return ws.close(1002, "expected hello");
+      }
 
       if (hello.protocolVersion !== PROTOCOL_VERSION) {
+        this.reportError(
+          new DockerSandboxError(
+            `Daemon speaks unsupported protocol ${hello.protocolVersion} (expected ${PROTOCOL_VERSION}).`,
+            "protocol",
+          ),
+          { stage: "handshake", sandboxId },
+        );
         return ws.close(1002, `unsupported protocol ${hello.protocolVersion}`);
       }
 
@@ -443,11 +587,12 @@ export class RemoteSandboxHub {
       };
       ws.send(JSON.stringify(welcome));
 
+      const capabilityList = Object.freeze([...(hello.capabilities ?? [])]);
       const connection = new HubConnection(
         ws,
         hello.workdir,
         this.heartbeatIntervalMs,
-        new Set(hello.capabilities ?? []),
+        new Set(capabilityList),
         {
           accepts: this.options.binaryData !== false,
           sends:
@@ -455,11 +600,22 @@ export class RemoteSandboxHub {
             hello.capabilities?.includes(binaryDataCapability) === true,
         },
       );
-      this.connections.get(sandboxId)?.close(CLOSE_CODE_SUPERSEDED, "replaced by newer connection");
+      const previous = this.connections.get(sandboxId);
+      previous?.close(CLOSE_CODE_SUPERSEDED, "replaced by newer connection");
       this.connections.set(sandboxId, connection);
       this.lastWorkdirs.set(sandboxId, hello.workdir);
       void connection.closed.then(() => {
-        if (this.connections.get(sandboxId) === connection) this.connections.delete(sandboxId);
+        const replaced = this.connections.get(sandboxId) !== connection;
+
+        if (!replaced) this.connections.delete(sandboxId);
+
+        this.notifyDisconnect({ sandboxId, replaced });
+      });
+      this.notifyConnect({
+        sandboxId,
+        workdir: hello.workdir,
+        daemonVersion: hello.daemonVersion,
+        capabilities: capabilityList,
       });
       const waiters = this.waiters.get(sandboxId);
 
@@ -476,11 +632,15 @@ export class RemoteSandboxHub {
 
       if (this.closed) throw unavailable(sandboxId, "the hub is closed");
 
-      await this.waitForConnection(sandboxId, signal);
+      await this.waitForNextConnection(sandboxId, this.connectTimeoutMs, signal);
     }
   }
 
-  private waitForConnection(sandboxId: string, signal?: AbortSignal): Promise<void> {
+  private waitForNextConnection(
+    sandboxId: string,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       const waiters = this.waiters.get(sandboxId) ?? new Set();
       this.waiters.set(sandboxId, waiters);
@@ -502,13 +662,29 @@ export class RemoteSandboxHub {
       };
       const timer = setTimeout(() => {
         cleanup();
-        reject(
-          unavailable(sandboxId, `its daemon did not connect within ${this.connectTimeoutMs}ms`),
-        );
-      }, this.connectTimeoutMs);
+        reject(unavailable(sandboxId, `its daemon did not connect within ${timeoutMs}ms`));
+      }, timeoutMs);
       waiters.add(wake);
       signal?.addEventListener("abort", abort, { once: true });
     });
+  }
+
+  private notifyConnect(event: RemoteSandboxConnectEvent): void {
+    try {
+      this.options.onConnect?.(event);
+    } catch {}
+  }
+
+  private notifyDisconnect(event: RemoteSandboxDisconnectEvent): void {
+    try {
+      this.options.onDisconnect?.(event);
+    } catch {}
+  }
+
+  private reportError(error: unknown, context: RemoteSandboxHubErrorContext): void {
+    try {
+      this.options.onError?.(error, context);
+    } catch {}
   }
 }
 

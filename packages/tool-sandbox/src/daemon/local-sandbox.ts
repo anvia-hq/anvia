@@ -87,7 +87,7 @@ export class LocalSandbox {
       onStderr?: (chunk: Uint8Array) => void;
     } = {},
   ): Promise<SandboxExecResult> {
-    validateExecOptions(options);
+    validateExecOptions(options, this.workdir);
     options.abortSignal?.throwIfAborted();
     const cwd = containerPath(this.workdir, options.cwd ?? ".");
 
@@ -123,9 +123,9 @@ export class LocalSandbox {
   }
 
   async readFile(options: SandboxReadFileOptions): Promise<Uint8Array> {
-    assertReadOptions(options);
+    assertReadOptions(options, this.workdir);
     options.abortSignal?.throwIfAborted();
-    const normalized = normalizeSandboxPath(options.path);
+    const normalized = normalizeSandboxPath(options.path, { workdir: this.workdir });
     const target = containerPath(this.workdir, normalized);
     await this.assertInsideWorkdir(path.posix.dirname(target), normalized);
     const metadata = await lstatOrNull(target);
@@ -148,7 +148,7 @@ export class LocalSandbox {
   }
 
   async readTextFilePage(options: SandboxReadTextFilePageOptions): Promise<SandboxTextFilePage> {
-    assertReadOptions(options);
+    assertReadOptions(options, this.workdir);
     const page = resolveTextFilePageOptions(options);
     const text = decodeUtf8(await this.readFile(options));
     return createTextFilePage(text, page);
@@ -159,7 +159,7 @@ export class LocalSandbox {
 
     if (!(options.data instanceof Uint8Array)) throw new TypeError("data must be a Uint8Array.");
 
-    const normalized = normalizeSandboxPath(options.path);
+    const normalized = normalizeSandboxPath(options.path, { workdir: this.workdir });
     assertFileSize(options.data.byteLength, normalized, this.limits.maxFileBytes);
     options.abortSignal?.throwIfAborted();
 
@@ -192,7 +192,10 @@ export class LocalSandbox {
   ): Promise<readonly SandboxFileEntry[]> {
     assertOptionsObject(options);
     options.abortSignal?.throwIfAborted();
-    const normalized = normalizeSandboxPath(options.path ?? ".", { allowRoot: true });
+    const normalized = normalizeSandboxPath(options.path ?? ".", {
+      allowRoot: true,
+      workdir: this.workdir,
+    });
     const directory = containerPath(this.workdir, normalized);
     await this.assertInsideWorkdir(directory, normalized);
     let names: string[];
@@ -230,7 +233,7 @@ export class LocalSandbox {
   }
 
   async startProcess(options: SandboxProcessStartOptions): Promise<SandboxProcessInfo> {
-    validateProcessStartOptions(options);
+    validateProcessStartOptions(options, this.workdir);
     const cwd = containerPath(this.workdir, options.cwd ?? ".");
 
     if (!(await isDirectory(cwd))) {

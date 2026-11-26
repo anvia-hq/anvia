@@ -1,5 +1,6 @@
 import { DockerSandboxError } from "./errors";
 import { decodeUtf8 } from "./shared/output";
+import { dockerFailureError } from "./shared/result";
 import { type CommandResult, runCommand } from "./shared/run-command";
 
 export { decodeUtf8 };
@@ -33,10 +34,10 @@ export async function assertDockerCli(args: string[], options: DockerCliOptions)
   const result = await runDockerCli(args, options);
 
   if (result.exitCode !== 0) {
-    throw new DockerSandboxError(
+    throw dockerFailureError(
       `Docker command failed: docker ${redactCliArgs(args).join(" ")}`,
-      "docker_command_failed",
       result,
+      extractEnvSecrets(args),
     );
   }
 }
@@ -70,6 +71,36 @@ function redactCliArgs(args: string[]): string[] {
 
     return arg;
   });
+}
+
+function extractEnvSecrets(args: string[]): string[] {
+  const secrets: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    const flag = args[index - 1];
+    let assignment: string | undefined;
+
+    if (flag !== undefined && envValueFlags.has(flag)) {
+      assignment = arg;
+    } else if (arg.startsWith("--env=")) {
+      assignment = arg.slice("--env=".length);
+    } else if (arg.startsWith("-e=")) {
+      assignment = arg.slice("-e=".length);
+    } else if (arg.startsWith("-e") && arg.length > 2) {
+      assignment = arg.slice(2);
+    }
+
+    if (assignment === undefined) continue;
+
+    const separator = assignment.indexOf("=");
+
+    if (separator !== -1) {
+      const value = assignment.slice(separator + 1);
+
+      if (value.length > 0) secrets.push(value);
+    }
+  }
+  return secrets;
 }
 
 function redactEnvAssignment(value: string): string {

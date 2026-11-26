@@ -18,7 +18,10 @@ export const dockerSandboxErrorCodes = [
   "protocol",
 ] as const;
 
+export const sandboxErrorCodes = dockerSandboxErrorCodes;
+
 export type DockerSandboxErrorCode = (typeof dockerSandboxErrorCodes)[number];
+export type SandboxErrorCode = DockerSandboxErrorCode;
 
 export class DockerSandboxError extends Error {
   constructor(
@@ -30,6 +33,19 @@ export class DockerSandboxError extends Error {
     super(message, options);
     this.name = "DockerSandboxError";
   }
+}
+
+/** Provider-neutral alias for {@link DockerSandboxError}. */
+export const SandboxError = DockerSandboxError;
+export type SandboxError = DockerSandboxError;
+
+export function isSandboxError(error: unknown): error is SandboxError;
+export function isSandboxError<C extends SandboxErrorCode>(
+  error: unknown,
+  code: C,
+): error is SandboxError & { readonly code: C };
+export function isSandboxError(error: unknown, code?: SandboxErrorCode): error is SandboxError {
+  return error instanceof DockerSandboxError && (code === undefined || error.code === code);
 }
 
 export function dockerSandboxError(

@@ -317,6 +317,150 @@ describe("DockerSandboxClient ownership", () => {
       await sandbox.destroy();
     }
   });
+
+  it("checks and ensures images without redundant pulls", async () => {
+    const client = new DockerSandboxClient();
+    await expect(client.hasImage({ image: "node:22-bookworm" })).resolves.toBe(true);
+    await expect(client.ensureImage({ image: "node:22-bookworm" })).resolves.toEqual({
+      pulled: false,
+    });
+    expect(docker.assert).not.toHaveBeenCalled();
+
+    docker.run.mockResolvedValueOnce(
+      dockerResult({
+        exitCode: 1,
+        stderr: new TextEncoder().encode("Error: No such image: node:99"),
+      }),
+    );
+    await expect(client.ensureImage({ image: "node:99" })).resolves.toEqual({ pulled: true });
+    expect(docker.assert).toHaveBeenCalledWith(["pull", "node:99"], {
+      dockerPath: "docker",
+      signal: undefined,
+    });
+  });
+
+  it("classifies an unreachable Docker daemon as docker_unavailable with stderr", async () => {
+    docker.run.mockResolvedValueOnce(
+      dockerResult({
+        exitCode: 1,
+        stderr: new TextEncoder().encode(
+          "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        ),
+      }),
+    );
+    const client = new DockerSandboxClient();
+
+    await expect(client.hasImage({ image: "node:22-bookworm" })).rejects.toMatchObject({
+      code: "docker_unavailable",
+      message: expect.stringContaining("Cannot connect to the Docker daemon"),
+    });
+  });
+
+  it("includes an actionable pull hint when an image is missing", async () => {
+    docker.run.mockImplementation(async (args) => {
+      if (args[0] === "container" && args[1] === "inspect") {
+        return dockerResult({ stderr: new TextEncoder().encode("No such container"), exitCode: 1 });
+      }
+
+      if (args[0] === "image" && args[1] === "inspect") {
+        return dockerResult({ stderr: new TextEncoder().encode("No such image"), exitCode: 1 });
+      }
+
+      return dockerResult();
+    });
+    const client = new DockerSandboxClient();
+
+    await expect(
+      client.createSandbox({
+        id: "missing-image",
+        image: "node:22-bookworm",
+        workspace: { type: "ephemeral" },
+        network: { mode: "none" },
+      }),
+    ).rejects.toMatchObject({
+      code: "image_not_found",
+      message: expect.stringContaining("ensureImage"),
+    });
+  });
+
+  it("lists managed sandboxes and destroys them by id", async () => {
+    docker.run.mockImplementation(async (args) => {
+      if (args[0] === "ps") {
+        return dockerResult({
+          stdout: new TextEncoder().encode(
+            `${JSON.stringify({
+              Names: "anvia-sandbox-orphan",
+              Image: "node:22-bookworm",
+              State: "exited",
+              Status: "Exited (0) 2 hours ago",
+              Labels:
+                "anvia.sandbox.schema=1,anvia.sandbox.id=orphan,anvia.sandbox.workdir=/workspace,anvia.sandbox.workspace.type=ephemeral,anvia.sandbox.network.mode=none",
+            })}\n`,
+          ),
+        });
+      }
+
+      if (args[0] === "container" && args[1] === "inspect") {
+        return dockerResult({ stdout: encodedInspection(false, [], undefined, "orphan") });
+      }
+
+      return dockerResult();
+    });
+    const client = new DockerSandboxClient();
+
+    await expect(client.listSandboxes()).resolves.toEqual([
+      {
+        id: "orphan",
+        containerName: "anvia-sandbox-orphan",
+        image: "node:22-bookworm",
+        state: "exited",
+        status: "Exited (0) 2 hours ago",
+        workdir: "/workspace",
+        workspaceType: "ephemeral",
+        networkMode: "none",
+      },
+    ]);
+
+    await client.destroySandbox({ id: "orphan" });
+    expect(docker.run).toHaveBeenCalledWith(["rm", "-f", "anvia-sandbox-orphan"], {
+      dockerPath: "docker",
+    });
+    expect(docker.run).toHaveBeenCalledWith(["volume", "rm", "anvia-sandbox-resumed-workspace"], {
+      dockerPath: "docker",
+    });
+
+    docker.run.mockResolvedValueOnce(
+      dockerResult({ stderr: new TextEncoder().encode("No such container"), exitCode: 1 }),
+    );
+    await expect(
+      client.destroySandbox({ id: "missing", ignoreNotFound: true }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("supports execText and workdir-absolute paths on DockerSandboxRuntime", async () => {
+    docker.run.mockImplementation(async (args) => {
+      if (args[0] === "container" && args[1] === "inspect") {
+        return dockerResult({ stdout: encodedInspection(true, [], undefined, "text-exec") });
+      }
+
+      if (args[0] === "exec" && args.includes("echo")) {
+        return dockerResult({ stdout: new TextEncoder().encode("hello\n") });
+      }
+
+      return dockerResult();
+    });
+    const sandbox = await new DockerSandboxClient().resumeSandbox({ id: "text-exec" });
+    try {
+      await expect(
+        sandbox.runtime.execText({ command: "echo", args: ["hello"], cwd: "/workspace" }),
+      ).resolves.toMatchObject({ status: "exited", exitCode: 0, stdout: "hello\n", stderr: "" });
+      await expect(
+        sandbox.runtime.writeTextFile({ path: "/workspace/notes/a.txt", text: "ok" }),
+      ).resolves.toBeUndefined();
+    } finally {
+      await sandbox.destroy();
+    }
+  });
 });
 
 type DockerResult = {

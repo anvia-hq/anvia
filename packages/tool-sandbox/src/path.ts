@@ -44,7 +44,10 @@ export function normalizeSandboxPath(
 
 export function containerPath(workdir: string, relativePath: string): string {
   const normalizedWorkdir = path.posix.normalize(workdir);
-  const normalizedPath = normalizeSandboxPath(relativePath, { allowRoot: true });
+  const normalizedPath = normalizeSandboxPath(relativePath, {
+    allowRoot: true,
+    workdir: normalizedWorkdir,
+  });
   return normalizedPath === "."
     ? normalizedWorkdir
     : path.posix.join(normalizedWorkdir, normalizedPath);

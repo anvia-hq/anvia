@@ -54,6 +54,17 @@ export function describeSandboxRuntimeConformance(name: string, options: Conform
 
           const failed = await runtime.exec({ command: "sh", args: ["-c", "exit 7"] });
           expect(failed).toMatchObject({ status: "exited", exitCode: 7 });
+
+          const decoded = await runtime.execText({
+            command: "sh",
+            args: ["-c", "echo text-out; echo text-err >&2"],
+          });
+          expect(decoded).toMatchObject({
+            status: "exited",
+            exitCode: 0,
+            stdout: "text-out\n",
+            stderr: "text-err\n",
+          });
         });
 
         it("reports a missing command as an exit status, not a thrown error", async () => {
@@ -143,6 +154,9 @@ export function describeSandboxRuntimeConformance(name: string, options: Conform
           await expect(runtime.readTextFile({ path: "files/nested/a.txt" })).resolves.toBe(
             "replaced",
           );
+          await expect(
+            runtime.readTextFile({ path: `${runtime.workdir}/files/nested/a.txt` }),
+          ).resolves.toBe("replaced");
         });
 
         it("lists direct children with types and file sizes", async () => {

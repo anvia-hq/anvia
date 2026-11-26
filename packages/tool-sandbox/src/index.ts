@@ -1,6 +1,14 @@
 export { DockerSandboxClient } from "./docker-sandbox";
-export { DockerSandboxError, type DockerSandboxErrorCode } from "./errors";
-export { createDockerSandboxTools, createSandboxTools } from "./tools";
+export {
+  DockerSandboxError,
+  SandboxError,
+  dockerSandboxErrorCodes,
+  isSandboxError,
+  sandboxErrorCodes,
+  type DockerSandboxErrorCode,
+  type SandboxErrorCode,
+} from "./errors";
+export { createDockerSandboxTools, createSandboxTools, sandboxToolRecovery } from "./tools";
 export {
   createDesktopTools,
   desktopToolRecovery,
@@ -8,18 +16,27 @@ export {
   type DesktopScreenshotPolicy,
   type DesktopToolName,
 } from "./desktop-tools";
-export type { SandboxDesktop } from "./remote/desktop";
+export type {
+  DesktopAction,
+  DesktopCallOptions,
+  DesktopControl,
+  DesktopInputOptions,
+  DesktopScreenshot,
+  DesktopStatus,
+  SandboxDesktop,
+} from "./remote/desktop";
 export type {
   CreateDockerSandboxOptions,
   CreateDockerSandboxToolsOptions,
   CreateSandboxToolsOptions,
+  DestroyDockerSandboxOptions,
   DockerSandbox,
   DockerSandboxClientOptions,
   DockerSandboxCommandPolicy,
   DockerSandboxExecOptions,
   DockerSandboxExecResult,
   DockerSandboxExecStreamEvent,
-  DockerSandboxExecToolPolicy,
+  DockerSandboxExecTextResult,
   DockerSandboxFileEntry,
   DockerSandboxFileToolPolicy,
   DockerSandboxFileType,
@@ -44,12 +61,16 @@ export type {
   DockerSandboxSecurity,
   DockerSandboxState,
   DockerSandboxStopProcessOptions,
+  DockerSandboxSummary,
   DockerSandboxTextFilePage,
   DockerSandboxToolName,
   DockerSandboxWaitForPortOptions,
   DockerSandboxWorkspace,
   DockerSandboxWriteFileOptions,
   DockerSandboxWriteTextFileOptions,
+  EnsureDockerImageOptions,
+  HasDockerImageOptions,
+  ListDockerSandboxesOptions,
   PullDockerImageOptions,
   ResumeDockerSandboxOptions,
   StopDockerSandboxOptions,
@@ -57,6 +78,7 @@ export type {
   SandboxExecOptions,
   SandboxExecResult,
   SandboxExecStreamEvent,
+  SandboxExecTextResult,
   SandboxExecToolPolicy,
   SandboxFileEntry,
   SandboxFileToolPolicy,

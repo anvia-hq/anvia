@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDockerSandboxTools, createSandboxTools } from "../src/tools";
+import { createDockerSandboxTools, createSandboxTools, sandboxToolRecovery } from "../src/tools";
 import { Writable } from "../src/internal/type-utils";
 import type {
+  DockerSandbox,
   DockerSandboxCommandPolicy,
   DockerSandboxRuntime,
   SandboxRuntime,
@@ -22,8 +23,70 @@ describe("createDockerSandboxTools", () => {
       "duplicate",
     );
     expect(() => createDockerSandboxTools({ sandbox, tools: ["legacy"] } as never)).toThrow(
-      "unsupported",
+      /unsupported.*legacy.*exec_command/,
     );
+  });
+
+  it("defaults to all tools when tools is omitted and accepts a DockerSandbox handle directly", async () => {
+    const runtime = createRuntime();
+    const sandboxHandle = {
+      id: runtime.id,
+      state: "running",
+      runtime,
+      inspector: vi.fn(),
+      stop: vi.fn(async () => undefined),
+      destroy: vi.fn(async () => undefined),
+      [Symbol.asyncDispose]: vi.fn(async () => undefined),
+    } satisfies DockerSandbox;
+
+    const tools = createSandboxTools({ sandbox: sandboxHandle });
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "exec_command",
+      "read_file",
+      "write_file",
+      "list_files",
+      "list_ports",
+      "start_process",
+      "list_processes",
+      "read_process_logs",
+      "stop_process",
+      "wait_for_port",
+    ]);
+
+    const dockerTools = createDockerSandboxTools({ sandbox: sandboxHandle, tools: ["list_files"] });
+    await expect(dockerTools[0]?.call({})).resolves.toEqual({
+      path: ".",
+      entries: [{ path: "a.txt", type: "file", size: 12 }],
+    });
+  });
+
+  it("exports durable recovery modes for every sandbox tool", () => {
+    expect(sandboxToolRecovery).toEqual({
+      exec_command: "idempotent",
+      read_file: "safe",
+      write_file: "idempotent",
+      list_files: "safe",
+      list_ports: "safe",
+      start_process: "idempotent",
+      list_processes: "safe",
+      read_process_logs: "safe",
+      stop_process: "idempotent",
+      wait_for_port: "safe",
+    });
+  });
+
+  it("uses provider-appropriate wait_for_port descriptions", async () => {
+    const [dockerWait] = createSandboxTools({
+      sandbox: createRuntime(),
+      tools: ["wait_for_port"],
+    });
+    const [remoteWait] = createSandboxTools({
+      sandbox: { ...createRuntime(), provider: "remote" } as SandboxRuntime,
+      tools: ["wait_for_port"],
+    });
+
+    expect((await dockerWait?.definition("wait_for_port"))?.description).toContain("published");
+    expect((await remoteWait?.definition("wait_for_port"))?.description).not.toContain("published");
   });
 
   it("returns structured command output and propagates abort", async () => {
@@ -718,6 +781,15 @@ function createRuntime(): DockerSandboxRuntime {
       exitCode: 0,
       stdout: new TextEncoder().encode("ok\n"),
       stderr: new Uint8Array(),
+      durationMs: 10,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    })),
+    execText: vi.fn(async () => ({
+      status: "exited" as const,
+      exitCode: 0,
+      stdout: "ok\n",
+      stderr: "",
       durationMs: 10,
       stdoutTruncated: false,
       stderrTruncated: false,

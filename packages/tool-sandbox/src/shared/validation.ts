@@ -67,7 +67,7 @@ export function copyStringRecord(
   return copy;
 }
 
-export function validateExecOptions(options: SandboxExecOptions): void {
+export function validateExecOptions(options: SandboxExecOptions, workdir?: string): void {
   assertOptionsObject(options);
   assertNonEmptyString(options.command, "command");
 
@@ -78,7 +78,12 @@ export function validateExecOptions(options: SandboxExecOptions): void {
     throw new TypeError("args must contain only strings.");
   }
 
-  if (options.cwd !== undefined) normalizeSandboxPath(options.cwd, { allowRoot: true });
+  if (options.cwd !== undefined) {
+    normalizeSandboxPath(
+      options.cwd,
+      workdir === undefined ? { allowRoot: true } : { allowRoot: true, workdir },
+    );
+  }
 
   copyStringRecord(options.env, "env");
 
@@ -93,7 +98,10 @@ export function validateExecOptions(options: SandboxExecOptions): void {
   }
 }
 
-export function validateProcessStartOptions(options: SandboxProcessStartOptions): void {
+export function validateProcessStartOptions(
+  options: SandboxProcessStartOptions,
+  workdir?: string,
+): void {
   assertOptionsObject(options);
   assertNonEmptyString(options.command, "command");
 
@@ -104,14 +112,19 @@ export function validateProcessStartOptions(options: SandboxProcessStartOptions)
     throw new TypeError("args must contain only strings.");
   }
 
-  if (options.cwd !== undefined) normalizeSandboxPath(options.cwd, { allowRoot: true });
+  if (options.cwd !== undefined) {
+    normalizeSandboxPath(
+      options.cwd,
+      workdir === undefined ? { allowRoot: true } : { allowRoot: true, workdir },
+    );
+  }
 
   copyStringRecord(options.env, "env");
 }
 
-export function assertReadOptions(options: SandboxReadFileOptions): void {
+export function assertReadOptions(options: SandboxReadFileOptions, workdir?: string): void {
   assertOptionsObject(options);
-  normalizeSandboxPath(options.path);
+  normalizeSandboxPath(options.path, workdir === undefined ? {} : { workdir });
 }
 
 export function combineSignals(first: AbortSignal | undefined, second: AbortSignal): AbortSignal {

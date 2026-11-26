@@ -7,6 +7,7 @@ import { sandboxShell } from "./shell";
 import type {
   CreateDockerSandboxToolsOptions,
   CreateSandboxToolsOptions,
+  DockerSandbox,
   DockerSandboxCommandPolicy,
   DockerSandboxExecOptions,
   DockerSandboxExecResult,
@@ -14,6 +15,7 @@ import type {
   DockerSandboxProcessInfo,
   DockerSandboxToolName,
   SandboxRuntime,
+  SandboxToolName,
 } from "./types";
 import { Writable } from "./internal/type-utils";
 import { shellInterpreters } from "./types";
@@ -30,6 +32,31 @@ const allToolNames = [
   "stop_process",
   "wait_for_port",
 ] as const satisfies readonly DockerSandboxToolName[];
+
+/**
+ * Recovery classification for `@anvia/durable`'s `toolRecovery` option. Read-only tools are `safe`
+ * to repeat; mutating tools carry `ToolCallContext.operationId` to the runtime so they are
+ * `idempotent` on runtimes that deduplicate by `operationId` (such as `RemoteSandboxRuntime`).
+ */
+export const sandboxToolRecovery: Readonly<Record<SandboxToolName, "safe" | "idempotent">> =
+  Object.freeze({
+    exec_command: "idempotent",
+    read_file: "safe",
+    write_file: "idempotent",
+    list_files: "safe",
+    list_ports: "safe",
+    start_process: "idempotent",
+    list_processes: "safe",
+    read_process_logs: "safe",
+    stop_process: "idempotent",
+    wait_for_port: "safe",
+  });
+
+type ResolvedSandboxToolsOptions = Omit<CreateSandboxToolsOptions, "sandbox" | "tools"> &
+  Readonly<{
+    sandbox: SandboxRuntime;
+    tools: readonly [SandboxToolName, ...SandboxToolName[]];
+  }>;
 
 const execCommandInput = z.object({
   command: z
@@ -190,22 +217,22 @@ export function createDockerSandboxTools(
 }
 
 export function createSandboxTools(options: CreateSandboxToolsOptions): readonly AnyTool[] {
-  validateFactoryOptions(options);
-  options = snapshotFactoryOptions(options);
-  const selected = new Set(options.tools);
+  const runtime = validateFactoryOptions(options);
+  const resolved = snapshotFactoryOptions(options, runtime);
+  const selected = new Set(resolved.tools);
   const tools: AnyTool[] = [];
 
-  for (const name of options.tools) {
-    if (name === "exec_command") tools.push(createExecCommandTool(options));
-    else if (name === "read_file") tools.push(createReadFileTool(options));
-    else if (name === "write_file") tools.push(createWriteFileTool(options));
-    else if (name === "list_files") tools.push(createListFilesTool(options.sandbox));
-    else if (name === "list_ports") tools.push(createListPortsTool(options.sandbox));
-    else if (name === "start_process") tools.push(createStartProcessTool(options));
-    else if (name === "list_processes") tools.push(createListProcessesTool(options.sandbox));
-    else if (name === "read_process_logs") tools.push(createReadProcessLogsTool(options));
-    else if (name === "stop_process") tools.push(createStopProcessTool(options));
-    else if (name === "wait_for_port") tools.push(createWaitForPortTool(options));
+  for (const name of resolved.tools) {
+    if (name === "exec_command") tools.push(createExecCommandTool(resolved));
+    else if (name === "read_file") tools.push(createReadFileTool(resolved));
+    else if (name === "write_file") tools.push(createWriteFileTool(resolved));
+    else if (name === "list_files") tools.push(createListFilesTool(resolved.sandbox));
+    else if (name === "list_ports") tools.push(createListPortsTool(resolved.sandbox));
+    else if (name === "start_process") tools.push(createStartProcessTool(resolved));
+    else if (name === "list_processes") tools.push(createListProcessesTool(resolved.sandbox));
+    else if (name === "read_process_logs") tools.push(createReadProcessLogsTool(resolved));
+    else if (name === "stop_process") tools.push(createStopProcessTool(resolved));
+    else if (name === "wait_for_port") tools.push(createWaitForPortTool(resolved));
   }
 
   if (tools.length !== selected.size) {
@@ -215,7 +242,7 @@ export function createSandboxTools(options: CreateSandboxToolsOptions): readonly
   return Object.freeze(tools);
 }
 
-function createExecCommandTool(options: CreateSandboxToolsOptions): AnyTool {
+function createExecCommandTool(options: ResolvedSandboxToolsOptions): AnyTool {
   return createTool({
     name: "exec_command",
     description:
@@ -259,7 +286,7 @@ function createExecCommandTool(options: CreateSandboxToolsOptions): AnyTool {
   });
 }
 
-function createReadFileTool(options: CreateSandboxToolsOptions): AnyTool {
+function createReadFileTool(options: ResolvedSandboxToolsOptions): AnyTool {
   const limits = resolveReadFileLimits(options);
   return createTool({
     name: "read_file",
@@ -291,7 +318,7 @@ function createReadFileTool(options: CreateSandboxToolsOptions): AnyTool {
   });
 }
 
-function createWriteFileTool(options: CreateSandboxToolsOptions): AnyTool {
+function createWriteFileTool(options: ResolvedSandboxToolsOptions): AnyTool {
   return createTool({
     name: "write_file",
     description: "Write a complete UTF-8 text file inside the sandbox workspace.",
@@ -356,7 +383,7 @@ function createListPortsTool(sandbox: SandboxRuntime): AnyTool {
   });
 }
 
-function createStartProcessTool(options: CreateSandboxToolsOptions): AnyTool {
+function createStartProcessTool(options: ResolvedSandboxToolsOptions): AnyTool {
   return createTool({
     name: "start_process",
     description:
@@ -406,7 +433,7 @@ function createListProcessesTool(sandbox: SandboxRuntime): AnyTool {
   });
 }
 
-function createReadProcessLogsTool(options: CreateSandboxToolsOptions): AnyTool {
+function createReadProcessLogsTool(options: ResolvedSandboxToolsOptions): AnyTool {
   const maxLogBytes = options.process?.maxLogBytes ?? 64 * 1024;
   return createTool({
     name: "read_process_logs",
@@ -443,7 +470,7 @@ function createReadProcessLogsTool(options: CreateSandboxToolsOptions): AnyTool 
   });
 }
 
-function createStopProcessTool(options: CreateSandboxToolsOptions): AnyTool {
+function createStopProcessTool(options: ResolvedSandboxToolsOptions): AnyTool {
   return createTool({
     name: "stop_process",
     description: "Stop a process managed by this live sandbox handle.",
@@ -468,10 +495,13 @@ function createStopProcessTool(options: CreateSandboxToolsOptions): AnyTool {
   });
 }
 
-function createWaitForPortTool(options: CreateSandboxToolsOptions): AnyTool {
+function createWaitForPortTool(options: ResolvedSandboxToolsOptions): AnyTool {
   return createTool({
     name: "wait_for_port",
-    description: "Wait until an explicitly published sandbox TCP port is listening.",
+    description:
+      options.sandbox.provider === "docker"
+        ? "Wait until an explicitly published sandbox TCP port is listening."
+        : "Wait until a TCP port is listening inside the sandbox.",
     inputSchema: waitForPortInput,
     outputSchema: waitForPortOutput,
     execute: async ({ containerPort, timeoutMs }, context) => {
@@ -536,30 +566,37 @@ function normalizeToolPath(sandbox: SandboxRuntime, input: string, allowRoot = f
   return normalizeSandboxPath(input, { allowRoot, workdir: sandbox.workdir });
 }
 
-function validateFactoryOptions(options: CreateSandboxToolsOptions): void {
+function validateFactoryOptions(options: CreateSandboxToolsOptions): SandboxRuntime {
   if (!isRecord(options)) {
     throw new TypeError("options must be an object.");
   }
 
-  if (!isSandboxRuntime(options.sandbox)) {
-    throw new TypeError("sandbox must be a SandboxRuntime.");
+  const runtime = resolveSandboxRuntime(options.sandbox);
+
+  if (runtime === undefined) {
+    throw new TypeError("sandbox must be a SandboxRuntime or DockerSandbox.");
   }
 
-  if (!Array.isArray(options.tools) || options.tools.length === 0) {
-    throw new TypeError("tools must be a non-empty array.");
-  }
-
-  const known = new Set<string>(allToolNames);
-  const seen = new Set<string>();
-  for (const name of options.tools as readonly unknown[]) {
-    if (typeof name !== "string" || !known.has(name)) {
-      throw new TypeError("tools contains an unsupported sandbox tool name.");
+  if (options.tools !== undefined) {
+    if (!Array.isArray(options.tools) || options.tools.length === 0) {
+      throw new TypeError("tools must be a non-empty array.");
     }
 
-    if (seen.has(name)) throw new TypeError(`tools contains a duplicate: ${name}`);
+    const known = new Set<string>(allToolNames);
+    const seen = new Set<string>();
+    for (const name of options.tools as readonly unknown[]) {
+      if (typeof name !== "string" || !known.has(name)) {
+        throw new TypeError(
+          `tools contains an unsupported sandbox tool name: ${String(name)}. Expected one of: ${allToolNames.join(", ")}.`,
+        );
+      }
 
-    seen.add(name);
+      if (seen.has(name)) throw new TypeError(`tools contains a duplicate: ${name}`);
+
+      seen.add(name);
+    }
   }
+
   for (const [name, policy] of [
     ["exec", options.exec],
     ["readFile", options.readFile],
@@ -610,6 +647,8 @@ function validateFactoryOptions(options: CreateSandboxToolsOptions): void {
   if (defaultWaitTimeoutMs !== undefined && defaultWaitTimeoutMs > maxWaitTimeoutMs) {
     throw toolPolicyError("process.defaultWaitTimeoutMs cannot exceed process.maxWaitTimeoutMs.");
   }
+
+  return runtime;
 }
 
 function snapshotCommandPolicy(policy: DockerSandboxCommandPolicy): DockerSandboxCommandPolicy {
@@ -626,8 +665,11 @@ function snapshotCommandPolicy(policy: DockerSandboxCommandPolicy): DockerSandbo
   return Object.freeze({ mode: policy.mode, values });
 }
 
-function snapshotFactoryOptions(options: CreateSandboxToolsOptions): CreateSandboxToolsOptions {
-  const toolNames = Object.freeze([...options.tools]) as unknown as readonly [
+function snapshotFactoryOptions(
+  options: CreateSandboxToolsOptions,
+  runtime: SandboxRuntime,
+): ResolvedSandboxToolsOptions {
+  const toolNames = Object.freeze([...(options.tools ?? allToolNames)]) as unknown as readonly [
     DockerSandboxToolName,
     ...DockerSandboxToolName[],
   ];
@@ -635,8 +677,8 @@ function snapshotFactoryOptions(options: CreateSandboxToolsOptions): CreateSandb
     options.exec?.commands === undefined
       ? undefined
       : Object.freeze(snapshotCommandPolicy(options.exec.commands));
-  let snapshot: CreateSandboxToolsOptions = {
-    sandbox: options.sandbox,
+  let snapshot: ResolvedSandboxToolsOptions = {
+    sandbox: runtime,
     tools: toolNames,
   };
 
@@ -720,7 +762,7 @@ function assertCommandAllowed(
 }
 
 async function resolveExecInvocation(
-  options: CreateSandboxToolsOptions,
+  options: ResolvedSandboxToolsOptions,
   command: string,
   args: readonly string[] | undefined,
   abortSignal?: AbortSignal,
@@ -741,6 +783,13 @@ async function resolveExecInvocation(
 
     const shell = await sandboxShell(options.sandbox, abortSignal);
     abortSignal?.throwIfAborted();
+
+    if (policy?.mode === "allow" && shell === "/bin/bash" && !policy.values.includes(shell)) {
+      throw toolPolicyError(
+        'Command is rejected by sandbox tool policy: /bin/bash (auto-selected for natural command lines; allow "/bin/bash" with allowShellInterpreters: true, or pass explicit command and args).',
+      );
+    }
+
     assertCommandAllowed(shell, policy);
     return { command: shell, args: ["-c", command] };
   }
@@ -759,7 +808,7 @@ function assertTimeoutAllowed(timeoutMs: number | undefined, maxTimeoutMs: numbe
   }
 }
 
-function resolveReadFileLimits(options: CreateSandboxToolsOptions) {
+function resolveReadFileLimits(options: ResolvedSandboxToolsOptions) {
   const defaultLineCount = options.readFile?.defaultLineCount ?? defaultReadFileLineCount;
   const maxLineCount = options.readFile?.maxLineCount ?? defaultReadFileMaxLineCount;
   const maxBytes = options.readFile?.maxBytes ?? defaultReadFileMaxBytes;
@@ -801,6 +850,16 @@ function assertOptionalBoundedPositiveInteger(value: number | undefined, name: s
   if (value !== undefined && value > maxToolBytes) {
     throw toolPolicyError(`${name} cannot exceed ${maxToolBytes}.`);
   }
+}
+
+function resolveSandboxRuntime(
+  value: SandboxRuntime | DockerSandbox | unknown,
+): SandboxRuntime | undefined {
+  if (isSandboxRuntime(value)) return value;
+
+  if (isRecord(value) && isSandboxRuntime(value.runtime)) return value.runtime;
+
+  return undefined;
 }
 
 function isSandboxRuntime(value: unknown): value is SandboxRuntime {

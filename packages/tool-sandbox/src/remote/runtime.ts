@@ -1,6 +1,7 @@
 import { DockerSandboxError } from "../errors";
 import { normalizeSandboxPath } from "../path";
 import { decodeUtf8 } from "../shared/output";
+import { toExecTextResult } from "../shared/result";
 import {
   assertOptionsObject,
   assertNonEmptyString,
@@ -16,6 +17,7 @@ import type {
   SandboxExecOptions,
   SandboxExecResult,
   SandboxExecStreamEvent,
+  SandboxExecTextResult,
   SandboxFileEntry,
   SandboxListFilesOptions,
   SandboxListProcessesOptions,
@@ -89,17 +91,21 @@ export class RemoteSandboxRuntime implements SandboxRuntime {
   }
 
   async exec(options: SandboxExecOptions): Promise<SandboxExecResult> {
-    validateExecOptions(options);
+    validateExecOptions(options, this.workdir);
     assertOperationId(options.operationId);
-    const result = await this.call("exec", execParams(options), {
+    const result = await this.call("exec", execParams(options, this.workdir), {
       operationId: options.operationId,
       signal: options.abortSignal,
     });
     return decodeExecResult(result);
   }
 
+  async execText(options: SandboxExecOptions): Promise<SandboxExecTextResult> {
+    return toExecTextResult(await this.exec(options));
+  }
+
   async *execStream(options: SandboxExecOptions): AsyncIterable<SandboxExecStreamEvent> {
-    validateExecOptions(options);
+    validateExecOptions(options, this.workdir);
     assertOperationId(options.operationId);
     const streamAbort = new AbortController();
     const signal = combineSignals(options.abortSignal, streamAbort.signal);
@@ -125,7 +131,7 @@ export class RemoteSandboxRuntime implements SandboxRuntime {
       wake = undefined;
     };
 
-    const run = this.call("execStream", execParams(options), {
+    const run = this.call("execStream", execParams(options, this.workdir), {
       operationId: options.operationId,
       signal,
       onStream: (stream, data) => push({ type: stream, data }),
@@ -167,10 +173,10 @@ export class RemoteSandboxRuntime implements SandboxRuntime {
   }
 
   async readFile(options: SandboxReadFileOptions): Promise<Uint8Array> {
-    assertReadOptions(options);
+    assertReadOptions(options, this.workdir);
     const result = await this.call(
       "readFile",
-      { path: normalizeSandboxPath(options.path) },
+      { path: normalizeSandboxPath(options.path, { workdir: this.workdir }) },
       { signal: options.abortSignal },
     );
     return decodeBytes(result.base64);
@@ -181,11 +187,11 @@ export class RemoteSandboxRuntime implements SandboxRuntime {
   }
 
   async readTextFilePage(options: SandboxReadTextFilePageOptions): Promise<SandboxTextFilePage> {
-    assertReadOptions(options);
+    assertReadOptions(options, this.workdir);
     const page = resolveTextFilePageOptions(options);
     const result = await this.call(
       "readTextFilePage",
-      { path: normalizeSandboxPath(options.path), ...page },
+      { path: normalizeSandboxPath(options.path, { workdir: this.workdir }), ...page },
       { signal: options.abortSignal },
     );
     return result;
@@ -199,7 +205,10 @@ export class RemoteSandboxRuntime implements SandboxRuntime {
     assertOperationId(options.operationId);
     await this.call(
       "writeFile",
-      { path: normalizeSandboxPath(options.path), base64: encodeBytes(options.data) },
+      {
+        path: normalizeSandboxPath(options.path, { workdir: this.workdir }),
+        base64: encodeBytes(options.data),
+      },
       { operationId: options.operationId, signal: options.abortSignal },
     );
   }
@@ -221,20 +230,27 @@ export class RemoteSandboxRuntime implements SandboxRuntime {
 
   async listFiles(options: SandboxListFilesOptions = {}): Promise<readonly SandboxFileEntry[]> {
     assertOptionsObject(options);
-    const path = normalizeSandboxPath(options.path ?? ".", { allowRoot: true });
+    const path = normalizeSandboxPath(options.path ?? ".", {
+      allowRoot: true,
+      workdir: this.workdir,
+    });
     const result = await this.call("listFiles", { path }, { signal: options.abortSignal });
     return result.entries.map((entry) => compact(entry));
   }
 
   async startProcess(options: SandboxProcessStartOptions): Promise<SandboxProcessInfo> {
-    validateProcessStartOptions(options);
+    validateProcessStartOptions(options, this.workdir);
     assertOperationId(options.operationId);
+    const cwd =
+      options.cwd === undefined
+        ? undefined
+        : normalizeSandboxPath(options.cwd, { allowRoot: true, workdir: this.workdir });
     const result = await this.call(
       "startProcess",
       compact({
         command: options.command,
         args: options.args === undefined ? undefined : [...options.args],
-        cwd: options.cwd,
+        cwd,
         env: options.env === undefined ? undefined : { ...options.env },
       }),
       { operationId: options.operationId, signal: options.abortSignal },
@@ -302,11 +318,15 @@ export class RemoteSandboxRuntime implements SandboxRuntime {
   }
 }
 
-function execParams(options: SandboxExecOptions): MethodParams<"exec"> {
+function execParams(options: SandboxExecOptions, workdir: string): MethodParams<"exec"> {
+  const cwd =
+    options.cwd === undefined
+      ? undefined
+      : normalizeSandboxPath(options.cwd, { allowRoot: true, workdir });
   return compact({
     command: options.command,
     args: options.args === undefined ? undefined : [...options.args],
-    cwd: options.cwd,
+    cwd,
     env: options.env === undefined ? undefined : { ...options.env },
     timeoutMs: options.timeoutMs,
     input: encodeInput(options.input),

@@ -81,4 +81,14 @@ describe("assertDockerCli failure message", () => {
 
     expect(message).toContain("stop sandbox-1");
   });
+
+  it("includes decoded stderr detail in the error message", async () => {
+    const message = await failureMessage([
+      "-e",
+      "process.stderr.write('boom details'); process.exit(1)",
+    ]);
+
+    expect(message).toContain("Docker command failed");
+    expect(message).toContain("boom details");
+  });
 });

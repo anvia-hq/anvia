@@ -77,6 +77,38 @@ export type PullDockerImageOptions = Readonly<{
   abortSignal?: AbortSignal;
 }>;
 
+export type HasDockerImageOptions = Readonly<{
+  image: string;
+  abortSignal?: AbortSignal;
+}>;
+
+export type EnsureDockerImageOptions = Readonly<{
+  image: string;
+  abortSignal?: AbortSignal;
+}>;
+
+export type ListDockerSandboxesOptions = Readonly<{
+  abortSignal?: AbortSignal;
+}>;
+
+export type DockerSandboxSummary = Readonly<{
+  id: string;
+  containerName: string;
+  image: string;
+  state: string;
+  status: string;
+  workdir?: string;
+  workspaceType?: DockerSandboxWorkspace["type"];
+  networkMode?: DockerSandboxNetwork["mode"];
+}>;
+
+export type DestroyDockerSandboxOptions = Readonly<{
+  id: string;
+  /** Do not throw `sandbox_not_found` when the container no longer exists. */
+  ignoreNotFound?: boolean;
+  abortSignal?: AbortSignal;
+}>;
+
 export type SandboxExecOptions = Readonly<{
   command: string;
   args?: readonly string[];
@@ -100,6 +132,18 @@ type SandboxExecResultBase = Readonly<{
 export type SandboxExecResult =
   | (SandboxExecResultBase & Readonly<{ status: "exited"; exitCode: number }>)
   | (SandboxExecResultBase & Readonly<{ status: "timed_out" }>);
+
+type SandboxExecTextResultBase = Readonly<{
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+  stdoutTruncated: boolean;
+  stderrTruncated: boolean;
+}>;
+
+export type SandboxExecTextResult =
+  | (SandboxExecTextResultBase & Readonly<{ status: "exited"; exitCode: number }>)
+  | (SandboxExecTextResultBase & Readonly<{ status: "timed_out" }>);
 
 export type SandboxExecStreamEvent =
   | Readonly<{ type: "stdout"; data: Uint8Array }>
@@ -234,6 +278,7 @@ export interface SandboxRuntime {
   readonly publishedPorts: readonly SandboxPublishedPort[];
 
   exec(options: SandboxExecOptions): Promise<SandboxExecResult>;
+  execText(options: SandboxExecOptions): Promise<SandboxExecTextResult>;
   execStream(options: SandboxExecOptions): AsyncIterable<SandboxExecStreamEvent>;
   readFile(options: SandboxReadFileOptions): Promise<Uint8Array>;
   readTextFile(options: SandboxReadFileOptions): Promise<string>;
@@ -342,8 +387,8 @@ export type SandboxProcessToolPolicy = Readonly<{
 }>;
 
 export type CreateSandboxToolsOptions = Readonly<{
-  sandbox: SandboxRuntime;
-  tools: readonly [SandboxToolName, ...SandboxToolName[]];
+  sandbox: SandboxRuntime | DockerSandbox;
+  tools?: readonly [SandboxToolName, ...SandboxToolName[]];
   exec?: SandboxExecToolPolicy;
   readFile?: SandboxReadFileToolPolicy;
   writeFile?: SandboxFileToolPolicy;
@@ -351,11 +396,12 @@ export type CreateSandboxToolsOptions = Readonly<{
 }>;
 
 export type CreateDockerSandboxToolsOptions = Omit<CreateSandboxToolsOptions, "sandbox"> &
-  Readonly<{ sandbox: DockerSandboxRuntime }>;
+  Readonly<{ sandbox: DockerSandboxRuntime | DockerSandbox }>;
 
 export type DockerSandboxFileType = SandboxFileType;
 export type DockerSandboxExecOptions = SandboxExecOptions;
 export type DockerSandboxExecResult = SandboxExecResult;
+export type DockerSandboxExecTextResult = SandboxExecTextResult;
 export type DockerSandboxExecStreamEvent = SandboxExecStreamEvent;
 export type DockerSandboxReadFileOptions = SandboxReadFileOptions;
 export type DockerSandboxReadTextFilePageOptions = SandboxReadTextFilePageOptions;

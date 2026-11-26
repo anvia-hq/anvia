@@ -32,15 +32,17 @@ import {
   validateProcessStartOptions,
   waitWithSignal,
 } from "./shared/validation";
-import { mapFileMode, toExecResult } from "./shared/result";
+import { dockerFailureError, mapFileMode, toExecResult, toExecTextResult } from "./shared/result";
 import { createTextFilePage } from "./text-file";
 import type {
   CreateDockerSandboxOptions,
+  DestroyDockerSandboxOptions,
   DockerSandbox,
   DockerSandboxClientOptions,
   DockerSandboxExecOptions,
   DockerSandboxExecResult,
   DockerSandboxExecStreamEvent,
+  DockerSandboxExecTextResult,
   DockerSandboxFileEntry,
   DockerSandboxInspectionOptions,
   DockerSandboxInspector,
@@ -56,11 +58,15 @@ import type {
   DockerSandboxRuntime,
   DockerSandboxState,
   DockerSandboxStopProcessOptions,
+  DockerSandboxSummary,
   DockerSandboxTextFilePage,
   DockerSandboxWaitForPortOptions,
   DockerSandboxWorkspace,
   DockerSandboxWriteFileOptions,
   DockerSandboxWriteTextFileOptions,
+  EnsureDockerImageOptions,
+  HasDockerImageOptions,
+  ListDockerSandboxesOptions,
   PullDockerImageOptions,
   ResumeDockerSandboxOptions,
 } from "./types";
@@ -137,6 +143,153 @@ export class DockerSandboxClient {
     assertNonEmptyString(options.image, "image");
     options.abortSignal?.throwIfAborted();
     await assertDockerCli(["pull", options.image], this.cliOptions(options.abortSignal));
+  }
+
+  async hasImage(options: HasDockerImageOptions): Promise<boolean> {
+    if (!isRecord(options)) throw new TypeError("options must be an object.");
+
+    assertNonEmptyString(options.image, "image");
+    options.abortSignal?.throwIfAborted();
+    const result = await runDockerCli(
+      ["image", "inspect", options.image],
+      this.cliOptions(options.abortSignal),
+    );
+
+    if (result.exitCode === 0) return true;
+
+    if (safeDecode(result.stderr).toLowerCase().includes("no such image")) return false;
+
+    throw dockerFailureError("Unable to inspect Docker image", result);
+  }
+
+  async ensureImage(options: EnsureDockerImageOptions): Promise<{ pulled: boolean }> {
+    if (await this.hasImage(options)) return { pulled: false };
+
+    await this.pullImage(options);
+    return { pulled: true };
+  }
+
+  async listSandboxes(
+    options: ListDockerSandboxesOptions = {},
+  ): Promise<readonly DockerSandboxSummary[]> {
+    if (!isRecord(options)) throw new TypeError("options must be an object.");
+
+    options.abortSignal?.throwIfAborted();
+    const result = await runDockerCli(
+      ["ps", "-a", "--filter", `label=${labels.schema}=${schemaVersion}`, "--format", "{{json .}}"],
+      {
+        ...this.cliOptions(options.abortSignal),
+        maxOutputBytes: defaultMaxOutputBytes,
+      },
+    );
+
+    if (result.exitCode !== 0) {
+      throw dockerFailureError("Unable to list Docker sandboxes", result);
+    }
+
+    const lines = decodeUtf8(result.stdout)
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    const summaries: DockerSandboxSummary[] = [];
+
+    for (const line of lines) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(line);
+      } catch (error) {
+        throw new DockerSandboxError(
+          "Docker returned invalid sandbox listing metadata.",
+          "docker_command_failed",
+          undefined,
+          { cause: error },
+        );
+      }
+
+      if (!isRecord(parsed)) continue;
+
+      const labelMap = parseDockerPsLabels(typeof parsed.Labels === "string" ? parsed.Labels : "");
+      const id = labelMap[labels.id];
+
+      if (id === undefined || id.length === 0) continue;
+
+      const containerName =
+        typeof parsed.Names === "string" && parsed.Names.length > 0
+          ? parsed.Names
+          : containerNameFor(id);
+      const workdir = labelMap[labels.workdir];
+      const workspaceType = labelMap[labels.workspaceType];
+      const networkMode = labelMap[labels.networkMode];
+
+      let summary: DockerSandboxSummary = {
+        id,
+        containerName,
+        image: typeof parsed.Image === "string" ? parsed.Image : "",
+        state: typeof parsed.State === "string" ? parsed.State : "",
+        status: typeof parsed.Status === "string" ? parsed.Status : "",
+      };
+
+      if (workdir !== undefined && workdir.length > 0) summary = { ...summary, workdir };
+
+      if (workspaceType === "ephemeral" || workspaceType === "docker-volume") {
+        summary = { ...summary, workspaceType };
+      }
+
+      if (networkMode === "none" || networkMode === "bridge") {
+        summary = { ...summary, networkMode };
+      }
+
+      summaries.push(Object.freeze(summary));
+    }
+
+    return Object.freeze(summaries);
+  }
+
+  async destroySandbox(options: DestroyDockerSandboxOptions): Promise<void> {
+    if (!isRecord(options)) throw new TypeError("options must be an object.");
+
+    assertSandboxId(options.id);
+    options.abortSignal?.throwIfAborted();
+    const containerName = containerNameFor(options.id);
+    let inspection: DockerContainerInspection;
+    try {
+      inspection = await inspectContainer(
+        this.dockerPath,
+        containerName,
+        options.abortSignal,
+        true,
+      );
+    } catch (error) {
+      if (
+        options.ignoreNotFound === true &&
+        error instanceof DockerSandboxError &&
+        error.code === "sandbox_not_found"
+      ) {
+        return;
+      }
+
+      throw error;
+    }
+
+    const configuration = configurationFromInspection(options.id, containerName, inspection);
+    const failures: unknown[] = [];
+    try {
+      await removeContainer(this.dockerPath, containerName);
+    } catch (error) {
+      failures.push(error);
+    }
+
+    if (configuration.ownsVolume) {
+      try {
+        await removeVolume(this.dockerPath, configuration.volumeName);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+
+    if (failures.length > 0) {
+      throw new AggregateError(failures, `Unable to destroy sandbox: ${options.id}`);
+    }
   }
 
   async createSandbox(options: CreateDockerSandboxOptions): Promise<DockerSandbox> {
@@ -302,16 +455,12 @@ export class DockerSandboxClient {
 
     if (message.toLowerCase().includes("no such image")) {
       throw new DockerSandboxError(
-        `Docker image is not available locally: ${image}`,
+        `Docker image is not available locally: ${image}. Call client.ensureImage({ image: ${JSON.stringify(image)} }) or run \`docker pull ${image}\` first.`,
         "image_not_found",
       );
     }
 
-    throw new DockerSandboxError(
-      "Unable to inspect Docker image.",
-      "docker_command_failed",
-      result,
-    );
+    throw dockerFailureError("Unable to inspect Docker image", result);
   }
 
   private async assertContainerDoesNotExist(
@@ -332,11 +481,7 @@ export class DockerSandboxClient {
 
     if (safeDecode(result.stderr).toLowerCase().includes("no such")) return;
 
-    throw new DockerSandboxError(
-      "Unable to check whether the Docker sandbox already exists.",
-      "docker_command_failed",
-      result,
-    );
+    throw dockerFailureError("Unable to check whether the Docker sandbox already exists", result);
   }
 
   private async assertVolumeExists(name: string, abortSignal?: AbortSignal): Promise<void> {
@@ -350,11 +495,7 @@ export class DockerSandboxClient {
       throw new DockerSandboxError(`Docker volume does not exist: ${name}`, "volume_not_found");
     }
 
-    throw new DockerSandboxError(
-      "Unable to inspect Docker volume.",
-      "docker_command_failed",
-      result,
-    );
+    throw dockerFailureError("Unable to inspect Docker volume", result);
   }
   private async assertRuntimeAvailable(name: string, abortSignal?: AbortSignal): Promise<void> {
     if (name === "default") return;
@@ -365,11 +506,7 @@ export class DockerSandboxClient {
     });
 
     if (result.exitCode !== 0) {
-      throw new DockerSandboxError(
-        "Unable to inspect Docker runtimes.",
-        "docker_command_failed",
-        result,
-      );
+      throw dockerFailureError("Unable to inspect Docker runtimes", result);
     }
 
     let runtimes: unknown;
@@ -590,6 +727,7 @@ class DockerSandboxRuntimeImpl {
         this.configuration.publishedPorts.map((port) => Object.freeze({ ...port })),
       ),
       exec: (options) => this.exec(options),
+      execText: (options) => this.execText(options),
       execStream: (options) => this.execStream(options),
       readFile: (options) => this.readFile(options),
       readTextFile: (options) => this.readTextFile(options),
@@ -606,7 +744,7 @@ class DockerSandboxRuntimeImpl {
   }
 
   async exec(options: DockerSandboxExecOptions): Promise<DockerSandboxExecResult> {
-    validateExecOptions(options);
+    validateExecOptions(options, this.configuration.workdir);
     return this.runOperation(options.abortSignal, async (abortSignal) => {
       const result = await runDockerCli(this.execArgs(options), {
         dockerPath: this.dockerPath,
@@ -619,10 +757,14 @@ class DockerSandboxRuntimeImpl {
     });
   }
 
+  async execText(options: DockerSandboxExecOptions): Promise<DockerSandboxExecTextResult> {
+    return toExecTextResult(await this.exec(options));
+  }
+
   async *execStream(
     options: DockerSandboxExecOptions,
   ): AsyncIterable<DockerSandboxExecStreamEvent> {
-    validateExecOptions(options);
+    validateExecOptions(options, this.configuration.workdir);
     this.assertRunning();
     const streamAbort = new AbortController();
     const combined = combineSignals(options.abortSignal, streamAbort.signal);
@@ -696,9 +838,11 @@ class DockerSandboxRuntimeImpl {
   }
 
   async readFile(options: DockerSandboxReadFileOptions): Promise<Uint8Array> {
-    assertReadOptions(options);
+    assertReadOptions(options, this.configuration.workdir);
     return this.runOperation(options.abortSignal, async (abortSignal) => {
-      const normalized = normalizeSandboxPath(options.path);
+      const normalized = normalizeSandboxPath(options.path, {
+        workdir: this.configuration.workdir,
+      });
       const tempDir = await mkdtemp(path.join(os.tmpdir(), "anvia-sandbox-read-"));
       const target = path.join(tempDir, path.basename(normalized));
       try {
@@ -727,7 +871,7 @@ class DockerSandboxRuntimeImpl {
   async readTextFilePage(
     options: DockerSandboxReadTextFilePageOptions,
   ): Promise<DockerSandboxTextFilePage> {
-    assertReadOptions(options);
+    assertReadOptions(options, this.configuration.workdir);
     const { startLine, lineCount, maxBytes } = resolveTextFilePageOptions(options);
     let readOptions: DockerSandboxReadFileOptions = {
       path: options.path,
@@ -767,7 +911,7 @@ class DockerSandboxRuntimeImpl {
     data: Uint8Array,
     abortSignal?: AbortSignal,
   ): Promise<void> {
-    const normalized = normalizeSandboxPath(filePath);
+    const normalized = normalizeSandboxPath(filePath, { workdir: this.configuration.workdir });
     this.assertFileSize(data.byteLength, normalized);
     await this.runOperation(abortSignal, async (effectiveSignal) => {
       await this.assertWritableSandboxPath(normalized, effectiveSignal);
@@ -796,7 +940,10 @@ class DockerSandboxRuntimeImpl {
   ): Promise<readonly DockerSandboxFileEntry[]> {
     assertOptionsObject(options);
     const requestedPath = options.path ?? ".";
-    const normalized = normalizeSandboxPath(requestedPath, { allowRoot: true });
+    const normalized = normalizeSandboxPath(requestedPath, {
+      allowRoot: true,
+      workdir: this.configuration.workdir,
+    });
     return this.runOperation(options.abortSignal, async (abortSignal) => {
       const result = await this.execCommand(
         {
@@ -835,9 +982,20 @@ class DockerSandboxRuntimeImpl {
   }
 
   async startProcess(options: DockerSandboxProcessStartOptions): Promise<DockerSandboxProcessInfo> {
-    validateProcessStartOptions(options);
+    validateProcessStartOptions(options, this.configuration.workdir);
+    const normalizedCwd =
+      options.cwd === undefined
+        ? undefined
+        : normalizeSandboxPath(options.cwd, {
+            allowRoot: true,
+            workdir: this.configuration.workdir,
+          });
     return this.runOperation(options.abortSignal, async (abortSignal) =>
-      this.processManager.start({ ...options, abortSignal }),
+      this.processManager.start(
+        normalizedCwd === undefined
+          ? { ...options, abortSignal }
+          : { ...options, cwd: normalizedCwd, abortSignal },
+      ),
     );
   }
 
@@ -1532,11 +1690,7 @@ async function inspectContainer(
       throw new DockerSandboxError(`Sandbox does not exist: ${containerName}`, "sandbox_not_found");
     }
 
-    throw new DockerSandboxError(
-      "Unable to inspect Docker sandbox.",
-      "docker_command_failed",
-      result,
-    );
+    throw dockerFailureError("Unable to inspect Docker sandbox", result);
   }
 
   let value: unknown;
@@ -1636,7 +1790,7 @@ async function removeContainer(dockerPath: string, containerName: string): Promi
 
   if (result.exitCode === 0 || safeDecode(result.stderr).toLowerCase().includes("no such")) return;
 
-  throw new DockerSandboxError("Unable to remove Docker sandbox.", "docker_command_failed", result);
+  throw dockerFailureError("Unable to remove Docker sandbox", result);
 }
 
 async function removeVolume(dockerPath: string, volumeName: string): Promise<void> {
@@ -1644,11 +1798,22 @@ async function removeVolume(dockerPath: string, volumeName: string): Promise<voi
 
   if (result.exitCode === 0 || safeDecode(result.stderr).toLowerCase().includes("no such")) return;
 
-  throw new DockerSandboxError(
-    "Unable to remove Docker sandbox volume.",
-    "docker_command_failed",
-    result,
-  );
+  throw dockerFailureError("Unable to remove Docker sandbox volume", result);
+}
+
+function parseDockerPsLabels(raw: string): Record<string, string> {
+  const record: Record<string, string> = {};
+
+  if (raw.length === 0) return record;
+
+  for (const entry of raw.split(",")) {
+    const separator = entry.indexOf("=");
+
+    if (separator <= 0) continue;
+
+    record[entry.slice(0, separator)] = entry.slice(separator + 1);
+  }
+  return record;
 }
 
 function parseFindEntry(line: string, workdir: string): DockerSandboxFileEntry {

@@ -1,6 +1,6 @@
 import type { DesktopResolution, SandboxDaemonDesktopOptions } from "./daemon/desktop/options";
 import type { SandboxDaemonTunnelOptions } from "./daemon/tunnels";
-import { type CheckableFeature, checkableFeatures } from "./daemon-check";
+import { type CheckableFeature, checkableFeatures, parseCheckableFeatures } from "./daemon-check";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -54,19 +54,13 @@ export function parseDaemonCliArgs(argv: readonly string[]): DaemonCliArgs {
     throw new Error("--require can only be used with --check.");
   }
 
-  const unique = [...new Set(rawRequire.map((name) => name.trim()).filter((name) => name !== ""))];
+  const features = parseCheckableFeatures(rawRequire);
 
-  if (hasRequire && unique.length === 0) {
+  if (hasRequire && features.length === 0) {
     throw new Error(`--require expects ${checkableFeatures.join(" or ")}.`);
   }
 
-  for (const name of unique) {
-    if (!(checkableFeatures as readonly string[]).includes(name)) {
-      throw new Error(`--require expects ${checkableFeatures.join(" or ")}, not "${name}".`);
-    }
-  }
-
-  return { help, version, check, require: unique as CheckableFeature[] };
+  return { help, version, check, require: features };
 }
 
 /**

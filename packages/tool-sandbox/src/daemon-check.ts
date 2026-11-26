@@ -42,6 +42,17 @@ export async function checkDaemon(
   return { capabilities: features.capabilities, notes, missing };
 }
 
+/** Normalize and validate feature names passed to `--require`. */
+export function parseCheckableFeatures(rawNames: readonly string[]): CheckableFeature[] {
+  const unique = [...new Set(rawNames.map((name) => name.trim()).filter((name) => name !== ""))];
+  for (const name of unique) {
+    if (!(checkableFeatures as readonly string[]).includes(name)) {
+      throw new Error(`--require expects ${checkableFeatures.join(" or ")}, not "${name}".`);
+    }
+  }
+  return unique as CheckableFeature[];
+}
+
 /** The feature names after `--require`, as `--require=desktop,terminal` or `--require desktop`. */
 export function requiredFeatures(argv: readonly string[]): CheckableFeature[] {
   const names: string[] = [];
@@ -49,11 +60,5 @@ export function requiredFeatures(argv: readonly string[]): CheckableFeature[] {
     if (arg === "--require") names.push(...(argv[index + 1] ?? "").split(","));
     else if (arg.startsWith("--require=")) names.push(...arg.slice("--require=".length).split(","));
   });
-  const unique = [...new Set(names.map((name) => name.trim()).filter((name) => name !== ""))];
-  for (const name of unique) {
-    if (!(checkableFeatures as readonly string[]).includes(name)) {
-      throw new Error(`--require expects ${checkableFeatures.join(" or ")}, not "${name}".`);
-    }
-  }
-  return unique as CheckableFeature[];
+  return parseCheckableFeatures(names);
 }

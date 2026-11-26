@@ -563,10 +563,56 @@ describe.skipIf(process.platform === "win32")("remote sandbox", () => {
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
     });
+
+    it("defaults attach() daemon path to /daemon when only browser relay paths are set", async () => {
+      const server = http.createServer();
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const { port } = server.address() as { port: number };
+      const otherPaths: string[] = [];
+
+      await using hub = new RemoteSandboxHub({ authorize, connectTimeoutMs: 5_000 });
+      const detach = hub.attach(server, { terminalPath: "/terminal" });
+      server.on("upgrade", (request, socket) => {
+        const pathname = new URL(request.url ?? "/", "http://x").pathname;
+
+        if (pathname !== "/daemon" && pathname !== "/terminal") {
+          otherPaths.push(pathname);
+          socket.write("HTTP/1.1 418 I'm a teapot\r\nConnection: close\r\n\r\n");
+          socket.destroy();
+        }
+      });
+
+      try {
+        const otherStatus = await new Promise<number | undefined>((resolve) => {
+          const socket = new WebSocket(`ws://127.0.0.1:${port}/other`);
+          socket.on("unexpected-response", (_, response) => resolve(response.statusCode));
+          socket.on("error", () => undefined);
+        });
+        expect(otherStatus).toBe(418);
+        expect(otherPaths).toEqual(["/other"]);
+
+        const root = await createRemoteHarness({ connect: false });
+        harnesses.push(root);
+        await using daemon = new SandboxDaemon({
+          controlUrl: `ws://127.0.0.1:${port}/daemon`,
+          token,
+          workdir: root.workdir,
+          stateDir: root.stateDir,
+          terminal: false,
+          desktop: false,
+        });
+        daemon.start();
+        await hub.waitForConnection(sandboxId);
+        expect(hub.isConnected(sandboxId)).toBe(true);
+      } finally {
+        detach();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
   });
 
   describe("createRelayTicketStore and SandboxError helpers", () => {
-    it("mints single-use expiring tickets, prunes expired entries, and supports redeemRequest", () => {
+    it("mints single-use expiring tickets, prunes expired entries, and supports detached redeemRequest", () => {
       let current = 1_000;
       const store = createRelayTicketStore<{ sandboxId: string }>({
         ttlMs: 500,
@@ -580,8 +626,9 @@ describe.skipIf(process.platform === "win32")("remote sandbox", () => {
 
       const third = store.mint({ sandboxId: "c" });
       expect(store.redeem(first)).toBeNull();
+      const { redeemRequest } = store;
       expect(
-        store.redeemRequest({
+        redeemRequest({
           headers: { "sec-websocket-protocol": `anvia.desktop.v1, anvia.ticket.${second}` },
           url: "/desktop",
         } as http.IncomingMessage),

@@ -59,6 +59,17 @@ export function createRelayTicketStore<Grant>(
     }
   };
 
+  const redeem = (ticket: string | undefined): Grant | null => {
+    if (ticket === undefined || ticket.length === 0) return null;
+
+    const entry = entries.get(ticket);
+
+    if (entry === undefined) return null;
+
+    entries.delete(ticket);
+    return entry.expiresAt > now() ? entry.grant : null;
+  };
+
   return {
     mint(grant, mintOptions) {
       const ttlMs = mintOptions?.ttlMs ?? defaultTtlMs;
@@ -82,18 +93,9 @@ export function createRelayTicketStore<Grant>(
       entries.set(ticket, { grant, expiresAt: currentTime + ttlMs });
       return ticket;
     },
-    redeem(ticket) {
-      if (ticket === undefined || ticket.length === 0) return null;
-
-      const entry = entries.get(ticket);
-
-      if (entry === undefined) return null;
-
-      entries.delete(ticket);
-      return entry.expiresAt > now() ? entry.grant : null;
-    },
+    redeem,
     redeemRequest(request) {
-      return this.redeem(relayTicket(request));
+      return redeem(relayTicket(request));
     },
     revoke(ticket) {
       return entries.delete(ticket);

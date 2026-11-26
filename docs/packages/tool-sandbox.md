@@ -3,10 +3,10 @@
 Docker-backed sandbox ownership and tools for Anvia applications.
 
 ```ts
-import { createDockerSandboxTools, DockerSandboxClient } from "@anvia/sandbox";
+import { createSandboxTools, DockerSandboxClient } from "@anvia/sandbox";
 
 const client = new DockerSandboxClient();
-await client.pullImage({ image: "node:22-bookworm" });
+await client.ensureImage({ image: "node:22-bookworm" });
 
 await using sandbox = await client.createSandbox({
   image: "node:22-bookworm",
@@ -14,15 +14,18 @@ await using sandbox = await client.createSandbox({
   network: { mode: "none" },
 });
 
-const tools = createDockerSandboxTools({
-  sandbox: sandbox.runtime,
+const tools = createSandboxTools({
+  sandbox,
   tools: ["exec_command", "read_file", "write_file", "list_files"],
 });
 ```
 
 `DockerSandboxClient` performs explicit infrastructure operations. Its constructor performs no I/O,
-and `createSandbox()` and `resumeSandbox()` never pull images. `DockerSandbox` owns the container and,
-for an ephemeral workspace, its Docker volume. Dispose it asynchronously or call `destroy()`.
+and `createSandbox()` and `resumeSandbox()` never pull images. Use `hasImage()` to check local
+availability, `ensureImage()` to pull only when missing, or `pullImage()` to pull unconditionally.
+`listSandboxes()` and `destroySandbox({ id })` let you inspect or clean up managed sandboxes (for
+example after a crash). `DockerSandbox` owns the container and, for an ephemeral workspace, its
+Docker volume. Dispose it asynchronously or call `destroy()`.
 
 `stop()` preserves the container and workspace. `resumeSandbox({ id })` creates a fresh live handle for
 that container; workspace files persist, while the in-memory managed-process registry starts empty. A
@@ -30,7 +33,11 @@ caller-owned `{ type: "docker-volume", name }` workspace is never deleted by the
 
 Networking is explicit. Use `{ mode: "none" }` or `{ mode: "bridge", ports: [...] }`; published ports
 bind only to `127.0.0.1`. Runtime methods use object arguments, propagate abort signals, and expose
-command and process output as bytes. Tool wrappers decode UTF-8 strictly and return structured values.
+command and process output as bytes (`execText()`, `readTextFile()`, and `writeTextFile()` provide
+strict UTF-8 conveniences). Errors use `SandboxError` (also exported as `DockerSandboxError`) and
+can be narrowed with `isSandboxError(error, code)`. Tool wrappers accept either a `SandboxRuntime`
+or a `DockerSandbox` handle, decode UTF-8 strictly, and return structured values. Omitting `tools`
+exposes all sandbox tools.
 
 `exec_command` and `start_process` accept complete shell command lines in `command`, including
 pipes, redirects, and multiline scripts. When `args` is omitted and the command contains shell
@@ -63,10 +70,10 @@ Changing the default shell can affect builtins such as `echo`, even in scripts t
 succeeded. Install/remove shells before creating the live sandbox handle; cached detection does
 not track changes to shell installation during that handle's lifetime.
 
-File paths and command working directories passed to agent tools may be workspace-relative (for
-example `notes/result.txt`) or absolute paths inside the sandbox workdir (for example
-`/workspace/notes/result.txt` with the default workdir). Paths outside the sandbox workdir are
-rejected.
+File paths and command working directories passed to runtime methods and agent tools may be
+workspace-relative (for example `notes/result.txt`) or absolute paths inside the sandbox workdir
+(for example `/workspace/notes/result.txt` with the default workdir). Paths outside the sandbox
+workdir are rejected.
 
 File writes also reject symlinks in any destination path component, including dangling links,
 with `invalid_path`. The runtime inspects the path before creating directories and again before
@@ -170,14 +177,16 @@ ANVIA_SANDBOX_WORKDIR=/workspace \
 npx anvia-sandbox-daemon
 ```
 
-To attach the hub to a server you already run, call `hub.handleUpgrade(request, socket, head)` from
-its `upgrade` event instead of `hub.listen()`. The daemon sends the token as an
+To attach the hub to a server you already run, call `hub.attach(server, { path, terminalPath, tunnelPath, desktopPath })` (which leaves unmatched upgrade paths alone by default and returns a detach function), or call `hub.handleUpgrade(request, socket, head)` from its `upgrade` event directly instead of `hub.listen()`. The daemon sends the token as an
 `Authorization: Bearer` header, and the hub calls `authorize` before the upgrade completes, so a
 refused daemon gets HTTP 401. Use `wss://`; the daemon warns when it is given an unencrypted URL
 that is not loopback.
 
 The hub does no lifecycle management. It never creates, stops, or destroys a sandbox, and it does
-not issue tokens. `hub.connected()` and `hub.isConnected(id)` report which daemons are attached.
+not issue tokens. `hub.connected()`, `hub.isConnected(id)`, `hub.capabilities(id)`, and
+`hub.waitForConnection(id)` report and await daemon readiness, and `onConnect`, `onDisconnect`, and
+`onError` observe lifecycle and authorization failures. `RemoteSandboxHub` and `SandboxDaemon`
+implement `AsyncDisposable` (`await using`).
 The hub keeps a small record per sandbox id; call `hub.forget(id)` when your lifecycle code
 destroys a sandbox so a long-lived hub does not accumulate them. It also disconnects that
 sandbox's daemon.
@@ -187,6 +196,8 @@ Daemon environment: `ANVIA_CONTROL_URL` and `ANVIA_SANDBOX_TOKEN` are required.
 operation table) to a directory under the OS temp directory. Optional limits are
 `ANVIA_SANDBOX_COMMAND_TIMEOUT_MS`, `ANVIA_SANDBOX_MAX_OUTPUT_BYTES`,
 `ANVIA_SANDBOX_MAX_FILE_BYTES` and `ANVIA_SANDBOX_MAX_PROCESSES`, with the same defaults as Docker.
+Set `ANVIA_SANDBOX_TUNNEL=0` to disable TCP tunnels or `ANVIA_SANDBOX_TUNNEL_ALLOWED_PORTS=3000,5900`
+to restrict reachable loopback ports.
 The daemon removes `ANVIA_SANDBOX_TOKEN` and `ANVIA_CONTROL_URL` from the environment of every
 command and process it runs, so agent-run code cannot read its own credentials. Keep the state
 directory outside the workdir.
@@ -216,15 +227,14 @@ attempt can be retried for real. Reusing an id with different parameters fails w
 `invalid_state`.
 
 `createSandboxTools` passes `ToolCallContext.operationId` through, so a durable run's stable
-operation key reaches the daemon. That makes the mutating tools safe to mark `idempotent` in the
-durable registration's `toolRecovery`:
+operation key reaches the daemon. Use the exported `sandboxToolRecovery` preset in the durable
+registration's `toolRecovery`:
 
 ```ts
+import { sandboxToolRecovery } from "@anvia/sandbox";
+
 toolRecovery: {
-  exec_command: "idempotent",
-  write_file: "idempotent",
-  start_process: "idempotent",
-  stop_process: "idempotent",
+  ...sandboxToolRecovery,
 },
 ```
 
@@ -393,14 +403,14 @@ the daemon also attaches it read-only.
 **1. The control plane** runs the hub and mints tickets for your signed-in users:
 
 ```ts
-import { randomBytes } from "node:crypto";
-import { RemoteSandboxHub, terminalTicket } from "@anvia/sandbox/remote";
+import { createRelayTicketStore, RemoteSandboxHub } from "@anvia/sandbox/remote";
 
 const daemonTokens = new Map([[process.env.DAEMON_TOKEN!, "sandbox-1"]]);
-const tickets = new Map<
-  string,
-  { sandboxId: string; sessionName: string; readOnly: boolean; expires: number }
->();
+const tickets = createRelayTicketStore<{
+  sandboxId: string;
+  sessionName: string;
+  readOnly: boolean;
+}>({ ttlMs: 30_000 });
 
 /** Call this from an authenticated route, after checking the user may open this session. */
 export function mintTerminalTicket(grant: {
@@ -408,9 +418,7 @@ export function mintTerminalTicket(grant: {
   sessionName: string;
   readOnly: boolean;
 }) {
-  const ticket = randomBytes(24).toString("base64url"); // URL-safe, so it can ride as a subprotocol
-  tickets.set(ticket, { ...grant, expires: Date.now() + 30_000 });
-  return ticket;
+  return tickets.mint(grant);
 }
 
 const hub = new RemoteSandboxHub({
@@ -419,12 +427,7 @@ const hub = new RemoteSandboxHub({
     return sandboxId ? { sandboxId } : null;
   },
   allowedOrigins: ["http://localhost:5173"],
-  authorizeTerminal(request) {
-    const ticket = terminalTicket(request);
-    const grant = ticket === undefined ? undefined : tickets.get(ticket);
-    if (ticket !== undefined) tickets.delete(ticket); // single use
-    return grant !== undefined && grant.expires > Date.now() ? grant : null;
-  },
+  authorizeTerminal: (request) => tickets.redeemRequest(request),
 });
 await hub.listen({ port: 8787, path: "/daemon", terminalPath: "/terminal" });
 ```
@@ -613,10 +616,15 @@ and writes a Dockerfile that installs `Xvnc`, `openbox`, `xdotool`, ImageMagick,
 
 ```sh
 pnpm dlx @anvia/sandbox create-image --name desk --feature desktop --apt chromium
-docker run --rm anvia-sandbox-desk:latest \
-  /opt/anvia-daemon/node_modules/.bin/anvia-sandbox-daemon --check --require=desktop
+docker run --rm anvia-sandbox-desk:latest anvia-sandbox-daemon --check --require=desktop
 docker run --rm -e ANVIA_CONTROL_URL=wss://hub.example.com/daemon \
   -e ANVIA_SANDBOX_TOKEN=... anvia-sandbox-desk:latest
+```
+
+To regenerate an image context after editing its `anvia-sandbox.json` manifest, pass `--from`:
+
+```sh
+pnpm dlx @anvia/sandbox create-image --from .anvia/sandbox-images/desk --force
 ```
 
 The generated image starts the daemon, which needs a hub, so it is for the remote runtime and not
@@ -843,9 +851,9 @@ its answer.
 
 ### Not included
 
-Provider adapters (for example E2B or Kubernetes), snapshots, idle pause and wake, port tunnels,
-and routing a sandbox across several control-plane nodes are out of scope. The interfaces
-leave room for them: a provider adapter would create sandboxes, hand each daemon a token and URL,
-and call `hub.runtime(id)`; tunnels would populate `host` and `hostPort` in `waitForPort`'s result;
-and multi-node routing would replace the hub's in-memory registry. Until then, run one hub per
-control-plane process and point each sandbox's daemon at it.
+Provider adapters (for example E2B or Kubernetes), snapshots, idle pause and wake, published preview
+URLs / reverse port forwarding, and routing a sandbox across several control-plane nodes are out of
+scope. The interfaces leave room for them: a provider adapter would create sandboxes, hand each
+daemon a token and URL, and call `hub.runtime(id)`; reverse port forwarding would populate `host`
+and `hostPort` in `waitForPort`'s result; and multi-node routing would replace the hub's in-memory
+registry. Until then, run one hub per control-plane process and point each sandbox's daemon at it.

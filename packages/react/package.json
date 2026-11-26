@@ -1,6 +1,6 @@
 {
   "name": "@anvia/react",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "React hooks and composable, headless UI primitives for Anvia applications.",
   "author": "anvia",
   "license": "MIT",

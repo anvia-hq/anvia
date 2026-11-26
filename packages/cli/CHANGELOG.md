@@ -1,5 +1,11 @@
 # @anvia/cli
 
+## 1.5.8
+
+### Patch Changes
+
+- 6a7e4c3: Make the bundled `anvia-*` Agent Skills manual-only: `disable-model-invocation: true` in each `SKILL.md` (Claude Code) and `agents/openai.yaml` with `allow_implicit_invocation: false` (Codex). Invoke them explicitly with `/anvia-agent` or `$anvia-agent`.
+
 ## 1.5.7
 
 ### Patch Changes

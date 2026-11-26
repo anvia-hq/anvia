@@ -1,8 +1,112 @@
+import { randomBytes } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import WebSocket, { type WebSocketServer } from "ws";
 
 const ticketPrefix = "anvia.ticket.";
+const defaultTicketTtlMs = 30_000;
+const defaultMaxTicketEntries = 10_000;
+
+export interface RelayTicketStoreOptions {
+  /** How long a minted ticket stays valid before expiring. Default 30s. */
+  ttlMs?: number;
+  /** Maximum unredeemed tickets kept in memory at once. Default 10,000. */
+  maxEntries?: number;
+  /** Clock source, mostly for tests. Default `Date.now`. */
+  now?: () => number;
+}
+
+/** In-memory store for single-use, expiring browser relay tickets. */
+export interface RelayTicketStore<Grant> {
+  /** Create a URL-safe single-use ticket bound to `grant`. */
+  mint(grant: Grant, options?: { ttlMs?: number }): string;
+  /** Consume a ticket once, returning its grant or `null` if unknown or expired. */
+  redeem(ticket: string | undefined): Grant | null;
+  /** Read a ticket from an upgrade request (`relayTicket`) and consume it once. */
+  redeemRequest(request: IncomingMessage): Grant | null;
+  /** Revoke an unredeemed ticket. Returns true if it was present. */
+  revoke(ticket: string): boolean;
+  /** Drop every unredeemed ticket. */
+  clear(): void;
+  /** Number of currently valid unredeemed tickets. */
+  readonly size: number;
+}
+
+/**
+ * Create an in-memory store for short-lived, single-use tickets used with `authorizeTerminal`,
+ * `authorizeTunnel`, and `authorizeDesktop`. Expired entries are pruned automatically on use.
+ */
+export function createRelayTicketStore<Grant>(
+  options: RelayTicketStoreOptions = {},
+): RelayTicketStore<Grant> {
+  const defaultTtlMs = options.ttlMs ?? defaultTicketTtlMs;
+  const maxEntries = options.maxEntries ?? defaultMaxTicketEntries;
+  const now = options.now ?? Date.now;
+
+  if (!Number.isSafeInteger(defaultTtlMs) || defaultTtlMs <= 0) {
+    throw new RangeError("ttlMs must be a positive safe integer.");
+  }
+
+  if (!Number.isSafeInteger(maxEntries) || maxEntries <= 0) {
+    throw new RangeError("maxEntries must be a positive safe integer.");
+  }
+
+  const entries = new Map<string, { grant: Grant; expiresAt: number }>();
+
+  const prune = (currentTime: number) => {
+    for (const [key, entry] of entries) {
+      if (entry.expiresAt <= currentTime) entries.delete(key);
+    }
+  };
+
+  return {
+    mint(grant, mintOptions) {
+      const ttlMs = mintOptions?.ttlMs ?? defaultTtlMs;
+
+      if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0) {
+        throw new RangeError("ttlMs must be a positive safe integer.");
+      }
+
+      const currentTime = now();
+      prune(currentTime);
+
+      while (entries.size >= maxEntries) {
+        const oldest = entries.keys().next().value;
+
+        if (oldest === undefined) break;
+
+        entries.delete(oldest);
+      }
+
+      const ticket = randomBytes(24).toString("base64url");
+      entries.set(ticket, { grant, expiresAt: currentTime + ttlMs });
+      return ticket;
+    },
+    redeem(ticket) {
+      if (ticket === undefined || ticket.length === 0) return null;
+
+      const entry = entries.get(ticket);
+
+      if (entry === undefined) return null;
+
+      entries.delete(ticket);
+      return entry.expiresAt > now() ? entry.grant : null;
+    },
+    redeemRequest(request) {
+      return this.redeem(relayTicket(request));
+    },
+    revoke(ticket) {
+      return entries.delete(ticket);
+    },
+    clear() {
+      entries.clear();
+    },
+    get size() {
+      prune(now());
+      return entries.size;
+    },
+  };
+}
 
 /**
  * Pull a short-lived ticket out of a browser relay upgrade request. Browsers cannot set an
@@ -99,6 +203,8 @@ export interface BrowserRoute<Grant> {
   server: WebSocketServer;
   /** The upgrade completed: hand the socket to its relay. */
   onSocket: (ws: WebSocket, grant: Grant) => void;
+  /** Called if `authorize` throws instead of returning null/undefined. */
+  onError?: ((error: unknown) => void) | undefined;
 }
 
 /**
@@ -126,7 +232,8 @@ export function handleBrowserUpgrade<Grant>(
     let grant: Grant | null | undefined;
     try {
       grant = await authorize(request);
-    } catch {
+    } catch (error) {
+      route.onError?.(error);
       return rejectUpgrade(socket, 500, "Internal Server Error");
     }
 

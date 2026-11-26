@@ -30,6 +30,9 @@ function stubTerminal() {
       calls.closed += 1;
       finish();
     },
+    [Symbol.dispose]() {
+      this.close();
+    },
     output: (async function* () {
       yield new TextEncoder().encode("hello");
       await ended;

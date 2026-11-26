@@ -1,8 +1,22 @@
 export {
+  DockerSandboxError,
+  SandboxError,
+  dockerSandboxErrorCodes,
+  isSandboxError,
+  sandboxErrorCodes,
+  type DockerSandboxErrorCode,
+  type SandboxErrorCode,
+} from "../errors";
+export {
   RemoteSandboxHub,
   type RemoteSandboxAuthorization,
+  type RemoteSandboxConnectEvent,
+  type RemoteSandboxDisconnectEvent,
+  type RemoteSandboxHubAttachOptions,
+  type RemoteSandboxHubErrorContext,
   type RemoteSandboxHubListenOptions,
   type RemoteSandboxHubOptions,
+  type WaitForConnectionOptions,
 } from "./hub";
 export { RemoteSandboxRuntime, type RemoteSandboxRuntimeOptions } from "./runtime";
 export { PROTOCOL_VERSION } from "./protocol";
@@ -25,7 +39,13 @@ export {
   type TunnelOpenOptions,
 } from "./tunnel";
 export { type TunnelAuthorization, tunnelSubprotocol } from "./tunnel-relay";
-export { originAllowed, relayTicket } from "./relay-common";
+export {
+  createRelayTicketStore,
+  originAllowed,
+  relayTicket,
+  type RelayTicketStore,
+  type RelayTicketStoreOptions,
+} from "./relay-common";
 /** The terminal relay reads its ticket exactly as the tunnel relay does. */
 export { relayTicket as terminalTicket } from "./relay-common";
 export {

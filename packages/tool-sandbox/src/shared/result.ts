@@ -55,13 +55,13 @@ export function formatDockerFailure(
   result: { stdout: Uint8Array; stderr: Uint8Array },
   redactedValues: readonly string[] = [],
 ): string {
-  let detail = (safeDecodeBytes(result.stderr).trim() || safeDecodeBytes(result.stdout).trim())
-    .replace(/\s+/gu, " ")
-    .slice(0, 500);
+  let detail = safeDecodeBytes(result.stderr).trim() || safeDecodeBytes(result.stdout).trim();
 
-  for (const secret of redactedValues) {
+  for (const secret of [...redactedValues].sort((left, right) => right.length - left.length)) {
     if (secret.length > 0) detail = detail.replaceAll(secret, "<redacted>");
   }
+
+  detail = detail.replace(/\s+/gu, " ").trim().slice(0, 500);
 
   return detail.length > 0 ? `${prefix}: ${detail}` : prefix;
 }

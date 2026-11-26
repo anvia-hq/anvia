@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assertDockerCli } from "../src/docker-cli";
+import { formatDockerFailure } from "../src/shared/result";
 
 /**
  * `process.execPath` is a portable stand-in for a Docker binary that exits non-zero:
@@ -90,5 +91,28 @@ describe("assertDockerCli failure message", () => {
 
     expect(message).toContain("Docker command failed");
     expect(message).toContain("boom details");
+  });
+
+  it("redacts multi-line secrets and secrets straddling the 500-char truncation cut", () => {
+    const encoder = new TextEncoder();
+    const pem = "-----BEGIN KEY-----\nSECRET-LINE-1\nSECRET-LINE-2\n-----END KEY-----";
+    const multiLine = formatDockerFailure(
+      "Docker failed",
+      { stdout: new Uint8Array(), stderr: encoder.encode(`invalid value:\n${pem}\nfailed`) },
+      [pem],
+    );
+    expect(multiLine).not.toContain("SECRET-LINE-1");
+    expect(multiLine).not.toContain("SECRET-LINE-2");
+    expect(multiLine).toContain("<redacted>");
+
+    const boundarySecret = "sk-boundary-secret-value-99999";
+    const padded = `${"x".repeat(490)}${boundarySecret} trailing`;
+    const truncated = formatDockerFailure(
+      "Docker failed",
+      { stdout: new Uint8Array(), stderr: encoder.encode(padded) },
+      [boundarySecret],
+    );
+    expect(truncated).not.toContain("sk-boundary");
+    expect(truncated).toContain("<redacted>");
   });
 });

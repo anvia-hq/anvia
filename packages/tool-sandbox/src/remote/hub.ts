@@ -336,6 +336,13 @@ export class RemoteSandboxHub implements AsyncDisposable {
    * WebSocket handlers on the same server can handle them. Returns a function to detach.
    */
   attach(server: http.Server, options: RemoteSandboxHubAttachOptions = {}): () => void {
+    const daemonPath =
+      options.path ??
+      (options.terminalPath !== undefined ||
+      options.tunnelPath !== undefined ||
+      options.desktopPath !== undefined
+        ? "/daemon"
+        : undefined);
     const listener = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
       const requested = new URL(request.url ?? "/", "http://hub").pathname;
 
@@ -354,8 +361,8 @@ export class RemoteSandboxHub implements AsyncDisposable {
         return;
       }
 
-      if (options.path !== undefined) {
-        if (requested === options.path) {
+      if (daemonPath !== undefined) {
+        if (requested === daemonPath) {
           this.handleUpgrade(request, socket, head);
         } else if (options.rejectUnmatched === true) {
           rejectUpgrade(socket, 404, "Not Found");

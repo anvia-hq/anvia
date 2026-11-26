@@ -1,6 +1,6 @@
 # @anvia/sandbox
 
-Give agents a workspace where they can run commands and work with files. Docker-backed sandboxes keep execution infrastructure explicit and under your application’s control.
+Give agents a workspace where they can run commands, work with files, manage processes, and drive a virtual desktop. Run sandboxes locally with Docker or remotely over an outbound WebSocket daemon.
 
 ## Installation
 
@@ -10,13 +10,13 @@ pnpm add @anvia/sandbox @anvia/core
 
 ## Quick start
 
-Requires Node.js 20.12 or later and an accessible Docker daemon. Pull an image before creating a sandbox.
+Requires Node.js 20.12 or later and an accessible Docker daemon.
 
 ```ts
-import { createDockerSandboxTools, DockerSandboxClient } from "@anvia/sandbox";
+import { createSandboxTools, DockerSandboxClient } from "@anvia/sandbox";
 
 const client = new DockerSandboxClient();
-await client.pullImage({ image: "node:22-bookworm" });
+await client.ensureImage({ image: "node:22-bookworm" });
 
 await using sandbox = await client.createSandbox({
   image: "node:22-bookworm",
@@ -24,8 +24,8 @@ await using sandbox = await client.createSandbox({
   network: { mode: "none" },
 });
 
-const tools = createDockerSandboxTools({
-  sandbox: sandbox.runtime,
+const tools = createSandboxTools({
+  sandbox,
   tools: ["exec_command", "read_file", "write_file", "list_files"],
 });
 // Pass tools to new Agent({ id, model, tools }).
@@ -33,30 +33,20 @@ const tools = createDockerSandboxTools({
 
 ## What you get
 
-- Command execution, file access, and managed processes.
-- Ephemeral workspaces or caller-owned Docker volumes.
-- Explicit networking, resource limits, and command policies.
-- Stop/resume lifecycle and automatic disposal.
-- Read-only sandbox inspection in Anvia Studio.
-- Remote sandboxes: a daemon inside any sandbox dials out to your control plane, so the sandbox is
-  not tied to the agent's host (`@anvia/sandbox/remote`, `anvia-sandbox-daemon`).
+- **Docker sandboxes (`@anvia/sandbox`)**: `DockerSandboxClient` (`hasImage`, `ensureImage`, `pullImage`, `createSandbox`, `resumeSandbox`, `listSandboxes`, `destroySandbox`), ephemeral workspaces or caller-owned Docker volumes, explicit networking, resource limits, command policies, stop/resume lifecycle, and `await using` disposal.
+- **Agent tools (`@anvia/sandbox`)**: `createSandboxTools` (with `sandboxToolRecovery` for `@anvia/durable`), `createDesktopTools` (with `desktopToolRecovery`), plus `SandboxError` and `isSandboxError` helpers.
+- **Remote sandboxes (`@anvia/sandbox/remote`, `@anvia/sandbox/daemon`)**: `RemoteSandboxHub` (with `onConnect`/`onDisconnect`/`onError`, `waitForConnection`, `capabilities`, `attach`, and `createRelayTicketStore`), `SandboxDaemon`, interactive terminals, TCP tunnels, virtual desktops, and Studio integration via `studioSandbox`.
+- **CLIs**: `anvia-sandbox create-image` (including `--from <dir|manifest>`) for generating Dockerfiles, and `anvia-sandbox-daemon` (`--check`, `--require`, `--version`) for remote sandbox containers.
 
 `await using` destroys the owned container and ephemeral volume at scope exit. Keep the scope open while agents use its tools. Command policies filter executable names; they do not restrict what an allowed interpreter can execute.
 
-File writes reject symlinks in the destination and all parent path components with `invalid_path`,
-checking before directory creation and before copying. These checks require `sh` in the image and
-are separate from the copy; they do not provide atomic protection against concurrent link swaps.
+File writes reject symlinks in the destination and all parent path components with `invalid_path`, checking before directory creation and before copying. These checks require `sh` in the image and are separate from the copy; they do not provide atomic protection against concurrent link swaps.
 
 ## Shell command lines
 
-`exec_command` and `start_process` use `/bin/bash -c` for natural command lines when `/bin/bash`
-is executable, falling back to `sh -c` when it is absent. Availability is cached per live sandbox
-runtime handle. Explicit `command` plus `args` remains exact argv; use
-`{ command: "sh", args: ["-c", script] }` to retain the previous POSIX shell behavior.
+`exec_command` and `start_process` use `/bin/bash -c` for natural command lines when `/bin/bash` is executable, falling back to `sh -c` when it is absent. Availability is cached per live sandbox runtime handle. Explicit `command` plus `args` remains exact argv; use `{ command: "sh", args: ["-c", script] }` to retain POSIX shell behavior.
 
-Allow policies must permit the selected executable (`/bin/bash` or `sh`) and set
-`allowShellInterpreters: true`. Allowing only `sh` does not implicitly authorize Bash.
-Block-mode policies continue to reject natural command lines. See the usage guide for details.
+Allow policies must permit the selected executable (`/bin/bash` or `sh`) and set `allowShellInterpreters: true`. Allowing only `sh` does not implicitly authorize Bash. Block-mode policies continue to reject natural command lines. See the usage guide for details.
 
 ## Learn more
 

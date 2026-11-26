@@ -126,10 +126,11 @@ describe("sandbox image builder", () => {
     }
     expect(dockerfile).toContain("'python3'");
     expect(dockerfile).toContain("'@anvia/sandbox@1.4.0' 'node-pty@^1.1.0'");
-    expect(dockerfile).toContain("USER sandbox");
     expect(dockerfile).toContain(
-      'CMD ["/opt/anvia-daemon/node_modules/.bin/anvia-sandbox-daemon"]',
+      "ln -sf /opt/anvia-daemon/node_modules/.bin/anvia-sandbox-daemon /usr/local/bin/anvia-sandbox-daemon",
     );
+    expect(dockerfile).toContain("USER sandbox");
+    expect(dockerfile).toContain('CMD ["anvia-sandbox-daemon"]');
     expect(dockerfile).not.toContain("sleep 3600");
   });
 

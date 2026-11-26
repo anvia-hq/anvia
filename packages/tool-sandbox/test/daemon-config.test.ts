@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { desktopOptionsFromEnv } from "../src/daemon-config";
+import {
+  desktopOptionsFromEnv,
+  parseDaemonCliArgs,
+  tunnelOptionsFromEnv,
+} from "../src/daemon-config";
 
 describe("desktopOptionsFromEnv", () => {
   it("leaves the daemon's defaults alone when nothing is set", () => {
@@ -52,5 +56,63 @@ describe("desktopOptionsFromEnv", () => {
     ["ANVIA_SANDBOX_DESKTOP_VNC_PORT", "abc"],
   ])("rejects %s=%s", (name, raw) => {
     expect(() => desktopOptionsFromEnv({ [name]: raw })).toThrow(name);
+  });
+});
+
+describe("tunnelOptionsFromEnv", () => {
+  it("leaves defaults alone when nothing is set", () => {
+    expect(tunnelOptionsFromEnv({})).toBeUndefined();
+    expect(tunnelOptionsFromEnv({ ANVIA_SANDBOX_TUNNEL_ALLOWED_PORTS: "  " })).toBeUndefined();
+  });
+
+  it("turns tunnels off with ANVIA_SANDBOX_TUNNEL=0", () => {
+    expect(
+      tunnelOptionsFromEnv({
+        ANVIA_SANDBOX_TUNNEL: "0",
+        ANVIA_SANDBOX_TUNNEL_ALLOWED_PORTS: "3000",
+      }),
+    ).toBe(false);
+  });
+
+  it("parses and deduplicates allowed ports", () => {
+    expect(
+      tunnelOptionsFromEnv({ ANVIA_SANDBOX_TUNNEL_ALLOWED_PORTS: "3000, 5900, 3000" }),
+    ).toEqual({ allowedPorts: [3000, 5900] });
+  });
+
+  it.each(["0", "70000", "abc", ","])("rejects malformed port list %s", (raw) => {
+    expect(() => tunnelOptionsFromEnv({ ANVIA_SANDBOX_TUNNEL_ALLOWED_PORTS: raw })).toThrow(
+      "ANVIA_SANDBOX_TUNNEL_ALLOWED_PORTS",
+    );
+  });
+});
+
+describe("parseDaemonCliArgs", () => {
+  it("parses valid options", () => {
+    expect(parseDaemonCliArgs([])).toEqual({
+      help: false,
+      version: false,
+      check: false,
+      require: [],
+    });
+    expect(parseDaemonCliArgs(["--version"])).toMatchObject({ version: true });
+    expect(parseDaemonCliArgs(["--check", "--require=desktop,terminal"])).toEqual({
+      help: false,
+      version: false,
+      check: true,
+      require: ["desktop", "terminal"],
+    });
+    expect(parseDaemonCliArgs(["--check", "--require", "desktop"])).toMatchObject({
+      check: true,
+      require: ["desktop"],
+    });
+  });
+
+  it("rejects unknown options and --require without --check", () => {
+    expect(() => parseDaemonCliArgs(["--check", "--requier=desktop"])).toThrow("Unknown option");
+    expect(() => parseDaemonCliArgs(["--require=desktop"])).toThrow("--check");
+    expect(() => parseDaemonCliArgs(["--check", "--require=unknown"])).toThrow(
+      /terminal or desktop/,
+    );
   });
 });

@@ -326,6 +326,7 @@ function renderDockerfile(
       "",
       `RUN npm install --prefix ${desktopDaemonDirectory} --omit=dev --no-audit --no-fund \\`,
       `  ${shellQuote(`@anvia/sandbox@${generatorVersion}`)} ${shellQuote(`node-pty@${desktopNodePtyVersion}`)} \\`,
+      `  && ln -sf ${desktopDaemonDirectory}/node_modules/.bin/anvia-sandbox-daemon /usr/local/bin/anvia-sandbox-daemon \\`,
       "  && npm cache clean --force",
     );
   }
@@ -344,7 +345,7 @@ function renderDockerfile(
       "ENV ANVIA_SANDBOX_WORKDIR=/workspace \\",
       "    ANVIA_SANDBOX_STATE_DIR=/home/sandbox/.anvia-sandbox",
       "ENTRYPOINT []",
-      `CMD ["${desktopDaemonDirectory}/node_modules/.bin/anvia-sandbox-daemon"]`,
+      'CMD ["anvia-sandbox-daemon"]',
     );
     return lines.join("\n");
   }

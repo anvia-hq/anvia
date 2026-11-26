@@ -17,6 +17,7 @@ import {
 
 interface CliOptions {
   command?: string;
+  from?: string;
   name?: string;
   tag?: string;
   output?: string;
@@ -32,6 +33,7 @@ interface CliOptions {
   dryRun: boolean;
   force: boolean;
   help: boolean;
+  version: boolean;
 }
 
 export interface SandboxImageCliIo {
@@ -123,6 +125,11 @@ export async function runCli(
     return 1;
   }
 
+  if (options.version) {
+    io.log(dependencies.packageVersion ?? (await readPackageVersion()));
+    return 0;
+  }
+
   if (options.help || options.command === undefined) {
     io.log(helpText());
     return 0;
@@ -135,50 +142,59 @@ export async function runCli(
   }
 
   try {
-    const shouldPrompt =
-      options.name === undefined ||
-      (options.runtimes.length === 0 &&
-        options.features.length === 0 &&
-        options.npm.length === 0 &&
-        options.uv.length === 0);
+    let input: SandboxImageInput;
+    let defaultOutput: string | undefined;
 
-    if (shouldPrompt) {
-      const isTTY = dependencies.isTTY ?? (process.stdin.isTTY && process.stdout.isTTY);
+    if (options.from !== undefined) {
+      const loaded = await loadManifestFromPath(path.resolve(cwd, options.from));
+      defaultOutput = loaded.directory;
+      input = mergeManifestWithFlags(loaded.manifest, options);
+    } else {
+      const shouldPrompt =
+        options.name === undefined ||
+        (options.runtimes.length === 0 &&
+          options.features.length === 0 &&
+          options.npm.length === 0 &&
+          options.uv.length === 0);
 
-      if (!isTTY) {
-        throw new Error(
-          "Non-interactive create-image requires --name and at least one --runtime or --feature.",
-        );
+      if (shouldPrompt) {
+        const isTTY = dependencies.isTTY ?? (process.stdin.isTTY && process.stdout.isTTY);
+
+        if (!isTTY) {
+          throw new Error(
+            "Non-interactive create-image requires --name and at least one --runtime or --feature (or --from <dir|manifest>).",
+          );
+        }
+
+        const prompt = dependencies.prompt ?? promptForImage;
+        const result = await prompt(options);
+
+        if (result === undefined) return 130;
+
+        options = applyPromptResult(options, result);
       }
 
-      const prompt = dependencies.prompt ?? promptForImage;
-      const result = await prompt(options);
+      input = {
+        name: required(options.name, "Image name is required."),
+        runtimes: options.runtimes,
+        features: options.features,
+        packages: {
+          apt: options.apt,
+          npm: options.npm,
+          uv: options.uv,
+        },
+        versions: options.versions,
+      };
 
-      if (result === undefined) return 130;
-
-      options = applyPromptResult(options, result);
+      if (options.tag !== undefined) input.tag = options.tag;
     }
-
-    const input: SandboxImageInput = {
-      name: required(options.name, "Image name is required."),
-      runtimes: options.runtimes,
-      features: options.features,
-      packages: {
-        apt: options.apt,
-        npm: options.npm,
-        uv: options.uv,
-      },
-      versions: options.versions,
-    };
-
-    if (options.tag !== undefined) input.tag = options.tag;
 
     const spec = resolveSandboxImageSpec(input);
     const packageVersion = dependencies.packageVersion ?? (await readPackageVersion());
     const context = renderSandboxImageContext(spec, packageVersion);
     const outputPath = path.resolve(
       cwd,
-      options.output ?? path.join(".anvia", "sandbox-images", spec.name),
+      options.output ?? defaultOutput ?? path.join(".anvia", "sandbox-images", spec.name),
     );
     const displayPath = relativeDisplayPath(cwd, outputPath);
     const unpinned = unpinnedSandboxImagePackages(spec);
@@ -250,27 +266,43 @@ async function promptForImage(
     options.npm.length === 0 &&
     options.uv.length === 0
   ) {
-    const capabilities = await prompts.multiselect<SandboxImageRuntime | SandboxImageFeature>({
-      message: "Select runtimes and features",
-      required: true,
-      options: [
-        { value: "node", label: "Node.js", hint: "Includes npm and pnpm" },
-        { value: "bun", label: "Bun", hint: "Includes bun and bunx" },
-        { value: "python", label: "Python", hint: "Includes uv and uvx" },
-        { value: "artifacts", label: "Reporting and artifacts", hint: "Adds Python automatically" },
-        {
-          value: "desktop",
-          label: "Remote desktop",
-          hint: "Adds Node.js; runs the daemon for the remote runtime",
-        },
-        { value: "playwright", label: "Playwright + Chromium", hint: "Adds Node.js automatically" },
-      ],
-    });
+    while (true) {
+      const capabilities = await prompts.multiselect<SandboxImageRuntime | SandboxImageFeature>({
+        message: "Select runtimes and features",
+        required: true,
+        options: [
+          { value: "node", label: "Node.js", hint: "Includes npm and pnpm" },
+          { value: "bun", label: "Bun", hint: "Includes bun and bunx" },
+          { value: "python", label: "Python", hint: "Includes uv and uvx" },
+          {
+            value: "artifacts",
+            label: "Reporting and artifacts",
+            hint: "Adds Python automatically",
+          },
+          {
+            value: "desktop",
+            label: "Remote desktop",
+            hint: "Adds Node.js; runs the daemon for the remote runtime",
+          },
+          {
+            value: "playwright",
+            label: "Playwright + Chromium",
+            hint: "Adds Node.js automatically",
+          },
+        ],
+      });
 
-    if (prompts.isCancel(capabilities)) return cancelPrompt(prompts);
+      if (prompts.isCancel(capabilities)) return cancelPrompt(prompts);
 
-    runtimes = capabilities.filter(isRuntime);
-    features = capabilities.filter(isFeature);
+      if (capabilities.includes("desktop") && capabilities.includes("playwright")) {
+        prompts.log.warn("The desktop feature cannot be combined with playwright. Choose one.");
+        continue;
+      }
+
+      runtimes = capabilities.filter(isRuntime);
+      features = capabilities.filter(isFeature);
+      break;
+    }
   }
 
   const aptResult = await selectCommonPackages(
@@ -282,21 +314,33 @@ async function promptForImage(
 
   if (aptResult === undefined) return cancelPrompt(prompts);
 
-  const npmResult = await selectCommonPackages(
-    prompts,
-    "Select common npm libraries (optional)",
-    commonNpmPackages,
-    options.npm,
-  );
+  const hasJsRuntime =
+    runtimes.includes("node") ||
+    runtimes.includes("bun") ||
+    features.includes("playwright") ||
+    features.includes("desktop") ||
+    options.npm.length > 0;
+  const npmResult = hasJsRuntime
+    ? await selectCommonPackages(
+        prompts,
+        "Select common npm libraries (optional)",
+        commonNpmPackages,
+        options.npm,
+      )
+    : [...options.npm];
 
   if (npmResult === undefined) return cancelPrompt(prompts);
 
-  const uvResult = await selectCommonPackages(
-    prompts,
-    "Select common Python libraries with uv (optional)",
-    commonUvPackages,
-    options.uv,
-  );
+  const hasPythonRuntime =
+    runtimes.includes("python") || features.includes("artifacts") || options.uv.length > 0;
+  const uvResult = hasPythonRuntime
+    ? await selectCommonPackages(
+        prompts,
+        "Select common Python libraries with uv (optional)",
+        commonUvPackages,
+        options.uv,
+      )
+    : [...options.uv];
 
   if (uvResult === undefined) return cancelPrompt(prompts);
 
@@ -512,9 +556,7 @@ function printUsageSnippet(tag: string, desktop: boolean, io: SandboxImageCliIo)
     io.log(`  docker run --rm -e ANVIA_CONTROL_URL=wss://hub.example.com/daemon \\`);
     io.log(`    -e ANVIA_SANDBOX_TOKEN=... ${tag}`);
     io.log(
-      "Check it first with: docker run --rm " +
-        tag +
-        " /opt/anvia-daemon/node_modules/.bin/anvia-sandbox-daemon --check --require=desktop",
+      `Check it first with: docker run --rm ${tag} anvia-sandbox-daemon --check --require=desktop`,
     );
     return;
   }
@@ -564,6 +606,7 @@ function parseArgs(argv: string[]): CliOptions {
     dryRun: false,
     force: false,
     help: false,
+    version: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -581,7 +624,16 @@ function parseArgs(argv: string[]): CliOptions {
     switch (flag) {
       case "-h":
       case "--help":
+        rejectInlineValue(flag, inlineValue);
         options.help = true;
+        break;
+      case "-v":
+      case "--version":
+        rejectInlineValue(flag, inlineValue);
+        options.version = true;
+        break;
+      case "--from":
+        options.from = value();
         break;
       case "--name":
         options.name = value();
@@ -733,11 +785,81 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown sandbox CLI error";
 }
 
+async function loadManifestFromPath(
+  sourcePath: string,
+): Promise<{ directory: string; manifest: SandboxImageManifest }> {
+  const stat = await safeLstat(sourcePath);
+
+  if (stat === undefined) throw new Error(`Manifest path does not exist: ${sourcePath}`);
+
+  if (stat.isSymbolicLink())
+    throw new Error(`Refusing to read manifest through symlink: ${sourcePath}`);
+
+  const directory = stat.isDirectory() ? sourcePath : path.dirname(sourcePath);
+  const manifestPath = stat.isDirectory()
+    ? path.join(sourcePath, "anvia-sandbox.json")
+    : sourcePath;
+  const manifestStat = await safeLstat(manifestPath);
+
+  if (manifestStat === undefined) {
+    throw new Error(`Manifest file not found: ${manifestPath}`);
+  }
+
+  if (manifestStat.isSymbolicLink() || !manifestStat.isFile()) {
+    throw new Error(`Invalid generated manifest: ${manifestPath}`);
+  }
+
+  let value: unknown;
+  try {
+    value = JSON.parse(await readFile(manifestPath, "utf8"));
+  } catch (error) {
+    throw new Error(`Unable to read generated manifest: ${manifestPath}`, { cause: error });
+  }
+
+  if (!isGeneratedManifest(value)) {
+    throw new Error(
+      `Output manifest is not recognized as an @anvia/sandbox manifest: ${manifestPath}`,
+    );
+  }
+
+  return { directory, manifest: value };
+}
+
+function mergeManifestWithFlags(
+  manifest: SandboxImageManifest,
+  options: CliOptions,
+): SandboxImageInput {
+  const manifestPackages =
+    typeof manifest.packages === "object" && manifest.packages !== null
+      ? manifest.packages
+      : undefined;
+  const input: SandboxImageInput = {
+    name: options.name ?? manifest.name,
+    runtimes: [...(manifest.runtimes ?? []), ...options.runtimes],
+    features: [...(manifest.features ?? []), ...options.features],
+    packages: {
+      apt: [...(manifestPackages?.apt ?? []), ...options.apt],
+      npm: [...(manifestPackages?.npm ?? []), ...options.npm],
+      uv: [...(manifestPackages?.uv ?? []), ...options.uv],
+    },
+    versions: {
+      ...manifest.versions,
+      ...options.versions,
+    },
+  };
+
+  if (options.tag !== undefined) input.tag = options.tag;
+  else if (typeof manifest.tag === "string" && manifest.tag.length > 0) input.tag = manifest.tag;
+
+  return input;
+}
+
 function helpText(): string {
   return `Usage:
   pnpm dlx @anvia/sandbox create-image [options]
 
 Options:
+  --from <dir|manifest>          Regenerate from an existing anvia-sandbox.json manifest
   --name <slug>                  Image profile name
   --runtime <node|bun|python>    Runtime to include; repeatable
   --feature <artifacts|desktop|playwright>
@@ -757,11 +879,13 @@ Options:
   --no-build                     Generate files without building
   --dry-run                      Print generated files without writing or building
   --force                        Regenerate a context previously created by this CLI
+  -v, --version                  Show package version
   -h, --help                     Show this help
 
 Examples:
   pnpm dlx @anvia/sandbox create-image
   pnpm dlx @anvia/sandbox create-image --name reports --feature artifacts
+  pnpm dlx @anvia/sandbox create-image --from .anvia/sandbox-images/reports --force
   pnpm dlx @anvia/sandbox create-image --name browser --runtime bun --feature playwright`;
 }
 

@@ -29,10 +29,14 @@ describe("anvia-sandbox CLI", () => {
     expect(isCliEntryPoint(moduleUrl.href, path.join(directory, "missing"))).toBe(false);
   });
 
-  it("prints help and rejects unknown input", async () => {
+  it("prints help, version, and rejects unknown input", async () => {
     const help = captureIo();
     await expect(runCli(["--help"], process.cwd(), help.io)).resolves.toBe(0);
     expect(help.logs.join("\n")).toContain("pnpm dlx @anvia/sandbox create-image");
+
+    const version = captureIo();
+    await expect(runCli(["--version"], process.cwd(), version.io, dependencies())).resolves.toBe(0);
+    expect(version.logs).toEqual(["0.5.0-test"]);
 
     const unknown = captureIo();
     await expect(runCli(["other"], process.cwd(), unknown.io)).resolves.toBe(1);
@@ -85,8 +89,42 @@ describe("anvia-sandbox CLI", () => {
     const logs = output.logs.join("\n");
     expect(code).toBe(0);
     expect(logs).toContain("ANVIA_CONTROL_URL");
-    expect(logs).toContain("--check --require=desktop");
+    expect(logs).toContain("anvia-sandbox-daemon --check --require=desktop");
+    expect(logs).not.toContain("/opt/anvia-daemon/node_modules/.bin/");
     expect(logs).not.toContain("DockerSandboxClient");
+  });
+
+  it("regenerates an image context directly from an edited manifest with --from", async () => {
+    const directory = await temporaryDirectory();
+    expect(
+      await runCli(
+        ["create-image", "--name", "reports", "--feature", "artifacts", "--no-build"],
+        directory,
+        captureIo().io,
+        dependencies(),
+      ),
+    ).toBe(0);
+
+    const contextPath = path.join(directory, ".anvia", "sandbox-images", "reports");
+    const manifestPath = path.join(contextPath, "anvia-sandbox.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      packages: { apt: string[]; npm: string[]; uv: string[] };
+    };
+    manifest.packages.apt.push("jq");
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+    expect(
+      await runCli(
+        ["create-image", "--from", contextPath, "--apt", "curl", "--no-build", "--force"],
+        directory,
+        captureIo().io,
+        dependencies(),
+      ),
+    ).toBe(0);
+
+    const dockerfile = await readFile(path.join(contextPath, "Dockerfile"), "utf8");
+    expect(dockerfile).toContain("'jq'");
+    expect(dockerfile).toContain("'curl'");
   });
 
   it("writes the context, builds it, and prints the constructor snippet", async () => {

@@ -1,8 +1,108 @@
 import type { DesktopResolution, SandboxDaemonDesktopOptions } from "./daemon/desktop/options";
+import type { SandboxDaemonTunnelOptions } from "./daemon/tunnels";
+import { type CheckableFeature, checkableFeatures } from "./daemon-check";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
 const backends = ["auto", "xvnc", "xvfb"] as const;
+
+export interface DaemonCliArgs {
+  help: boolean;
+  version: boolean;
+  check: boolean;
+  require: CheckableFeature[];
+}
+
+/**
+ * Parse arguments passed to `anvia-sandbox-daemon`, rejecting unknown flags or `--require`
+ * without `--check` rather than silently ignoring typos.
+ */
+export function parseDaemonCliArgs(argv: readonly string[]): DaemonCliArgs {
+  let help = false;
+  let version = false;
+  let check = false;
+  let hasRequire = false;
+  const rawRequire: string[] = [];
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index] ?? "";
+
+    if (arg === "-h" || arg === "--help") {
+      help = true;
+    } else if (arg === "-v" || arg === "--version") {
+      version = true;
+    } else if (arg === "--check") {
+      check = true;
+    } else if (arg === "--require") {
+      hasRequire = true;
+      const next = argv[++index];
+
+      if (next === undefined || next.startsWith("-")) {
+        throw new Error("--require requires a comma-separated list of features.");
+      }
+
+      rawRequire.push(...next.split(","));
+    } else if (arg.startsWith("--require=")) {
+      hasRequire = true;
+      rawRequire.push(...arg.slice("--require=".length).split(","));
+    } else {
+      throw new Error(`Unknown option: ${arg}`);
+    }
+  }
+
+  if (hasRequire && !check && !help && !version) {
+    throw new Error("--require can only be used with --check.");
+  }
+
+  const unique = [...new Set(rawRequire.map((name) => name.trim()).filter((name) => name !== ""))];
+
+  if (hasRequire && unique.length === 0) {
+    throw new Error(`--require expects ${checkableFeatures.join(" or ")}.`);
+  }
+
+  for (const name of unique) {
+    if (!(checkableFeatures as readonly string[]).includes(name)) {
+      throw new Error(`--require expects ${checkableFeatures.join(" or ")}, not "${name}".`);
+    }
+  }
+
+  return { help, version, check, require: unique as CheckableFeature[] };
+}
+
+/**
+ * The tunnel options the daemon CLI reads from the environment. Returns `false` when tunnels are
+ * switched off and `undefined` when nothing is set.
+ */
+export function tunnelOptionsFromEnv(env: Env): false | SandboxDaemonTunnelOptions | undefined {
+  if (value(env, "ANVIA_SANDBOX_TUNNEL") === "0") return false;
+
+  const rawPorts = value(env, "ANVIA_SANDBOX_TUNNEL_ALLOWED_PORTS");
+
+  if (rawPorts === undefined) return undefined;
+
+  const allowedPorts: number[] = [];
+  for (const part of rawPorts.split(",")) {
+    const trimmed = part.trim();
+
+    if (trimmed === "") continue;
+
+    const port = Number(trimmed);
+
+    if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+      throw new Error(
+        "ANVIA_SANDBOX_TUNNEL_ALLOWED_PORTS must be a comma-separated list of ports.",
+      );
+    }
+
+    if (!allowedPorts.includes(port)) allowedPorts.push(port);
+  }
+
+  if (allowedPorts.length === 0) {
+    throw new Error("ANVIA_SANDBOX_TUNNEL_ALLOWED_PORTS must include at least one port.");
+  }
+
+  return { allowedPorts };
+}
 
 /**
  * The desktop options the daemon CLI reads from the environment. Returns `false` when the desktop

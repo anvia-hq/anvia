@@ -1,8 +1,9 @@
 #!/usr/bin/env node
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { checkDaemon, requiredFeatures } from "./daemon-check";
-import { desktopOptionsFromEnv } from "./daemon-config";
+import { checkDaemon, type CheckableFeature } from "./daemon-check";
+import { desktopOptionsFromEnv, parseDaemonCliArgs, tunnelOptionsFromEnv } from "./daemon-config";
 import { SandboxDaemon, type SandboxDaemonOptions } from "./daemon/index";
 
 const usage = `anvia-sandbox-daemon
@@ -14,6 +15,7 @@ Options:
                            connecting. No hub URL or token needed.
   --require=<features>     With --check: exit 1 unless these are available (terminal, desktop,
                            comma-separated).
+  -v, --version            Show package version.
   -h, --help               Show this help.
 
 Environment:
@@ -22,6 +24,8 @@ Environment:
   ANVIA_SANDBOX_WORKDIR    Workspace directory (default: current directory)
   ANVIA_SANDBOX_STATE_DIR  Operation dedup table (default: <tmpdir>/anvia-sandbox-daemon)
   ANVIA_SANDBOX_TERMINAL   Set to 0 to turn interactive terminals off (default: on when node-pty loads)
+  ANVIA_SANDBOX_TUNNEL     Set to 0 to turn TCP tunnels off (default: on)
+  ANVIA_SANDBOX_TUNNEL_ALLOWED_PORTS     Comma-separated loopback ports tunnels may reach
   ANVIA_SANDBOX_DESKTOP    Set to 0 to turn the desktop off (default: on when its programs are installed)
   ANVIA_SANDBOX_DESKTOP_BACKEND          auto (default), xvnc, or xvfb
   ANVIA_SANDBOX_DESKTOP_RESOLUTION       Starting size, like 1440x900 (default 1280x800)
@@ -47,11 +51,21 @@ function integer(name: string): number | undefined {
   return value;
 }
 
-async function check(): Promise<void> {
-  const required = requiredFeatures(process.argv);
+async function readPackageVersion(): Promise<string> {
+  const packageJson = JSON.parse(
+    await readFile(new URL("../package.json", import.meta.url), "utf8"),
+  ) as { version?: unknown };
+  return typeof packageJson.version === "string" ? packageJson.version : "unknown";
+}
+
+async function check(required: readonly CheckableFeature[]): Promise<void> {
   const options: Parameters<typeof checkDaemon>[0] = {
     terminal: process.env.ANVIA_SANDBOX_TERMINAL === "0" ? false : {},
   };
+  const tunnel = tunnelOptionsFromEnv(process.env);
+
+  if (tunnel !== undefined) options.tunnel = tunnel;
+
   const desktop = desktopOptionsFromEnv(process.env);
 
   if (desktop !== undefined) options.desktop = desktop;
@@ -72,13 +86,33 @@ async function check(): Promise<void> {
 }
 
 function main(): void {
-  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+  let args;
+  try {
+    args = parseDaemonCliArgs(process.argv.slice(2));
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n\n${usage}`);
+    process.exitCode = 2;
+    return;
+  }
+
+  if (args.version) {
+    readPackageVersion().then(
+      (version) => process.stdout.write(`${version}\n`),
+      (error: unknown) => {
+        process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        process.exitCode = 2;
+      },
+    );
+    return;
+  }
+
+  if (args.help) {
     process.stdout.write(usage);
     return;
   }
 
-  if (process.argv.includes("--check")) {
-    check().catch((error: unknown) => {
+  if (args.check) {
+    check(args.require).catch((error: unknown) => {
       process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
       process.exitCode = 2;
     });
@@ -112,6 +146,10 @@ function main(): void {
     onLog: (level, message) =>
       process.stderr.write(`[anvia-sandbox-daemon] ${level}: ${message}\n`),
   };
+  const tunnel = tunnelOptionsFromEnv(process.env);
+
+  if (tunnel !== undefined) options.tunnel = tunnel;
+
   const desktop = desktopOptionsFromEnv(process.env);
 
   if (desktop !== undefined) options.desktop = desktop;

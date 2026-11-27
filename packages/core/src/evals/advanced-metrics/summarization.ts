@@ -66,6 +66,7 @@ export function summarization<
               prompt: `Source text:\n${input}`,
               abortSignal: args.signal,
               retries: config.retries,
+              temperature: config.temperature,
             })
           : Promise.resolve({
               data: { questions: suppliedQuestions },
@@ -79,6 +80,7 @@ export function summarization<
           prompt: `Source text:\n${input}`,
           abortSignal: args.signal,
           retries: config.retries,
+          temperature: config.temperature,
         }),
         runJudge({
           model: options.model,
@@ -88,6 +90,7 @@ export function summarization<
           prompt: `Summary:\n${actual}`,
           abortSignal: args.signal,
           retries: config.retries,
+          temperature: config.temperature,
         }),
         questionPromise,
       ]);
@@ -107,6 +110,7 @@ export function summarization<
         prompt: jsonPrompt({ questions, text: input }),
         abortSignal: args.signal,
         retries: config.retries,
+        temperature: config.temperature,
       });
       const summaryAnswerPromise = runJudge({
         model: options.model,
@@ -116,6 +120,7 @@ export function summarization<
         prompt: jsonPrompt({ questions, text: actual }),
         abortSignal: args.signal,
         retries: config.retries,
+        temperature: config.temperature,
       });
       const alignmentPromise: Promise<JudgeResult<{ verdicts: Verdict[] }>> =
         claims.length === 0
@@ -128,6 +133,7 @@ export function summarization<
               prompt: jsonPrompt({ truths, claims }),
               abortSignal: args.signal,
               retries: config.retries,
+              temperature: config.temperature,
             });
       const [sourceAnswerResult, summaryAnswerResult, alignmentResult] = await Promise.all([
         sourceAnswerPromise,
@@ -165,6 +171,7 @@ export function summarization<
         includeReason: config.includeReason,
         passed: willPassHigher(score, config.threshold, config.strictMode),
         retries: config.retries,
+        temperature: config.temperature,
         metric: "summarization",
         abortSignal: args.signal,
         score,

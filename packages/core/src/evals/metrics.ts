@@ -5,6 +5,7 @@ import { extract } from "../extractor";
 import { throwIfAborted } from "../internal/abort";
 import type { ZodSchema } from "../schema";
 import { evalValuesEqual, formatValue, readModelIdentity } from "./format";
+import { validateOptionalTemperature } from "./judge";
 import { EvalOutcome } from "./outcome";
 import { resolveActual, resolveActualText, resolveExpected, resolveJudgePrompt } from "./selectors";
 import type {
@@ -834,6 +835,7 @@ export type LlmJudgeOptions<Input, Output, SchemaOutput, Expected = unknown> = {
   comment?: ((value: SchemaOutput) => string | undefined) | undefined;
   instructions?: string | undefined;
   retries?: number | undefined;
+  temperature?: number | undefined;
   prompt?: ValueSelector<Input, Output, Expected, string> | undefined;
 };
 
@@ -847,6 +849,7 @@ export function llmJudge<
   options: LlmJudgeOptions<Input, Output, SchemaOutput, Expected> & { name?: Name | undefined },
 ): EvalMetric<Input, Output, SchemaOutput, Expected, Name> {
   const retries = extractionRetries(options.retries);
+  const temperature = validateOptionalTemperature(options.temperature);
   const modelIdentity = readModelIdentity(options.model);
   const metric: EvalMetric<Input, Output, SchemaOutput, Expected, Name> = {
     name: (options.name ?? "llm_judge") as Name,
@@ -864,6 +867,7 @@ export function llmJudge<
             options.instructions ??
             "Judge the eval case by the requested schema. Submit the judgment using the schema.",
           text: await resolveJudgePrompt(options.prompt, args),
+          temperature,
           retries,
         });
         throwIfAborted(args.signal);
@@ -918,6 +922,7 @@ export type LlmScoreOptions<Input, Output, Expected = unknown> = {
   criteria: string | string[];
   instructions?: string | undefined;
   retries?: number | undefined;
+  temperature?: number | undefined;
   prompt?: ValueSelector<Input, Output, Expected, string> | undefined;
 };
 
@@ -930,6 +935,7 @@ export function llmScore<Input, Output, Expected = unknown, const Name extends s
 
   const threshold = unitInterval(options.threshold, "llmScore threshold");
   const retries = extractionRetries(options.retries);
+  const temperature = validateOptionalTemperature(options.temperature);
   const modelIdentity = readModelIdentity(options.model);
   const metric: EvalMetric<Input, Output, LlmScoreMetricScore, Expected, Name> = {
     name: (options.name ?? "llm_score") as Name,
@@ -952,6 +958,7 @@ export function llmScore<Input, Output, Expected = unknown, const Name extends s
             options.instructions ??
             `Score the eval case against these criteria:\n${criteria}\n\nReturn a score between 0 and 1 and brief feedback.`,
           text: await resolveJudgePrompt(options.prompt, args),
+          temperature,
           retries,
         });
         throwIfAborted(args.signal);

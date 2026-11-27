@@ -1,5 +1,6 @@
 import { Agent } from "@anvia/core/agent";
 import {
+  CompletionCapabilityError,
   type CompletionModelStreamEvent,
   CompletionProviderOutputError,
   type CompletionRequest,
@@ -69,6 +70,7 @@ describe("Anthropic Messages mapping", () => {
       documentInput: true,
       outputSchema: false,
       reasoning: true,
+      temperature: false,
     });
   });
 
@@ -105,6 +107,61 @@ describe("Anthropic Messages mapping", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("rejects unsupported temperature before provider calls and omits it from serialized params", async () => {
+    const calls: unknown[] = [];
+    const model = new AnthropicCompletionModel(
+      {
+        messages: {
+          create: async (params: unknown) => {
+            calls.push(params);
+            return {};
+          },
+        },
+      } as never,
+      "claude-haiku-4-5",
+    );
+
+    const completionError = await model
+      .completion({
+        chatHistory: [Message.user("hello")],
+        documents: [],
+        tools: [],
+        temperature: 0,
+      })
+      .catch((error: unknown) => error);
+    expect(completionError).toBeInstanceOf(CompletionCapabilityError);
+    expect(completionError).toMatchObject({
+      message: "anthropic:claude-haiku-4-5 does not support temperature.",
+    });
+
+    const streamError = await collect(
+      model.streamCompletion({
+        chatHistory: [Message.user("hello")],
+        documents: [],
+        tools: [],
+        temperature: 0,
+      }),
+    ).catch((error: unknown) => error);
+    expect(streamError).toBeInstanceOf(CompletionCapabilityError);
+    expect(calls).toHaveLength(0);
+
+    const params = toAnthropicMessagesParams("claude-sonnet-4-6", {
+      chatHistory: [Message.user("hello")],
+      documents: [],
+      tools: [],
+      temperature: 0,
+    });
+    expect(Object.hasOwn(params, "temperature")).toBe(false);
+    expect(
+      model.traceRequest({
+        chatHistory: [Message.user("hello")],
+        documents: [],
+        tools: [],
+        temperature: 0,
+      }),
+    ).not.toHaveProperty("temperature");
+  });
+
   it("maps internal tools and tool results to Anthropic params", () => {
     const request: CompletionRequest = {
       chatHistory: [
@@ -123,7 +180,6 @@ describe("Anthropic Messages mapping", () => {
         },
       ],
       maxTokens: 256,
-      temperature: 0.2,
       toolChoice: "auto",
     };
 

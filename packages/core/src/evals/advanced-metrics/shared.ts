@@ -3,7 +3,7 @@ import type { CompletionModel, JsonObject, JsonValue, Usage } from "../../comple
 import { isJsonValue, Usage as UsageValue } from "../../completion";
 import { throwIfAborted } from "../../internal/abort";
 import { formatValue, readModelIdentity } from "../format";
-import { evaluationMetadata, runJudge } from "../judge";
+import { evaluationMetadata, runJudge, validateOptionalTemperature } from "../judge";
 import { EvalOutcome, type EvalOutcome as EvalOutcomeType } from "../outcome";
 import type {
   EvalMetric,
@@ -59,6 +59,7 @@ export type LlmEvalOptions<Input, Output, Expected = unknown> = {
   strictMode?: boolean | undefined;
   includeReason?: IncludeReasonMode | undefined;
   retries?: number | undefined;
+  temperature?: number | undefined;
   input?: ValueSelector<Input, Output, Expected, string> | undefined;
   actual?: ValueSelector<Input, Output, Expected, string> | undefined;
 };
@@ -69,6 +70,7 @@ export type MetricConfig<Name extends string = string> = {
   strictMode: boolean;
   includeReason: IncludeReasonMode;
   retries: number;
+  temperature?: number | undefined;
   required: boolean;
   model?: EvalModelIdentity | undefined;
 };
@@ -123,10 +125,12 @@ export function metricConfig<const Name extends string>(
     strictMode?: boolean | undefined;
     includeReason?: IncludeReasonMode | undefined;
     retries?: number | undefined;
+    temperature?: number | undefined;
     required?: boolean | undefined;
   },
   defaultName: string,
 ): MetricConfig<Name> {
+  const temperature = validateOptionalTemperature(options.temperature);
   const config: MetricConfig<Name> = {
     name: (options.name ?? defaultName) as Name,
     threshold: validateThreshold(options.threshold ?? 0.5),
@@ -135,6 +139,10 @@ export function metricConfig<const Name extends string>(
     retries: validateRetries(options.retries ?? 0),
     required: options.required ?? true,
   };
+
+  if (temperature !== undefined) {
+    config.temperature = temperature;
+  }
 
   const model = readModelIdentity(options.model);
 
@@ -230,6 +238,7 @@ export async function maybeReason(args: {
   includeReason: IncludeReasonMode;
   passed?: boolean | undefined;
   retries: number;
+  temperature?: number | undefined;
   metric: string;
   score: number;
   evidence: JsonObject;
@@ -248,6 +257,7 @@ export async function maybeReason(args: {
     prompt: jsonPrompt({ score: args.score, evidence: args.evidence }),
     abortSignal: args.abortSignal,
     retries: args.retries,
+    temperature: args.temperature,
   });
   return { reason: result.data.reason, usage: result.usage };
 }
@@ -303,6 +313,8 @@ export function validateThreshold(value: number): number {
 
   return value;
 }
+
+export { validateOptionalTemperature };
 
 export function validateRetries(value: number): number {
   if (!Number.isInteger(value) || value < 0) {

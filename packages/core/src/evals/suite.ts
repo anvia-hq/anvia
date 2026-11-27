@@ -35,7 +35,7 @@ export type DefinedEvalSuite<
   RunEvalSuiteOptions<EvalCasesInput<Cases>, Output, EvalCasesExpected<Cases>, Metrics>,
   "caseIds" | "cases" | "target" | "metrics"
 > & {
-  cases: Cases & EvalCasesForMetrics<NoInfer<Cases>, NoInfer<Metrics>>;
+  cases: Cases & NoInfer<EvalCasesForMetrics<Cases, Metrics>>;
   caseIds?: readonly Cases[number]["id"][] | undefined;
   target: EvalTarget<EvalCasesInput<Cases>, Output, EvalCasesExpected<Cases>>;
   metrics: Metrics;

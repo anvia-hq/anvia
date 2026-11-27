@@ -4,10 +4,16 @@ import {
   AssistantContent,
   abstention,
   answerRelevancy,
+  assertEvalPassed,
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
+  createJudgeMetrics,
+  EvalAssertionError,
+  EvalOutcome,
+  ExtractionError,
   faithfulness,
+  formatEvalResult,
   gEval,
   hallucination,
   jsonCorrectness,
@@ -640,6 +646,223 @@ describe("advanced eval metrics", () => {
       expect.objectContaining({ outcome: "pass", score: "correct_grounded_answer" }),
     ]);
     expect(result.usage.evaluation.totalTokens).toBe(8);
+  });
+
+  it("omits temperature by default in judge metrics so models rejecting temperature succeed", async () => {
+    class NoTemperatureJudgeModel implements CompletionModel {
+      readonly provider = "anthropic";
+      readonly modelId = "claude-haiku-4-5";
+      readonly capabilities = {
+        streaming: true,
+        tools: true,
+        toolChoice: true,
+        imageInput: true,
+        documentInput: true,
+        outputSchema: false,
+        reasoning: true,
+        temperature: false,
+      };
+      readonly requests: CompletionRequest[] = [];
+
+      constructor(private readonly responses: CompletionResponse[]) {}
+
+      async completion(request: CompletionRequest): Promise<CompletionResponse> {
+        if (request.temperature !== undefined) {
+          throw Object.assign(
+            new Error("400 invalid_request_error: temperature: Extra inputs are not permitted"),
+            { name: "BadRequestError", status: 400 },
+          );
+        }
+
+        this.requests.push(request);
+        const next = this.responses.shift();
+
+        if (next === undefined) throw new Error("No queued judge response");
+
+        return next;
+      }
+    }
+
+    const relevancyModel = new NoTemperatureJudgeModel([
+      judgeResponse({ statements: ["Refunds last 30 days."] }),
+      judgeResponse({ verdicts: [{ verdict: "yes", reason: "answers the question" }] }),
+      judgeResponse({ reason: "Directly answers the question." }),
+    ]);
+    const faithfulnessModel = new NoTemperatureJudgeModel([
+      judgeResponse({ facts: ["Refunds last 30 days."] }),
+      judgeResponse({ facts: ["Refunds last 30 days."] }),
+      judgeResponse({ verdicts: [{ verdict: "yes", reason: "supported" }] }),
+    ]);
+    const hallucinationModel = new NoTemperatureJudgeModel([
+      judgeResponse({ verdicts: [{ verdict: "yes", reason: "aligned" }] }),
+    ]);
+
+    const result = await runEvalSuite({
+      name: "no-temperature-judges",
+      cases: [
+        {
+          id: "refund",
+          input: "What is the refund window?",
+          context: ["Refunds last 30 days."],
+          retrievalContext: ["Refunds last 30 days."],
+        },
+      ],
+      target: () => "Refunds last 30 days.",
+      metrics: [
+        answerRelevancy({ model: relevancyModel, threshold: 0.8 }),
+        faithfulness({ model: faithfulnessModel, threshold: 0.8, includeReason: false }),
+        hallucination({ model: hallucinationModel, threshold: 0.2, includeReason: false }),
+      ],
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.metrics.passed).toBe(3);
+    expect(result.metrics.invalid).toBe(0);
+
+    for (const req of [
+      ...relevancyModel.requests,
+      ...faithfulnessModel.requests,
+      ...hallucinationModel.requests,
+    ]) {
+      expect(req.temperature).toBeUndefined();
+      expect(Object.hasOwn(req, "temperature")).toBe(false);
+    }
+
+    const explicitTempModel = new QueueJudgeModel([
+      judgeResponse({ statements: ["Refunds last 30 days."] }),
+      judgeResponse({ verdicts: [{ verdict: "yes", reason: "relevant" }] }),
+    ]);
+    const explicit = await runEvalSuite({
+      name: "explicit-temperature",
+      cases: [{ id: "refund", input: "Refund?" }],
+      target: () => "Refunds last 30 days.",
+      metrics: [
+        answerRelevancy({
+          model: explicitTempModel,
+          temperature: 0,
+          includeReason: false,
+        }),
+      ],
+    });
+    expect(explicit.passed).toBe(true);
+    expect(explicitTempModel.requests.every((req) => req.temperature === 0)).toBe(true);
+
+    const unsupportedTempModel = new NoTemperatureJudgeModel([]);
+    const unsupported = await runEvalSuite({
+      name: "unsupported-temperature",
+      cases: [{ id: "refund", input: "Refund?" }],
+      target: () => "Refunds last 30 days.",
+      metrics: [
+        answerRelevancy({
+          model: unsupportedTempModel,
+          temperature: 0,
+          includeReason: false,
+        }),
+      ],
+    });
+    expect(unsupportedTempModel.requests).toHaveLength(0);
+    expect(unsupported.results[0]?.metrics[0]?.outcome).toMatchObject({
+      outcome: "invalid",
+      kind: "configuration",
+      reason: "anthropic:claude-haiku-4-5 does not support temperature.",
+    });
+
+    const factoryModel = new QueueJudgeModel([
+      judgeResponse({ statements: ["Refunds last 30 days."] }),
+      judgeResponse({ verdicts: [{ verdict: "yes", reason: "relevant" }] }),
+      judgeResponse({ score: 0.9, feedback: "Accurate." }),
+    ]);
+    const judge = createJudgeMetrics({
+      model: factoryModel,
+      temperature: 0,
+      includeReason: false,
+    });
+    const factoryResult = await runEvalSuite({
+      name: "judge-factory-temperature",
+      cases: [{ id: "refund", input: "Refund?" }],
+      target: () => "Refunds last 30 days.",
+      metrics: [judge.answerRelevancy(), judge.llmScore({ threshold: 0.8, criteria: "Accurate." })],
+    });
+    expect(factoryResult.passed).toBe(true);
+    expect(factoryModel.requests).toHaveLength(3);
+    expect(factoryModel.requests.every((req) => req.temperature === 0)).toBe(true);
+
+    expect(() => answerRelevancy({ model: factoryModel, temperature: Number.NaN })).toThrow(
+      RangeError,
+    );
+    expect(() =>
+      answerRelevancy({ model: factoryModel, temperature: Number.POSITIVE_INFINITY }),
+    ).toThrow(RangeError);
+  });
+
+  it("surfaces provider error cause, avoids retrying 400 errors, and classifies kind as provider", async () => {
+    const providerError = Object.assign(
+      new Error("400 invalid_request_error: temperature: Extra inputs are not permitted"),
+      { name: "BadRequestError", status: 400 },
+    );
+    let calls = 0;
+    const failingModel: CompletionModel = {
+      provider: "anthropic",
+      modelId: "claude-sonnet-4-6",
+      capabilities: {
+        streaming: true,
+        tools: true,
+        toolChoice: true,
+        imageInput: true,
+        documentInput: true,
+        outputSchema: false,
+        reasoning: true,
+      },
+      async completion() {
+        calls += 1;
+        throw providerError;
+      },
+    };
+
+    const result = await runEvalSuite({
+      name: "provider-400",
+      cases: [{ id: "c1", input: "Question" }],
+      target: () => "Answer",
+      metrics: [answerRelevancy({ model: failingModel, retries: 2 })],
+    });
+
+    expect(calls).toBe(1);
+    const outcome = result.results[0]?.metrics[0]?.outcome;
+    expect(outcome).toMatchObject({
+      outcome: "invalid",
+      kind: "provider",
+      reason: `No data extracted: ${providerError.message}`,
+    });
+
+    const formatted = formatEvalResult(result);
+    expect(formatted).toContain(providerError.message);
+    expect(() => assertEvalPassed(result)).toThrow(EvalAssertionError);
+    expect(() => assertEvalPassed(result)).toThrow(/Extra inputs are not permitted/);
+
+    const wrappedWithoutCauseInMessage = new ExtractionError("No data extracted", {
+      cause: providerError,
+      attempts: 1,
+      usage: Usage.empty(),
+    });
+    expect(EvalOutcome.fromError(wrappedWithoutCauseInMessage)).toMatchObject({
+      outcome: "invalid",
+      kind: "provider",
+      reason: `No data extracted: ${providerError.message}`,
+    });
+
+    const wrappedWithCauseInMessage = new ExtractionError(
+      `No data extracted: ${providerError.message}`,
+      {
+        cause: providerError,
+        attempts: 1,
+        usage: Usage.empty(),
+      },
+    );
+    expect(EvalOutcome.fromError(wrappedWithCauseInMessage)).toMatchObject({
+      outcome: "invalid",
+      kind: "provider",
+      reason: `No data extracted: ${providerError.message}`,
+    });
   });
 });
 

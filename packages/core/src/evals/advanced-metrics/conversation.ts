@@ -27,6 +27,7 @@ type ConversationEvalOptions<Input, Output, Expected = unknown> = {
   strictMode?: boolean | undefined;
   includeReason?: IncludeReasonMode | undefined;
   retries?: number | undefined;
+  temperature?: number | undefined;
   concurrency?: number | undefined;
   turns?: ValueSelector<Input, Output, Expected, ConversationSource> | undefined;
 };
@@ -66,6 +67,7 @@ export function turnRelevancy<
           prompt: jsonPrompt({ turns: window }),
           abortSignal: args.signal,
           retries: config.retries,
+          temperature: config.temperature,
         }),
       );
       const verdicts = verdictResults.map((result, index) => ({
@@ -81,6 +83,7 @@ export function turnRelevancy<
         includeReason: config.includeReason,
         passed: willPassHigher(score, config.threshold, config.strictMode),
         retries: config.retries,
+        temperature: config.temperature,
         metric: "turn relevancy",
         abortSignal: args.signal,
         score,
@@ -135,6 +138,7 @@ export function knowledgeRetention<
           }),
           abortSignal: args.signal,
           retries: config.retries,
+          temperature: config.temperature,
         }),
       );
       const knowledge = userTurns.map((entry, index) => ({
@@ -160,6 +164,7 @@ export function knowledgeRetention<
           prompt: jsonPrompt({ knownFacts: entry.facts, assistantReply: entry.turn.content }),
           abortSignal: args.signal,
           retries: config.retries,
+          temperature: config.temperature,
         }),
       );
       const verdicts = assistantChecks.map((entry, index) => ({
@@ -176,6 +181,7 @@ export function knowledgeRetention<
         includeReason: config.includeReason,
         passed: willPassHigher(score, config.threshold, config.strictMode),
         retries: config.retries,
+        temperature: config.temperature,
         metric: "knowledge retention",
         abortSignal: args.signal,
         score,

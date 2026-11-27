@@ -407,11 +407,11 @@ type EvalCaseFieldsForMetrics<Metrics extends readonly EvalMetric<never, never>[
 export type EvalCasesForMetrics<
   Cases extends readonly EvalCaseLike[],
   Metrics extends readonly EvalMetric<never, never>[],
-> = {
-  readonly [Index in keyof Cases]: Cases[Index] extends EvalCaseLike
-    ? Cases[Index] & EvalCaseFieldsForMetrics<Metrics>
-    : Cases[Index];
-};
+> = Cases extends readonly [...infer Items extends readonly EvalCaseLike[]]
+  ? {
+      readonly [Index in keyof Items]: Items[Index] & EvalCaseFieldsForMetrics<Metrics>;
+    }
+  : readonly (Cases[number] & EvalCaseFieldsForMetrics<Metrics>)[];
 
 export type EvalShard = {
   index: number;

@@ -16,6 +16,7 @@ export async function runJudge<T>(args: {
   instructions: string;
   prompt: string;
   retries: number;
+  temperature?: number | undefined;
   abortSignal?: AbortSignal | undefined;
 }): Promise<JudgeResult<T>> {
   throwIfAborted(args.abortSignal);
@@ -25,11 +26,21 @@ export async function runJudge<T>(args: {
     outputSchema: args.schema,
     instructions: args.instructions,
     text: args.prompt,
-    temperature: 0,
+    temperature: args.temperature,
     retries: args.retries <= 0 ? undefined : { maxAttempts: Math.trunc(args.retries) + 1 },
   });
   throwIfAborted(args.abortSignal);
   return { data: result.output, usage: result.usage };
+}
+
+export function validateOptionalTemperature(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new RangeError("Eval metric temperature must be a finite number.");
+  }
+
+  return value;
 }
 
 export function addUsage(...values: Usage[]): Usage {

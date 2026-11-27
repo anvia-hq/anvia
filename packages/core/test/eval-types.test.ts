@@ -135,11 +135,18 @@ describe("eval type safety", () => {
       typeof casesWithoutExpected,
       readonly [typeof implicitContains]
     >;
+    type NoInferRequiredCases = EvalCasesForMetrics<
+      NoInfer<typeof casesWithoutExpected>,
+      readonly [typeof implicitContains]
+    >;
 
     if (Date.now() === Number.NEGATIVE_INFINITY) {
       // @ts-expect-error the mapped case type requires expected.
       const requiredCases: RequiredCases = casesWithoutExpected;
       void requiredCases;
+      // @ts-expect-error NoInfer-wrapped case tuples still preserve homomorphic tuple mapping.
+      const noInferRequiredCases: NoInferRequiredCases = casesWithoutExpected;
+      void noInferRequiredCases;
 
       defineEvalSuite({
         name: "missing expected",
@@ -205,6 +212,31 @@ describe("eval type safety", () => {
           faithfulness({ model, retrievalContext: ["Coverage lasts 30 days."] }),
         ],
       });
+
+      const multiCases = defineEvalCases([
+        {
+          id: "c1",
+          input: "Q1",
+          expected: "A1",
+          context: ["Ctx 1"],
+          retrievalContext: ["Doc 1"],
+        },
+        {
+          id: "c2",
+          input: "Q2",
+          expected: "A2",
+          context: ["Ctx 2"],
+          retrievalContext: ["Doc 2"],
+        },
+      ]);
+      const multiSuite = defineEvalSuite({
+        name: "multi-case-suite",
+        cases: multiCases,
+        caseIds: ["c1", "c2"],
+        target: (input) => input,
+        metrics: [exactMatch(), hallucination({ model }), faithfulness({ model })],
+      });
+      void runEvalSuite(multiSuite);
     }
   });
 

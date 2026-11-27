@@ -223,6 +223,17 @@ describe("completion model capabilities", () => {
         outputSchema: { type: "object" },
       }),
     ).toThrow("test:test-model does not support output schemas.");
+
+    expect(() =>
+      assertCompletionRequestSupported(new QueueModel({ temperature: false }), {
+        ...baseRequest,
+        temperature: 0,
+      }),
+    ).toThrow("test:test-model does not support temperature.");
+
+    expect(() =>
+      assertCompletionRequestSupported(new QueueModel({ temperature: false }), baseRequest),
+    ).not.toThrow();
   });
 
   it("does not treat static context or text content as file document input", () => {

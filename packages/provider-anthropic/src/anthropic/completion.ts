@@ -101,6 +101,7 @@ export class AnthropicCompletionModel<
     documentInput: true,
     outputSchema: false,
     reasoning: true,
+    temperature: false,
   };
 
   constructor(

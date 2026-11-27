@@ -30,6 +30,7 @@ import {
   shouldIncludeReason,
   truthsExtractionInstructions,
   validateOptionalNonNegativeInteger,
+  validateOptionalTemperature,
   validateRetries,
   type Verdict,
   verdictsSchema,
@@ -88,6 +89,7 @@ export function hallucination<
         prompt: jsonPrompt({ actual, context }),
         abortSignal: args.signal,
         retries: config.retries,
+        temperature: config.temperature,
       });
       const verdicts = verdictResult.data.verdicts;
       assertSameLength("hallucination verdicts", context, verdicts);
@@ -97,6 +99,7 @@ export function hallucination<
         includeReason: config.includeReason,
         passed: willPassLower(score, config.threshold, config.strictMode),
         retries: config.retries,
+        temperature: config.temperature,
         metric: "hallucination",
         abortSignal: args.signal,
         score,
@@ -167,6 +170,7 @@ export function faithfulness<Input, Output, Expected = unknown, const Name exten
           prompt: jsonPrompt({ retrievalContext }),
           abortSignal: args.signal,
           retries: config.retries,
+          temperature: config.temperature,
         }),
         runJudge({
           model: options.model,
@@ -176,6 +180,7 @@ export function faithfulness<Input, Output, Expected = unknown, const Name exten
           prompt: `Answer:\n${actual}`,
           abortSignal: args.signal,
           retries: config.retries,
+          temperature: config.temperature,
         }),
       ]);
       const truths = limitValues(truthResult.data.facts, truthsExtractionLimit);
@@ -192,6 +197,7 @@ export function faithfulness<Input, Output, Expected = unknown, const Name exten
           prompt: jsonPrompt({ truths, claims }),
           abortSignal: args.signal,
           retries: config.retries,
+          temperature: config.temperature,
         });
         verdicts = verdictResult.data.verdicts;
         assertSameLength("faithfulness verdicts", claims, verdicts);
@@ -210,6 +216,7 @@ export function faithfulness<Input, Output, Expected = unknown, const Name exten
         includeReason: config.includeReason,
         passed: willPassHigher(score, config.threshold, config.strictMode),
         retries: config.retries,
+        temperature: config.temperature,
         metric: "faithfulness",
         abortSignal: args.signal,
         score,
@@ -245,12 +252,14 @@ export type AbstentionOptions<Input, Output, Expected = unknown> = {
   actual?: ValueSelector<Input, Output, Expected, string> | undefined;
   includeReason?: IncludeReasonMode | undefined;
   retries?: number | undefined;
+  temperature?: number | undefined;
 };
 
 export function abstention<Input, Output, Expected = unknown, const Name extends string = string>(
   options: AbstentionOptions<Input, Output, Expected> & { name?: Name | undefined },
 ): EvalMetric<Input, Output, AbstentionCategory, Expected, Name> {
   const retries = validateRetries(options.retries ?? 0);
+  const temperature = validateOptionalTemperature(options.temperature);
   const includeReason = options.includeReason ?? true;
   const modelIdentity = readModelIdentity(options.model);
   const metric: EvalMetric<Input, Output, AbstentionCategory, Expected, Name> = {
@@ -283,6 +292,7 @@ export function abstention<Input, Output, Expected = unknown, const Name extends
             "Classify whether the answer abstains or gives a confident answer. For a confident answer, grounded is true only when every substantive factual claim is supported by the supplied context. For an abstention, set grounded to false. Return a concise evidence-based reason.",
           prompt: jsonPrompt({ actual, context }),
           retries,
+          temperature,
         });
         throwIfAborted(args.signal);
         const category = abstentionCategory(

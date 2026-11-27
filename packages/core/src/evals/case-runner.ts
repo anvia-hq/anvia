@@ -575,7 +575,7 @@ async function safeEvaluate<Input, Output, Expected>(
   if (signal.aborted) {
     return EvalOutcome.fromError(
       signal.reason,
-      signal.reason instanceof EvalTimeoutError ? "timeout" : "metric",
+      signal.reason instanceof EvalTimeoutError ? "timeout" : undefined,
     );
   }
 
@@ -587,6 +587,6 @@ async function safeEvaluate<Input, Output, Expected>(
       ),
     );
   } catch (error) {
-    return EvalOutcome.fromError(error, error instanceof EvalTimeoutError ? "timeout" : "metric");
+    return EvalOutcome.fromError(error, error instanceof EvalTimeoutError ? "timeout" : undefined);
   }
 }

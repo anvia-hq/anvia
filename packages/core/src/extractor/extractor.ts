@@ -11,7 +11,10 @@ import {
 } from "../completion/index";
 import { isAbortError } from "../internal/abort";
 import {
+  errorHttpStatusCode,
+  isRetryableHttpStatusCode,
   type ResolvedRetryOptions,
+  type RetryContext,
   type RetrySetting,
   resolveRetryOptions,
   retryDelayMs,
@@ -120,7 +123,7 @@ export async function extract<Output, Model extends CompletionModel>(
       });
 
       if (retryOptions === undefined) {
-        throw new ExtractionError("No data extracted", {
+        throw new ExtractionError(extractionErrorMessage(lastError), {
           cause: lastError,
           attempts: attempt,
           usage,
@@ -131,7 +134,7 @@ export async function extract<Output, Model extends CompletionModel>(
     }
   }
 
-  throw new ExtractionError("No data extracted", {
+  throw new ExtractionError(extractionErrorMessage(lastError), {
     cause: lastError,
     attempts: maxAttempts,
     usage,
@@ -161,8 +164,34 @@ function resolveExtractionRetries(
 
   return resolveRetryOptions({
     ...options,
-    shouldRetry: options.shouldRetry ?? (() => true),
+    shouldRetry: options.shouldRetry ?? defaultExtractionShouldRetry,
   });
+}
+
+function defaultExtractionShouldRetry(context: RetryContext): boolean {
+  if (isAbortError(context.error)) return false;
+
+  const statusCode = errorHttpStatusCode(context.error);
+
+  if (statusCode !== undefined && statusCode >= 400 && statusCode <= 499) {
+    return isRetryableHttpStatusCode(statusCode);
+  }
+
+  return true;
+}
+
+function extractionErrorMessage(cause: unknown): string {
+  let detail = "";
+
+  if (cause instanceof Error) {
+    detail = cause.message.trim();
+  } else if (typeof cause === "string") {
+    detail = cause.trim();
+  }
+
+  if (detail.length === 0) return "No data extracted";
+
+  return `No data extracted: ${detail}`;
 }
 
 function extractSubmittedData<Output>(

@@ -208,7 +208,65 @@ describe("extract", () => {
     }).catch((failure: unknown) => failure);
 
     expect(error).toBeInstanceOf(ExtractionError);
-    expect(error).toMatchObject({ attempts: 1, usage: { totalTokens: 2 } });
+    expect(error).toMatchObject({
+      attempts: 1,
+      usage: { totalTokens: 2 },
+      message: "No data extracted: The model did not call the submit tool",
+    });
+  });
+
+  it("does not retry non-retryable 4xx client errors and preserves the cause message", async () => {
+    for (const status of [400, 401, 403, 404, 422]) {
+      const apiError = Object.assign(
+        new Error(`${status} invalid_request_error: temperature: Extra inputs are not permitted`),
+        { name: "BadRequestError", status },
+      );
+      const model = new QueueModel([
+        apiError,
+        response([AssistantContent.toolCall("submit_2", "submit", { value: 2 })]),
+      ]);
+
+      const error = await extract({
+        model,
+        text: "one",
+        outputSchema: z.object({ value: z.number() }),
+        retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+      }).catch((failure: unknown) => failure);
+
+      expect(error).toBeInstanceOf(ExtractionError);
+      expect(error).toMatchObject({
+        attempts: 1,
+        cause: apiError,
+        message: `No data extracted: ${apiError.message}`,
+      });
+      expect(model.requests).toHaveLength(1);
+    }
+  });
+
+  it("retries retryable 429 and 5xx HTTP errors when configured", async () => {
+    const rateLimitError = Object.assign(new Error("429 rate limited"), {
+      name: "RateLimitError",
+      status: 429,
+    });
+    const serverError = Object.assign(new Error("503 service unavailable"), {
+      name: "InternalServerError",
+      status: 503,
+    });
+    const model = new QueueModel([
+      rateLimitError,
+      serverError,
+      response([AssistantContent.toolCall("submit_3", "submit", { value: 7 })]),
+    ]);
+
+    const result = await extract({
+      model,
+      text: "seven",
+      outputSchema: z.object({ value: z.number() }),
+      retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+    });
+
+    expect(result.output).toEqual({ value: 7 });
+    expect(model.requests).toHaveLength(3);
   });
 
   it("does not wrap capability or abort errors", async () => {

@@ -78,10 +78,6 @@ export function toAnthropicMessagesParams(
     params.tools = request.tools.map(toolDefinitionToAnthropic);
   }
 
-  if (request.temperature !== undefined) {
-    params.temperature = request.temperature;
-  }
-
   if (request.toolChoice !== undefined) {
     params.tool_choice = toolChoiceToAnthropic(request.toolChoice);
   }
@@ -104,7 +100,7 @@ export function anthropicRequestSummary(
     toolCount: request.tools.length,
     toolNames: request.tools.map((tool) => tool.name),
     hasSystem: hasSystemPrompt(params.system),
-    temperature: request.temperature,
+    temperature: typeof params.temperature === "number" ? params.temperature : undefined,
     maxTokens: request.maxTokens ?? numberFrom(params.max_tokens),
     toolChoice: toolChoiceSummary(request.toolChoice),
     providerOptionKeys: isPlainObject(request.providerOptions)

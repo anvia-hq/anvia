@@ -14,6 +14,7 @@ import {
   numericMetric,
   reasonSchema,
   shouldIncludeReason,
+  validateOptionalTemperature,
   validateRetries,
   validateThreshold,
   willPassHigher,
@@ -28,6 +29,7 @@ export type JsonCorrectnessOptions<Input, Output, SchemaOutput, Expected = unkno
   strictMode?: boolean | undefined;
   includeReason?: IncludeReasonMode | undefined;
   retries?: number | undefined;
+  temperature?: number | undefined;
   actual?: ValueSelector<Input, Output, Expected, string> | undefined;
 };
 
@@ -44,6 +46,7 @@ export function jsonCorrectness<
 ): EvalMetric<Input, Output, number, Expected, Name> {
   const threshold = validateThreshold(options.threshold ?? 0.5);
   const retries = validateRetries(options.retries ?? 0);
+  const temperature = validateOptionalTemperature(options.temperature);
   const includeReason = options.includeReason ?? true;
   const strictMode = options.strictMode ?? true;
   const modelIdentity = readModelIdentity(options.model);
@@ -101,6 +104,7 @@ export function jsonCorrectness<
               prompt: jsonPrompt({ actual, validationError }),
               abortSignal: args.signal,
               retries,
+              temperature,
             });
             comment = reasonResult.data.reason;
             usage = reasonResult.usage;

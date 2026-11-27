@@ -172,6 +172,7 @@ export function gEval<Input, Output, Expected = unknown, const Name extends stri
                 parameters: options.evaluationParams,
               }),
               retries: config.retries,
+              temperature: config.temperature,
               abortSignal: controller.signal,
             }),
           )
@@ -259,6 +260,7 @@ export function gEval<Input, Output, Expected = unknown, const Name extends stri
           parameters,
         }),
         retries: config.retries,
+        temperature: config.temperature,
       });
       const rawScore = scoreResult.data.score;
 

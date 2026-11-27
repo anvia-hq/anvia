@@ -39,6 +39,10 @@ export function assertCompletionRequestSupported(
     throw new CompletionCapabilityError(`${modelLabel} does not support output schemas.`);
   }
 
+  if (request.temperature !== undefined && capabilities.temperature === false) {
+    throw new CompletionCapabilityError(`${modelLabel} does not support temperature.`);
+  }
+
   if (!capabilities.imageInput && requestHasImageInput(request)) {
     throw new CompletionCapabilityError(`${modelLabel} does not support image input.`);
   }

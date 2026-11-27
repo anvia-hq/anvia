@@ -46,6 +46,7 @@ export function answerRelevancy<
         prompt: `Answer:\n${actual}`,
         abortSignal: args.signal,
         retries: config.retries,
+        temperature: config.temperature,
       });
       const statements = statementResult.data.statements;
       let verdicts: Verdict[] = [];
@@ -60,6 +61,7 @@ export function answerRelevancy<
           prompt: jsonPrompt({ input, statements }),
           abortSignal: args.signal,
           retries: config.retries,
+          temperature: config.temperature,
         });
         verdicts = verdictResult.data.verdicts;
         assertSameLength("answer relevancy verdicts", statements, verdicts);
@@ -76,6 +78,7 @@ export function answerRelevancy<
         includeReason: config.includeReason,
         passed: willPassHigher(score, config.threshold, config.strictMode),
         retries: config.retries,
+        temperature: config.temperature,
         metric: "answer relevancy",
         abortSignal: args.signal,
         score,
@@ -129,6 +132,7 @@ export function promptAlignment<
         prompt: jsonPrompt({ input, actual, instructions: options.promptInstructions }),
         abortSignal: args.signal,
         retries: config.retries,
+        temperature: config.temperature,
       });
       const verdicts = verdictResult.data.verdicts;
       assertSameLength("prompt alignment verdicts", options.promptInstructions, verdicts);
@@ -139,6 +143,7 @@ export function promptAlignment<
         includeReason: config.includeReason,
         passed: willPassHigher(score, config.threshold, config.strictMode),
         retries: config.retries,
+        temperature: config.temperature,
         metric: "prompt alignment",
         abortSignal: args.signal,
         score,

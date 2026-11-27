@@ -163,6 +163,7 @@ export type CompletionModelCapabilities = {
   outputSchema: boolean;
   reasoning: boolean;
   providerTools?: boolean;
+  temperature?: boolean;
 };
 
 /** A selectable model control exposed to applications (e.g. "reasoning effort"). */

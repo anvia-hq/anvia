@@ -96,6 +96,14 @@ export function retryDelayMs(options: ResolvedRetryOptions, failedAttempt: numbe
   return Math.random() * cappedDelay;
 }
 
+export function errorHttpStatusCode(error: unknown): number | undefined {
+  return firstStatusCode(errorChain(error));
+}
+
+export function isRetryableHttpStatusCode(statusCode: number): boolean {
+  return RETRYABLE_STATUS_CODES.has(statusCode) || (statusCode >= 500 && statusCode <= 599);
+}
+
 export function retryErrorAttributes(error: unknown): JsonObject {
   const errors = errorChain(error);
   const errorName = errors
@@ -218,7 +226,7 @@ function defaultShouldRetry(context: RetryContext): boolean {
   const statusCode = firstStatusCode(errors);
 
   if (statusCode !== undefined) {
-    return RETRYABLE_STATUS_CODES.has(statusCode) || (statusCode >= 500 && statusCode <= 599);
+    return isRetryableHttpStatusCode(statusCode);
   }
 
   return errors.some((error) => {

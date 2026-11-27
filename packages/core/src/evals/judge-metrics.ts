@@ -29,6 +29,7 @@ import type { EvalMetric, SelectorOrValue, ValueSelector } from "./types";
 export type JudgeMetricsDefaults = {
   model: CompletionModel;
   retries?: number | undefined;
+  temperature?: number | undefined;
   includeReason?: IncludeReasonMode | undefined;
   strictMode?: boolean | undefined;
   required?: boolean | undefined;
@@ -68,6 +69,8 @@ export function createJudgeMetrics(defaults: JudgeMetricsDefaults) {
 
     if (defaults.retries !== undefined) merged.retries = defaults.retries;
 
+    if (defaults.temperature !== undefined) merged.temperature = defaults.temperature;
+
     if (defaults.required !== undefined) merged.required = defaults.required;
 
     assignDefined(merged, options as Record<string, unknown>);
@@ -81,6 +84,8 @@ export function createJudgeMetrics(defaults: JudgeMetricsDefaults) {
     const merged: Record<string, unknown> = {};
 
     if (defaults.retries !== undefined) merged.retries = defaults.retries;
+
+    if (defaults.temperature !== undefined) merged.temperature = defaults.temperature;
 
     if (defaults.includeReason !== undefined) merged.includeReason = defaults.includeReason;
 
@@ -264,6 +269,8 @@ export function createJudgeMetrics(defaults: JudgeMetricsDefaults) {
       const merged: Record<string, unknown> = {};
 
       if (defaults.retries !== undefined) merged.retries = defaults.retries;
+
+      if (defaults.temperature !== undefined) merged.temperature = defaults.temperature;
 
       if (defaults.includeReason !== undefined) merged.includeReason = defaults.includeReason;
 

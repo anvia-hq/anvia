@@ -652,6 +652,28 @@ describe("generateCompletion", () => {
     expect(model.requests).toHaveLength(0);
   });
 
+  it("rejects forced tool choices when forcedToolChoice is false while allowing auto and none", async () => {
+    const model = new QueueModel({ forcedToolChoice: false });
+    const tools = [{ name: "submit", description: "Submit", parameters: { type: "object" } }];
+
+    for (const toolChoice of ["required", { type: "function", name: "submit" }] as const) {
+      await expect(
+        generateCompletion({
+          model,
+          prompt: "hello",
+          tools,
+          toolChoice,
+        }),
+      ).rejects.toThrow("test:test-model does not support forced tool choice.");
+    }
+
+    expect(model.requests).toHaveLength(0);
+
+    await generateCompletion({ model, prompt: "hello", tools, toolChoice: "auto" });
+    await generateCompletion({ model, prompt: "hello", tools, toolChoice: "none" });
+    expect(model.requests.map((req) => req.toolChoice)).toEqual(["auto", "none"]);
+  });
+
   it("rejects parsed completion when model text is invalid JSON", async () => {
     const model = new QueueModel({}, [AssistantContent.text("not json")]);
 

@@ -1,4 +1,6 @@
 import { Agent } from "@anvia/core/agent";
+import { extract } from "@anvia/core/extractor";
+import { z } from "zod";
 import {
   CompletionCapabilityError,
   type CompletionModelStreamEvent,
@@ -160,6 +162,70 @@ describe("Anthropic Messages mapping", () => {
         temperature: 0,
       }),
     ).not.toHaveProperty("temperature");
+  });
+
+  it("marks Claude 5.5 models as disallowing forced tool choice and works with extract()", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const model = new AnthropicCompletionModel(
+      {
+        messages: {
+          create: async (params: Record<string, unknown>) => {
+            calls.push(params);
+            return {
+              id: "msg_1",
+              type: "message",
+              role: "assistant",
+              model: "claude-opus-5-5",
+              stop_reason: "tool_use",
+              content: [
+                {
+                  type: "tool_use",
+                  id: "toolu_1",
+                  name: "submit",
+                  input: { score: 1, reason: "Accurate" },
+                },
+              ],
+              usage: { input_tokens: 12, output_tokens: 8 },
+            };
+          },
+        },
+      } as never,
+      "claude-opus-5-5",
+    );
+
+    expect(model.capabilities.forcedToolChoice).toBe(false);
+    expect(
+      new AnthropicCompletionModel({} as never, "claude-opus-5-5-20261101").capabilities
+        .forcedToolChoice,
+    ).toBe(false);
+    expect(
+      new AnthropicCompletionModel({} as never, "claude-sonnet-4-6").capabilities.forcedToolChoice,
+    ).toBeUndefined();
+
+    for (const toolChoice of ["required", { type: "function", name: "submit" }] as const) {
+      await expect(
+        model.completion({
+          chatHistory: [Message.user("grade this")],
+          documents: [],
+          tools: [{ name: "submit", description: "Submit", parameters: { type: "object" } }],
+          toolChoice,
+        }),
+      ).rejects.toMatchObject({
+        name: "CompletionCapabilityError",
+        message: "anthropic:claude-opus-5-5 does not support forced tool choice.",
+      });
+    }
+    expect(calls).toHaveLength(0);
+
+    const extracted = await extract({
+      model,
+      text: "Grade this output",
+      outputSchema: z.object({ score: z.number(), reason: z.string() }),
+    });
+
+    expect(extracted.output).toEqual({ score: 1, reason: "Accurate" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.tool_choice).toEqual({ type: "auto" });
   });
 
   it("maps internal tools and tool results to Anthropic params", () => {

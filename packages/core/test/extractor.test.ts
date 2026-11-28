@@ -97,6 +97,22 @@ describe("extract", () => {
     expect(model.requests[0]?.toolChoice).toBe("required");
   });
 
+  it("falls back to toolChoice auto when the model disallows forced tool choice", async () => {
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("submit_1", "submit", { score: 0.9 })]),
+    ]);
+    model.capabilities.forcedToolChoice = false;
+
+    const result = await extract({
+      model,
+      text: "Score this response",
+      outputSchema: z.object({ score: z.number() }),
+    });
+
+    expect(result.output).toEqual({ score: 0.9 });
+    expect(model.requests[0]?.toolChoice).toBe("auto");
+  });
+
   it("preserves schema inference, defaults, refinements, and transforms", async () => {
     const schema = z
       .object({

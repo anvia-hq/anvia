@@ -5,11 +5,19 @@ import type { WebSearchOptions, WebSearchToolName } from "./types";
 export {
   brave,
   exa,
+  firecrawl,
+  jina,
+  perplexity,
   searxng,
+  serper,
   tavily,
   type BraveProviderOptions,
   type ExaProviderOptions,
+  type FirecrawlProviderOptions,
+  type JinaProviderOptions,
+  type PerplexityProviderOptions,
   type SearxngProviderOptions,
+  type SerperProviderOptions,
   type TavilyProviderOptions,
 } from "./providers";
 export type {

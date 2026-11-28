@@ -1,5 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { brave, exa, searxng, tavily, webSearch } from "../src/tools/web-search";
+import {
+  brave,
+  exa,
+  firecrawl,
+  jina,
+  perplexity,
+  searxng,
+  serper,
+  tavily,
+  webSearch,
+} from "../src/tools/web-search";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -116,6 +126,58 @@ describe("webSearch toolkit", () => {
 
     const res = (await kit.tools[0]!.call({ query: "many" })) as { results: unknown[] };
     expect(res.results).toHaveLength(15);
+  });
+
+  it("supports Serper, Perplexity, Firecrawl, and Jina providers", async () => {
+    const serperFetch = vi.fn<typeof fetch>(async (url, init) => {
+      expect(String(url)).toBe("https://google.serper.dev/search");
+      expect((init?.headers as Record<string, string>)["x-api-key"]).toBe("serper-key");
+      return jsonResponse({
+        answerBox: { answer: "42" },
+        organic: [{ title: "Serper Hit", link: "https://serper.dev", snippet: "Fast Google API" }],
+      });
+    });
+    const serperRes = (await webSearch({
+      provider: serper({ apiKey: "serper-key", fetch: serperFetch }),
+    }).tools[0]!.call({ query: "meaning" })) as { answer?: string; results: unknown[] };
+    expect(serperRes.answer).toBe("42");
+    expect(serperRes.results).toHaveLength(1);
+
+    const pplxFetch = vi.fn<typeof fetch>(async (url, init) => {
+      expect(String(url)).toBe("https://api.perplexity.ai/search");
+      expect((init?.headers as Record<string, string>).authorization).toBe("Bearer pplx-key");
+      return jsonResponse({
+        results: [{ title: "Perplexity Hit", url: "https://perplexity.ai", snippet: "Grounded" }],
+      });
+    });
+    const pplxRes = (await webSearch({
+      provider: perplexity({ apiKey: "pplx-key", fetch: pplxFetch }),
+    }).tools[0]!.call({ query: "ai" })) as { results: unknown[] };
+    expect(pplxRes.results).toHaveLength(1);
+
+    const fcFetch = vi.fn<typeof fetch>(async (url, init) => {
+      expect(String(url)).toBe("https://api.firecrawl.dev/v1/search");
+      expect((init?.headers as Record<string, string>).authorization).toBe("Bearer fc-key");
+      return jsonResponse({
+        data: [{ title: "Firecrawl Hit", url: "https://firecrawl.dev", markdown: "# Clean" }],
+      });
+    });
+    const fcRes = (await webSearch({
+      provider: firecrawl({ apiKey: "fc-key", fetch: fcFetch }),
+    }).tools[0]!.call({ query: "crawl" })) as { results: { snippet: string }[] };
+    expect(fcRes.results[0]!.snippet).toBe("# Clean");
+
+    const jinaFetch = vi.fn<typeof fetch>(async (url, init) => {
+      expect(String(url)).toBe("https://s.jina.ai/?q=reader");
+      expect((init?.headers as Record<string, string>).authorization).toBe("Bearer jina-key");
+      return jsonResponse({
+        data: [{ title: "Jina Hit", url: "https://jina.ai", description: "Readable" }],
+      });
+    });
+    const jinaRes = (await webSearch({
+      provider: jina({ apiKey: "jina-key", fetch: jinaFetch }),
+    }).tools[0]!.call({ query: "reader" })) as { results: unknown[] };
+    expect(jinaRes.results).toHaveLength(1);
   });
 
   it("throws informative errors on HTTP failure", async () => {

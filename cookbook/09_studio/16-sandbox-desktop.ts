@@ -1,7 +1,7 @@
 import { Agent } from "@anvia/core/agent";
 import { OpenAIClient } from "@anvia/openai";
-import { createDesktopTools, createSandboxTools } from "@anvia/sandbox";
-import { RemoteSandboxHub, studioSandbox } from "@anvia/sandbox/remote";
+import { desktopToolkit, sandboxToolkit } from "@anvia/sandbox";
+import { RemoteSandboxHub } from "@anvia/sandbox/remote";
 import { Studio } from "@anvia/studio";
 
 const studioPort = Number(process.env.RUNNER_PORT ?? 4021);
@@ -20,14 +20,6 @@ const hub = new RemoteSandboxHub({
 });
 await hub.listen({ host: "0.0.0.0", port: hubPort, path: "/daemon" });
 
-const tools = [
-  ...createDesktopTools({ sandbox: hub.desktop(sandboxId) }),
-  ...createSandboxTools({
-    sandbox: hub.runtime(sandboxId, { workdir: "/workspace" }),
-    tools: ["exec_command", "read_file", "list_files"],
-  }),
-];
-
 const agent = new Agent({
   id: "desktop-operator",
   model: client.completionModel({ modelId: "gpt-5.6-luna", api: "responses" }),
@@ -38,16 +30,16 @@ const agent = new Agent({
     "If a desktop action fails because a person has taken control, wait and look instead of retrying.",
   ].join("\n"),
   maxTurns: 12,
-  tools,
+  tools: [
+    desktopToolkit({ sandbox: hub.desktop(sandboxId) }),
+    sandboxToolkit({
+      sandbox: hub.runtime(sandboxId, { workdir: "/workspace" }),
+      include: ["exec_command", "read_file", "list_files"],
+    }),
+  ],
 });
 
 const studio = new Studio([agent], {
-  sandboxes: [
-    studioSandbox(hub, sandboxId, {
-      agentIds: [agent.id],
-      toolNames: tools.map((tool) => tool.name),
-    }),
-  ],
   quickPrompts: {
     "desktop-operator": [
       "Take a screenshot and describe what is on the desktop.",

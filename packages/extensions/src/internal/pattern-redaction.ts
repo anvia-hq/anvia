@@ -7,9 +7,8 @@ type CompiledPattern = {
 
 export function compilePatterns(patterns: readonly RedactionPattern[]): CompiledPattern[] {
   return patterns.map((pattern) => {
-    const flags = pattern.regex.flags.includes("g")
-      ? pattern.regex.flags
-      : `${pattern.regex.flags}g`;
+    const baseFlags = pattern.regex.flags.replace(/y/g, "");
+    const flags = baseFlags.includes("g") ? baseFlags : `${baseFlags}g`;
     return {
       regex: new RegExp(pattern.regex.source, flags),
       validate: pattern.validate,

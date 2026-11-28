@@ -1,6 +1,6 @@
 import { Agent } from "@anvia/core/agent";
 import { OpenAIClient } from "@anvia/openai";
-import { createDockerSandboxTools, DockerSandboxClient } from "@anvia/sandbox";
+import { DockerSandboxClient, sandboxToolkit } from "@anvia/sandbox";
 import { Studio } from "@anvia/studio";
 
 const studioPort = Number(process.env.RUNNER_PORT ?? 4021);
@@ -12,9 +12,9 @@ const client = new OpenAIClient({
 });
 
 const sandboxClient = new DockerSandboxClient();
-await sandboxClient.pullImage({ image: "node:22-bookworm" });
 const sandbox = await sandboxClient.createSandbox({
   image: "node:22-bookworm",
+  pull: "if-missing",
   workspace: { type: "ephemeral" },
   network: { mode: "bridge", ports: [previewPort] },
   runtime: {
@@ -69,26 +69,6 @@ try {
     timeoutMs: 10_000,
   });
 
-  const tools = createDockerSandboxTools({
-    sandbox: sandbox.runtime,
-    tools: [
-      "exec_command",
-      "read_file",
-      "write_file",
-      "list_files",
-      "list_ports",
-      "list_processes",
-      "read_process_logs",
-    ],
-    exec: {
-      commands: { mode: "allow", values: ["node"] },
-      maxTimeoutMs: 30_000,
-    },
-    readFile: { maxBytes: 128_000 },
-    writeFile: { maxBytes: 128_000 },
-    process: { maxLogBytes: 64_000 },
-  });
-
   const model = client.completionModel({ modelId: "gpt-5.6-luna", api: "responses" });
   const agent = new Agent({
     id: "studio-sandbox-builder",
@@ -102,17 +82,31 @@ try {
       "After a change, verify the relevant file or command output and summarize what changed.",
     ].join("\n"),
     maxTurns: 8,
-    tools: [...tools],
+    tools: [
+      sandboxToolkit({
+        sandbox,
+        include: [
+          "exec_command",
+          "read_file",
+          "write_file",
+          "list_files",
+          "list_ports",
+          "list_processes",
+          "read_process_logs",
+        ],
+        exec: {
+          commands: { mode: "allow", values: ["node"] },
+          maxTimeoutMs: 30_000,
+        },
+        readFile: { maxBytes: 128_000 },
+        writeFile: { maxBytes: 128_000 },
+        process: { maxLogBytes: 64_000 },
+        studio: { disposeOnShutdown: true },
+      }),
+    ],
   });
 
   const studio = new Studio([agent], {
-    sandboxes: [
-      {
-        inspector: sandbox.inspector({ files: true, ports: true, processes: true }),
-        agentIds: ["studio-sandbox-builder"],
-        toolNames: tools.map((tool) => tool.name),
-      },
-    ],
     quickPrompts: {
       "studio-sandbox-builder": [
         "Inspect the sandbox workspace and explain how the preview server works.",
@@ -132,10 +126,6 @@ try {
   await studio.serve({
     port: studioPort,
     log: false,
-    onShutdown: async () => {
-      console.log(`Removing sandbox ${sandbox.id}...`);
-      await sandbox.destroy();
-    },
   });
 } catch (error) {
   await sandbox.destroy().catch(() => undefined);

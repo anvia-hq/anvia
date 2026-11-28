@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { DockerSandboxError } from "../errors";
-import type { SandboxRuntime } from "../types";
+import { createLocalStudioSandbox, type LocalStudioSandboxOptions } from "../studio-metadata";
+import type { DockerSandbox, SandboxPublishedPort, SandboxRuntime } from "../types";
 import type { SandboxDesktop } from "./desktop";
 import type { RemoteSandboxHub } from "./hub";
 import type { DesktopControl } from "./protocol";
 import { RfbClientFilter } from "./rfb-filter";
 import type { TunnelHandle } from "./tunnel";
+
+export type { LocalStudioSandboxOptions };
 
 export interface StudioSandboxOptions {
   /** Agents that use this sandbox, as Studio's `sandboxes[].agentIds`. */
@@ -24,14 +27,18 @@ export interface StudioSandbox {
     id: string;
     provider: string;
     workdir: string;
-    listFiles: SandboxRuntime["listFiles"];
-    readFile: SandboxRuntime["readFile"];
-    listProcesses: SandboxRuntime["listProcesses"];
-    readProcessLogs: SandboxRuntime["readProcessLogs"];
+    containerRuntime?: string;
+    publishedPorts?: readonly SandboxPublishedPort[];
+    listFiles?: SandboxRuntime["listFiles"];
+    readFile?: SandboxRuntime["readFile"];
+    listProcesses?: SandboxRuntime["listProcesses"];
+    readProcessLogs?: SandboxRuntime["readProcessLogs"];
   };
   agentIds?: readonly string[];
   toolNames?: readonly string[];
   views?: readonly StudioDesktopView[];
+  /** Optional cleanup invoked when Studio shuts down (only set when `disposeOnShutdown: true`). */
+  dispose?: () => Promise<void> | void;
 }
 
 export interface StudioDesktopView {
@@ -77,25 +84,52 @@ interface StudioViewControlLease {
 }
 
 /**
- * Everything Studio needs to show one remote sandbox: a read-only inspector (files, processes and
- * logs) and, unless turned off, a live desktop that a person can watch and take over. Studio and
- * the hub must run in the same process, because the desktop is streamed through the hub's own link.
+ * Everything Studio needs to show a sandbox: either a local `DockerSandbox` / `SandboxRuntime`
+ * inspector, or a remote sandbox on a `RemoteSandboxHub` (with an optional live desktop view).
  *
  * ```ts
+ * // Local Docker sandbox
+ * new Studio([agent], { sandboxes: [studioSandbox(sandbox, { agentIds: [agent.id] })] });
+ *
+ * // Remote sandbox on a hub
  * new Studio([agent], { sandboxes: [studioSandbox(hub, "sandbox-1", { agentIds: [agent.id] })] });
  * ```
- *
- * A person who takes control pauses the agent's desktop tools until they release it or stop
- * renewing; their input reaches the desktop only while they hold it.
  */
+export function studioSandbox(
+  sandbox: DockerSandbox | SandboxRuntime,
+  options?: LocalStudioSandboxOptions,
+): StudioSandbox;
 export function studioSandbox(
   hub: RemoteSandboxHub,
   sandboxId: string,
-  options: StudioSandboxOptions = {},
+  options?: StudioSandboxOptions,
+): StudioSandbox;
+export function studioSandbox(
+  sandboxOrHub: DockerSandbox | SandboxRuntime | RemoteSandboxHub,
+  sandboxIdOrOptions?: string | LocalStudioSandboxOptions,
+  remoteOptions: StudioSandboxOptions = {},
 ): StudioSandbox {
+  if (typeof sandboxIdOrOptions !== "string") {
+    if (
+      typeof sandboxOrHub === "object" &&
+      sandboxOrHub !== null &&
+      typeof (sandboxOrHub as { runtime?: unknown }).runtime === "function" &&
+      typeof (sandboxOrHub as { desktop?: unknown }).desktop === "function"
+    ) {
+      throw new TypeError("studioSandbox(hub, sandboxId) requires a sandboxId string.");
+    }
+
+    return createLocalStudioSandbox(
+      sandboxOrHub as DockerSandbox | SandboxRuntime,
+      sandboxIdOrOptions,
+    );
+  }
+
+  const hub = sandboxOrHub as RemoteSandboxHub;
+  const sandboxId = sandboxIdOrOptions;
   const runtime = hub.runtime(
     sandboxId,
-    options.workdir === undefined ? {} : { workdir: options.workdir },
+    remoteOptions.workdir === undefined ? {} : { workdir: remoteOptions.workdir },
   );
   const registration: StudioSandbox = {
     inspector: {
@@ -109,15 +143,15 @@ export function studioSandbox(
     },
   };
 
-  if (options.agentIds !== undefined) registration.agentIds = [...options.agentIds];
+  if (remoteOptions.agentIds !== undefined) registration.agentIds = [...remoteOptions.agentIds];
 
-  if (options.toolNames !== undefined) registration.toolNames = [...options.toolNames];
+  if (remoteOptions.toolNames !== undefined) registration.toolNames = [...remoteOptions.toolNames];
 
-  if (options.desktop !== false) {
+  if (remoteOptions.desktop !== false) {
     registration.views = [
       studioDesktopView(hub.desktop(sandboxId), {
-        id: options.desktop?.id ?? "desktop",
-        label: options.desktop?.label ?? "Desktop",
+        id: remoteOptions.desktop?.id ?? "desktop",
+        label: remoteOptions.desktop?.label ?? "Desktop",
       }),
     ];
   }

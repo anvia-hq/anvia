@@ -314,13 +314,26 @@ export class DockerSandboxClient {
     const ownsVolume = workspace.type === "ephemeral";
 
     await this.assertContainerDoesNotExist(containerName, options.abortSignal);
-    await this.assertImageExists(options.image, options.abortSignal);
 
     if (workspace.type === "docker-volume") {
       await this.assertVolumeExists(workspace.name, options.abortSignal);
     }
 
     await this.assertRuntimeAvailable(containerRuntime, options.abortSignal);
+
+    const pullPolicy = options.pull ?? "never";
+    const imageOptions: EnsureDockerImageOptions =
+      options.abortSignal === undefined
+        ? { image: options.image }
+        : { image: options.image, abortSignal: options.abortSignal };
+
+    if (pullPolicy === "always") {
+      await this.pullImage(imageOptions);
+    } else if (pullPolicy === "if-missing") {
+      await this.ensureImage(imageOptions);
+    } else {
+      await this.assertImageExists(options.image, options.abortSignal);
+    }
 
     let containerCreated = false;
     let volumeCreated = false;
@@ -1356,6 +1369,15 @@ function validateCreateOptions(options: CreateDockerSandboxOptions): void {
 
   assertNonEmptyString(options.image, "image");
 
+  if (
+    options.pull !== undefined &&
+    options.pull !== "never" &&
+    options.pull !== "if-missing" &&
+    options.pull !== "always"
+  ) {
+    throw new TypeError('pull must be "never", "if-missing", or "always".');
+  }
+
   if (options.id !== undefined) assertSandboxId(options.id);
 
   const workdir = options.workdir ?? defaultWorkdir;
@@ -1533,6 +1555,8 @@ function snapshotCreateOptions(options: CreateDockerSandboxOptions): CreateDocke
   };
 
   if (options.id !== undefined) snapshot = { ...snapshot, id: options.id };
+
+  if (options.pull !== undefined) snapshot = { ...snapshot, pull: options.pull };
 
   if (options.workdir !== undefined) snapshot = { ...snapshot, workdir: options.workdir };
 

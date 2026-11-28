@@ -8,14 +8,30 @@ export {
   type DockerSandboxErrorCode,
   type SandboxErrorCode,
 } from "./errors";
-export { createDockerSandboxTools, createSandboxTools, sandboxToolRecovery } from "./tools";
+export {
+  createDockerSandboxTools,
+  createSandboxTools,
+  sandboxToolkit,
+  sandboxToolRecovery,
+} from "./tools";
 export {
   createDesktopTools,
+  desktopToolkit,
   desktopToolRecovery,
   type CreateDesktopToolsOptions,
   type DesktopScreenshotPolicy,
+  type DesktopStudioDiscoveryOptions,
   type DesktopToolName,
+  type DesktopToolkitOptions,
 } from "./desktop-tools";
+export {
+  studioDesktopView,
+  studioSandbox,
+  type LocalStudioSandboxOptions,
+  type StudioDesktopView,
+  type StudioSandbox,
+  type StudioSandboxOptions,
+} from "./remote/studio";
 export type {
   DesktopAction,
   DesktopCallOptions,
@@ -30,6 +46,7 @@ export type {
   CreateDockerSandboxToolsOptions,
   CreateSandboxToolsOptions,
   DestroyDockerSandboxOptions,
+  DockerImagePullPolicy,
   DockerSandbox,
   DockerSandboxClientOptions,
   DockerSandboxCommandPolicy,
@@ -99,7 +116,9 @@ export type {
   SandboxRuntime,
   SandboxRuntimeLimits,
   SandboxStopProcessOptions,
+  SandboxStudioDiscoveryOptions,
   SandboxTextFilePage,
+  SandboxToolkitOptions,
   SandboxToolName,
   SandboxWaitForPortOptions,
   SandboxWriteFileOptions,

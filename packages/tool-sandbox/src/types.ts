@@ -1,4 +1,8 @@
+import type { ToolkitOptions } from "@anvia/core/tool";
+
 export type SandboxFileType = "file" | "directory" | "symlink" | "other";
+
+export type DockerImagePullPolicy = "never" | "if-missing" | "always";
 
 export type DockerSandboxWorkspace =
   | Readonly<{ type: "ephemeral" }>
@@ -44,6 +48,8 @@ export type DockerSandboxSecurity = Readonly<{
 export type CreateDockerSandboxOptions = Readonly<{
   id?: string;
   image: string;
+  /** Image pull policy before creating the container. Default `"never"` (requires image locally). */
+  pull?: DockerImagePullPolicy;
   workdir?: string;
   workspace: DockerSandboxWorkspace;
   network: DockerSandboxNetwork;
@@ -386,6 +392,17 @@ export type SandboxProcessToolPolicy = Readonly<{
   stopGracePeriodMs?: number;
 }>;
 
+export type SandboxStudioDiscoveryOptions = Readonly<{
+  /** Enable read-only file browsing in Studio. Default true. */
+  files?: boolean;
+  /** Enable published port inspection in Studio when supported. Default true. */
+  ports?: boolean;
+  /** Enable process and log inspection in Studio. Default true. */
+  processes?: boolean;
+  /** Destroy the owned DockerSandbox when Studio shuts down. Default false. */
+  disposeOnShutdown?: boolean;
+}>;
+
 export type CreateSandboxToolsOptions = Readonly<{
   sandbox: SandboxRuntime | DockerSandbox;
   tools?: readonly [SandboxToolName, ...SandboxToolName[]];
@@ -393,7 +410,20 @@ export type CreateSandboxToolsOptions = Readonly<{
   readFile?: SandboxReadFileToolPolicy;
   writeFile?: SandboxFileToolPolicy;
   process?: SandboxProcessToolPolicy;
+  /** Configure or disable (`false`) automatic Studio sandbox discovery metadata. */
+  studio?: false | SandboxStudioDiscoveryOptions;
 }>;
+
+export type SandboxToolkitOptions = ToolkitOptions<SandboxToolName> &
+  Readonly<{
+    sandbox: SandboxRuntime | DockerSandbox;
+    exec?: SandboxExecToolPolicy;
+    readFile?: SandboxReadFileToolPolicy;
+    writeFile?: SandboxFileToolPolicy;
+    process?: SandboxProcessToolPolicy;
+    /** Configure or disable (`false`) automatic Studio sandbox discovery metadata. */
+    studio?: false | SandboxStudioDiscoveryOptions;
+  }>;
 
 export type CreateDockerSandboxToolsOptions = Omit<CreateSandboxToolsOptions, "sandbox"> &
   Readonly<{ sandbox: DockerSandboxRuntime | DockerSandbox }>;

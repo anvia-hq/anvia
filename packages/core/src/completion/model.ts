@@ -158,6 +158,7 @@ export type CompletionModelCapabilities = {
   streaming: boolean;
   tools: boolean;
   toolChoice: boolean;
+  forcedToolChoice?: boolean;
   imageInput: boolean;
   documentInput: boolean;
   outputSchema: boolean;

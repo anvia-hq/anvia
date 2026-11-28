@@ -29,6 +29,7 @@ import { anthropicControlsForModel, type AnthropicControlsFor } from "./controls
 import {
   ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS,
   type AnthropicCompletionModelId,
+  anthropicSupportsForcedToolChoice,
 } from "./models";
 import {
   anthropicPromptCacheOptions,
@@ -93,16 +94,7 @@ export class AnthropicCompletionModel<
   Controls extends CompletionModelControls = CompletionModelControls,
 > implements StreamingCompletionModel<unknown, Controls> {
   readonly provider = "anthropic";
-  readonly capabilities: CompletionModelCapabilities = {
-    streaming: true,
-    tools: true,
-    toolChoice: true,
-    imageInput: true,
-    documentInput: true,
-    outputSchema: false,
-    reasoning: true,
-    temperature: false,
-  };
+  readonly capabilities: CompletionModelCapabilities;
 
   constructor(
     private readonly client: Anthropic | AnthropicVertex,
@@ -110,7 +102,24 @@ export class AnthropicCompletionModel<
     readonly contextLimits?: ModelContextLimits,
     readonly controls?: Controls,
     readonly promptCache?: AnthropicPromptCacheOptions,
-  ) {}
+  ) {
+    const capabilities: CompletionModelCapabilities = {
+      streaming: true,
+      tools: true,
+      toolChoice: true,
+      imageInput: true,
+      documentInput: true,
+      outputSchema: false,
+      reasoning: true,
+      temperature: false,
+    };
+
+    if (!anthropicSupportsForcedToolChoice(modelId)) {
+      capabilities.forcedToolChoice = false;
+    }
+
+    this.capabilities = capabilities;
+  }
 
   private modelInfo(): CompletionModelInfo | undefined {
     return this.contextLimits === undefined

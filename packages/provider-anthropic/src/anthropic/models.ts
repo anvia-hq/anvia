@@ -79,3 +79,19 @@ export const ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS = {
   "claude-sonnet-5": CONTEXT_1M_128K,
   "claude-sonnet-5-5": CONTEXT_1M_128K,
 } satisfies Readonly<Record<KnownAnthropicCompletionModelId, ModelContextLimits>>;
+
+const NO_FORCED_TOOL_CHOICE_MODELS = [
+  "claude-fable-5-1",
+  "claude-fable-5-2",
+  "claude-haiku-5-5",
+  "claude-mythos-5-1",
+  "claude-mythos-5-2",
+  "claude-opus-5-5",
+  "claude-sonnet-5-5",
+] as const;
+
+export function anthropicSupportsForcedToolChoice(modelId: string): boolean {
+  return !NO_FORCED_TOOL_CHOICE_MODELS.some(
+    (prefix) => modelId === prefix || modelId.startsWith(`${prefix}-`),
+  );
+}

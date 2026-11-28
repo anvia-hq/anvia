@@ -90,6 +90,8 @@ export async function extract<Output, Model extends CompletionModel>(
   let usage = Usage.empty();
   let lastError: unknown;
 
+  const toolChoice = options.model.capabilities.forcedToolChoice === false ? "auto" : "required";
+
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       const result = await generateCompletion({
@@ -100,7 +102,7 @@ export async function extract<Output, Model extends CompletionModel>(
         temperature: options.temperature,
         maxTokens: options.maxTokens,
         providerOptions: options.providerOptions,
-        toolChoice: "required",
+        toolChoice,
         retries: false,
         abortSignal: options.abortSignal,
       });

@@ -35,6 +35,14 @@ export function assertCompletionRequestSupported(
     throw new CompletionCapabilityError(`${modelLabel} does not support tool choice.`);
   }
 
+  if (
+    request.toolChoice !== undefined &&
+    isForcedToolChoice(request.toolChoice) &&
+    capabilities.forcedToolChoice === false
+  ) {
+    throw new CompletionCapabilityError(`${modelLabel} does not support forced tool choice.`);
+  }
+
   if (request.outputSchema !== undefined && !capabilities.outputSchema) {
     throw new CompletionCapabilityError(`${modelLabel} does not support output schemas.`);
   }
@@ -79,6 +87,10 @@ export function assertCompletionControlsSupported(
       );
     }
   }
+}
+
+function isForcedToolChoice(toolChoice: NonNullable<CompletionRequest["toolChoice"]>): boolean {
+  return toolChoice === "required" || typeof toolChoice === "object";
 }
 
 function requestHasImageInput(request: CompletionRequest): boolean {

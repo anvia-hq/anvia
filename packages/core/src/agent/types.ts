@@ -24,11 +24,12 @@ import type { SkillSet } from "../skills";
 import type { ToolIndex } from "../tool/dynamic-tools";
 import type { AgentMiddleware } from "./middleware";
 import type { AnyTool } from "../tool/tool";
+import type { Toolkit } from "../tool/toolkit";
 import type { ContextSource } from "./context-source";
-import type { AgentLifecycle } from "./lifecycle";
+import type { AgentLifecycle, AgentLifecycleInput } from "./lifecycle";
 import type { VectorContext } from "./vector-context";
 
-export type AgentToolInput = AnyTool | ProviderTool | ToolIndex;
+export type AgentToolInput = AnyTool | ProviderTool | ToolIndex | Toolkit;
 export type AgentContextInput<T = unknown> = Document | VectorContext<T> | ContextSource;
 
 type RawResponseOf<Model> =
@@ -55,7 +56,7 @@ export type AgentOptions<
   retries?: RetrySetting | undefined;
   toolChoice?: ToolChoice | undefined;
   maxTurns?: number | undefined;
-  lifecycle?: AgentLifecycle<Output, RawResponseOf<M>> | undefined;
+  lifecycle?: AgentLifecycleInput<Output, RawResponseOf<M>> | undefined;
   outputSchema?: ZodSchema<Output> | undefined;
   observability?: AgentObservabilityOptions | undefined;
   guardrails?: GuardrailPolicyInput | undefined;

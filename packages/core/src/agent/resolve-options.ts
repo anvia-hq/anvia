@@ -5,6 +5,8 @@ import { isMcpTool } from "../mcp";
 import { resolveMemoryOptions } from "../memory/options";
 import { isToolIndex, type ToolIndex } from "../tool/dynamic-tools";
 import type { AnyTool } from "../tool/tool";
+import { isToolkit } from "../tool/toolkit";
+import { normalizeAgentLifecycle } from "./lifecycle";
 import type { AgentMemory, AgentOptions, ResolvedAgentOptions } from "./types";
 
 const resolvedAgentOptions = Symbol("resolvedAgentOptions");
@@ -27,6 +29,7 @@ export function resolveAgentOptions<Output, M extends CompletionModel, ContextDo
   const toolsByName = new Map<string, AnyTool>();
   const providerTools: ProviderTool[] = [];
   const toolIndexes: ToolIndex[] = [];
+  const toolkitInstructions: string[] = [];
   for (const tool of options.tools ?? []) {
     assertProviderToolShape(tool);
 
@@ -36,6 +39,22 @@ export function resolveAgentOptions<Output, M extends CompletionModel, ContextDo
       toolIndexes.push(tool);
     } else if ((tool as { kind?: unknown }).kind === "tool-index") {
       throw new TypeError("Invalid tool index: search, tools, and a numeric topK are required.");
+    } else if (isToolkit(tool)) {
+      for (const kitTool of tool.tools) {
+        if (isMcpTool(kitTool)) {
+          throw new TypeError(
+            `MCP tool "${kitTool.name}" must be registered through Agent.mcpServers, not toolkit "${tool.name}".`,
+          );
+        }
+
+        addUniqueTool(toolsByName, kitTool, `toolkit "${tool.name}" tool`);
+      }
+
+      if (tool.instructions !== undefined && tool.instructions.trim().length > 0) {
+        toolkitInstructions.push(tool.instructions.trim());
+      }
+    } else if ((tool as { kind?: unknown }).kind === "toolkit") {
+      throw new TypeError("Invalid toolkit: name and tools array are required.");
     } else if (isMcpTool(tool)) {
       throw new TypeError(
         `MCP tool "${tool.name}" must be registered through Agent.mcpServers, not Agent.tools.`,
@@ -62,7 +81,7 @@ export function resolveAgentOptions<Output, M extends CompletionModel, ContextDo
     options.skills?.instructions !== undefined && options.skills.instructions.length > 0
       ? options.skills.instructions
       : undefined;
-  const instructions = [options.instructions, skillInstructions]
+  const instructions = [options.instructions, ...toolkitInstructions, skillInstructions]
     .filter((part): part is string => part !== undefined && part.length > 0)
     .join("\n\n");
 
@@ -85,7 +104,7 @@ export function resolveAgentOptions<Output, M extends CompletionModel, ContextDo
     toolIndexes,
     toolChoice: options.toolChoice,
     defaultMaxTurns: options.maxTurns,
-    lifecycle: options.lifecycle,
+    lifecycle: normalizeAgentLifecycle(options.lifecycle),
     outputSchema: options.outputSchema,
     observability: options.observability,
     guardrails:

@@ -33,6 +33,16 @@ export function attachPreparedToolOwner<T extends AnyTool>(tool: T, owner: objec
   return tool;
 }
 
+export function copyPreparedToolOwner<T extends AnyTool>(source: AnyTool, target: T): T {
+  const owner = (source as ToolWithPreparedOwner)[preparedToolOwnerSymbol];
+
+  if (owner !== undefined) {
+    attachPreparedToolOwner(target, owner);
+  }
+
+  return target;
+}
+
 export function preparedToolInput(
   context: ToolCallContext | undefined,
   owner: object,

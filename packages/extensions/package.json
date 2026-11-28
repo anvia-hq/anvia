@@ -1,6 +1,6 @@
 {
   "name": "@anvia/extensions",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Standard toolkits, guardrails, middlewares, and lifecycle hooks for Anvia agents.",
   "author": "anvia",
   "license": "MIT",

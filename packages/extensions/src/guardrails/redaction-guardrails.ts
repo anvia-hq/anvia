@@ -63,6 +63,28 @@ export const DEFAULT_SECRET_PATTERNS: readonly RedactionPattern[] = Object.freez
   DEFAULT_PATTERNS.filter((pattern) => SECRET_NAME_SET.has(pattern.name)),
 );
 
+export type CustomPatternGuardrailOptions = Omit<PatternGuardrailOptions, "patterns"> & {
+  /** Custom redaction/detection patterns to enforce (must be non-empty). */
+  patterns: readonly RedactionPattern[];
+};
+
+export function patternGuardrail(options: CustomPatternGuardrailOptions): GuardrailPolicy {
+  if (options.patterns.length === 0) {
+    throw new TypeError("patternGuardrail patterns must not be empty.");
+  }
+
+  return createPatternPolicy({
+    id: options.id ?? "extensions.pattern",
+    boundary: options.boundary ?? "both",
+    action: options.action ?? "block",
+    mode: options.mode ?? "enforce",
+    patterns: options.patterns,
+    replacement: options.replacement ?? "[redacted]",
+    reason: options.reason ?? "Restricted pattern detected",
+    message: options.message ?? "Content blocked because it matched a restricted pattern.",
+  });
+}
+
 export function piiGuardrail(options: PatternGuardrailOptions = {}): GuardrailPolicy {
   return createPatternPolicy({
     id: options.id ?? "extensions.pii",

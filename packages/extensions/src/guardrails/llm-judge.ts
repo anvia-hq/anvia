@@ -64,7 +64,8 @@ export function llmGuardrail(options: LlmGuardrailOptions): GuardrailPolicy {
       `Policy:\n${policyText}`,
     ].join("\n\n");
 
-    const prompt = `Evaluate this ${stage} content:\n<untrusted_content>${JSON.stringify(text)}</untrusted_content>`;
+    const escapedPayload = JSON.stringify(text).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
+    const prompt = `Evaluate this ${stage} content:\n<untrusted_content>${escapedPayload}</untrusted_content>`;
     const temperature =
       options.temperature ?? (options.model.capabilities.temperature !== false ? 0 : undefined);
 

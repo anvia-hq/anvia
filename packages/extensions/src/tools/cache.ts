@@ -6,6 +6,7 @@ import {
   type Toolkit,
   ToolOutput,
 } from "@anvia/core/tool";
+import { copyOwnSymbols } from "../internal/tool-wrapper";
 
 export type ToolCacheOptions = {
   /** Time-to-live for cached results in milliseconds. */
@@ -94,6 +95,8 @@ export function withToolCache<T extends AnyTool | Toolkit>(
       const parseInput = tool.parseInput.bind(tool);
       wrapped.parseInput = (args) => parseInput(args);
     }
+
+    copyOwnSymbols(tool, wrapped);
 
     return wrapped;
   };

@@ -26,8 +26,10 @@ jobs:
     steps:
       - uses: anvia-hq/hammer@8072b1d8c28bf50603f4e714aed8ba579f1e7738 # v1
         with:
-          client: anthropic
+          client: claude-agent-sdk
           model: claude-sonnet-5-5
-          api-key: ${{ secrets.MODEL_API_KEY }}
+          reasoning-effort: high
+          oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          hammer-api-key: ${{ secrets.HAMMER_API_KEY }}
           max_cost_usd: "1"
           fail_on_error: "false"

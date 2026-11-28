@@ -359,6 +359,10 @@ function studioOptionsFromTargets(
 
   if (options.maxBodyBytes !== undefined) runtimeOptions.maxBodyBytes = options.maxBodyBytes;
 
+  if (options.autoDiscoverSandboxes !== undefined) {
+    runtimeOptions.autoDiscoverSandboxes = options.autoDiscoverSandboxes;
+  }
+
   if (options.sandboxes !== undefined) {
     runtimeOptions.sandboxes = options.sandboxes.map((registration) => {
       let snapshot: StudioSandboxRegistration = { inspector: registration.inspector };
@@ -373,6 +377,10 @@ function studioOptionsFromTargets(
 
       if (registration.views !== undefined) {
         snapshot = { ...snapshot, views: [...registration.views] };
+      }
+
+      if (registration.dispose !== undefined) {
+        snapshot = { ...snapshot, dispose: registration.dispose };
       }
 
       return snapshot;
@@ -455,7 +463,9 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   const evalMap = new Map(options.evals.map((suite) => [suite.id ?? suite.name, suite]));
   const continuationRegistry = createStudioContinuationRegistry<PreparedAgentRun>();
   const runLifecycle = new StudioRunLifecycle();
-  const sandboxRegistry = createStudioSandboxRegistry(agents, options.sandboxes ?? []);
+  const sandboxRegistry = createStudioSandboxRegistry(agents, options.sandboxes ?? [], {
+    autoDiscover: options.autoDiscoverSandboxes ?? true,
+  });
   const memorySources = createStudioMemorySourceRegistry(agents, stores.sessions);
   const app = new HonoApp();
   const guardOptions: { allowedHosts?: readonly string[]; hostname?: string } = {};
@@ -623,7 +633,25 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     },
     async shutdown(shutdownOptions = {}) {
       beginClose();
-      await runLifecycle.drain(shutdownOptions.timeoutMs ?? 30_000);
+      const failures: unknown[] = [];
+
+      try {
+        await runLifecycle.drain(shutdownOptions.timeoutMs ?? 30_000);
+      } catch (error) {
+        failures.push(error);
+      }
+
+      try {
+        await sandboxRegistry.disposeAll();
+      } catch (error) {
+        failures.push(error);
+      }
+
+      if (failures.length === 1) throw failures[0];
+
+      if (failures.length > 1) {
+        throw new AggregateError(failures, "Failed to shut down Anvia Studio.");
+      }
     },
   };
 

@@ -34,6 +34,7 @@ export type StudioRuntimeOptions = {
   stores?: StudioStores;
   ui?: boolean | StudioUiOptions;
   sandboxes?: readonly StudioSandboxRegistration[];
+  autoDiscoverSandboxes?: boolean;
   graphs: StudioGraphRegistration[];
   /**
    * Extra Host header hostnames (and Origin hosts) trusted alongside the

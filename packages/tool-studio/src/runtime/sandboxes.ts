@@ -19,15 +19,22 @@ import { errorResponse } from "./http";
 const maxFileResponseBytes = 10 * 1024 * 1024;
 const defaultProcessLogBytes = 64 * 1024;
 const maxProcessLogBytes = 1024 * 1024;
+const studioSandboxMetadataSymbol = Symbol.for("anvia.studio.sandbox");
+
+type StudioSandboxToolMetadataLike = {
+  getStudioSandbox(): StudioSandboxRegistration;
+};
 
 export type StudioSandboxRegistryEntry = {
   inspector: StudioSandboxInspector;
   summary: StudioSandboxSummary;
   views: ReadonlyMap<string, StudioSandboxViewRegistration>;
+  dispose?: () => Promise<void> | void;
 };
 
 export class StudioSandboxRegistry {
   private readonly entries: Map<string, StudioSandboxRegistryEntry>;
+  private disposePromise: Promise<void> | undefined;
 
   constructor(entries: StudioSandboxRegistryEntry[]) {
     this.entries = new Map(entries.map((entry) => [entry.summary.ref, entry]));
@@ -44,16 +51,57 @@ export class StudioSandboxRegistry {
   get(ref: string): StudioSandboxRegistryEntry | undefined {
     return this.entries.get(ref);
   }
+
+  disposeAll(): Promise<void> {
+    this.disposePromise ??= this.runDisposers();
+    return this.disposePromise;
+  }
+
+  private async runDisposers(): Promise<void> {
+    const disposers = new Set<() => Promise<void> | void>();
+
+    for (const entry of this.entries.values()) {
+      if (entry.dispose !== undefined) {
+        disposers.add(entry.dispose);
+      }
+    }
+
+    const failures: unknown[] = [];
+
+    for (const dispose of disposers) {
+      try {
+        await dispose();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+
+    if (failures.length === 1) throw failures[0];
+
+    if (failures.length > 1) {
+      throw new AggregateError(failures, "Failed to dispose Studio sandboxes.");
+    }
+  }
 }
 
 export function createStudioSandboxRegistry(
   agents: StudioAgent[],
   registrations: readonly StudioSandboxRegistration[],
+  options: { autoDiscover?: boolean } = {},
 ): StudioSandboxRegistry {
   const agentIds = new Set(agents.map((agent) => agent.id));
+  const discoveredByRef =
+    options.autoDiscover === false
+      ? new Map<string, DiscoveredSandbox>()
+      : discoverAgentSandboxes(agents, agentIds);
   const refs = new Set<string>();
-  const entries = registrations.map((registration, index): StudioSandboxRegistryEntry => {
-    validateRegistration(registration, index, agentIds);
+  const entries: StudioSandboxRegistryEntry[] = [];
+
+  for (const [index, registration] of registrations.entries()) {
+    if (!isRecord(registration) || !isInspector(registration.inspector)) {
+      throw new TypeError(`sandboxes[${index}] must contain a valid inspector.`);
+    }
+
     const inspector = registration.inspector;
     const ref = sandboxRef(inspector.provider, inspector.id);
 
@@ -64,31 +112,280 @@ export function createStudioSandboxRegistry(
     }
 
     refs.add(ref);
-    const views = new Map((registration.views ?? []).map((view) => [view.id, view]));
-    return {
+    const discovered = discoveredByRef.get(ref);
+    discoveredByRef.delete(ref);
+
+    let effectiveAgentIds: readonly string[];
+
+    if (registration.agentIds !== undefined) {
+      effectiveAgentIds = registration.agentIds;
+    } else if (discovered !== undefined) {
+      effectiveAgentIds = [...discovered.agentIds];
+    } else {
+      effectiveAgentIds = [];
+    }
+
+    let effectiveToolNames: readonly string[];
+
+    if (registration.toolNames !== undefined) {
+      effectiveToolNames = registration.toolNames;
+    } else if (discovered !== undefined) {
+      effectiveToolNames = [...discovered.toolNames];
+    } else {
+      effectiveToolNames = [];
+    }
+
+    let effectiveViews: readonly StudioSandboxViewRegistration[] | undefined;
+
+    if (registration.views !== undefined) {
+      effectiveViews = registration.views;
+    } else if (discovered !== undefined && discovered.views.size > 0) {
+      effectiveViews = [...discovered.views.values()];
+    }
+
+    const effectiveDispose = registration.dispose ?? discovered?.dispose;
+    const mergedRegistration: {
+      inspector: StudioSandboxInspector;
+      agentIds: readonly string[];
+      toolNames: readonly string[];
+      views?: readonly StudioSandboxViewRegistration[];
+      dispose?: () => Promise<void> | void;
+    } = {
       inspector,
-      views,
-      summary: {
-        ref,
-        id: inspector.id,
-        provider: inspector.provider,
-        workdir: inspector.workdir,
-        agentIds: sortedUnique(registration.agentIds ?? []),
-        toolNames: sortedUnique(registration.toolNames ?? []),
-        views: [...views.values()]
-          .map((view) => ({ id: view.id, label: view.label, protocol: view.source.protocol }))
-          .sort((left, right) => left.id.localeCompare(right.id)),
-        capabilities: {
-          files: supportsFiles(inspector),
-          ports: supportsPorts(inspector),
-          processes: supportsProcesses(inspector),
-          views: views.size > 0,
-        },
-      },
+      agentIds: effectiveAgentIds,
+      toolNames: effectiveToolNames,
     };
-  });
+
+    if (effectiveViews !== undefined) mergedRegistration.views = effectiveViews;
+
+    if (effectiveDispose !== undefined) mergedRegistration.dispose = effectiveDispose;
+
+    validateRegistration(mergedRegistration, index, agentIds);
+    entries.push(
+      buildRegistryEntry({
+        ref,
+        inspector,
+        agentIds: sortedUnique(effectiveAgentIds),
+        toolNames: sortedUnique(effectiveToolNames),
+        views: effectiveViews ?? [],
+        dispose: effectiveDispose,
+      }),
+    );
+  }
+
+  for (const [ref, discovered] of discoveredByRef.entries()) {
+    const registration: {
+      inspector: StudioSandboxInspector;
+      agentIds: readonly string[];
+      toolNames: readonly string[];
+      views: readonly StudioSandboxViewRegistration[];
+      dispose?: () => Promise<void> | void;
+    } = {
+      inspector: discovered.inspector,
+      agentIds: [...discovered.agentIds],
+      toolNames: [...discovered.toolNames],
+      views: [...discovered.views.values()],
+    };
+
+    if (discovered.dispose !== undefined) registration.dispose = discovered.dispose;
+
+    validateRegistration(registration, entries.length, agentIds);
+    entries.push(
+      buildRegistryEntry({
+        ref,
+        inspector: discovered.inspector,
+        agentIds: sortedUnique([...discovered.agentIds]),
+        toolNames: sortedUnique([...discovered.toolNames]),
+        views: [...discovered.views.values()],
+        dispose: discovered.dispose,
+      }),
+    );
+  }
+
   entries.sort((left, right) => left.summary.ref.localeCompare(right.summary.ref));
   return new StudioSandboxRegistry(entries);
+}
+
+type DiscoveredSandbox = {
+  inspector: StudioSandboxInspector;
+  agentIds: Set<string>;
+  toolNames: Set<string>;
+  views: Map<string, StudioSandboxViewRegistration>;
+  dispose?: () => Promise<void> | void;
+};
+
+function buildRegistryEntry(params: {
+  ref: string;
+  inspector: StudioSandboxInspector;
+  agentIds: string[];
+  toolNames: string[];
+  views: readonly StudioSandboxViewRegistration[];
+  dispose: (() => Promise<void> | void) | undefined;
+}): StudioSandboxRegistryEntry {
+  const views = new Map(params.views.map((view) => [view.id, view]));
+  const entry: StudioSandboxRegistryEntry = {
+    inspector: params.inspector,
+    views,
+    summary: {
+      ref: params.ref,
+      id: params.inspector.id,
+      provider: params.inspector.provider,
+      workdir: params.inspector.workdir,
+      agentIds: params.agentIds,
+      toolNames: params.toolNames,
+      views: [...views.values()]
+        .map((view) => ({ id: view.id, label: view.label, protocol: view.source.protocol }))
+        .sort((left, right) => left.id.localeCompare(right.id)),
+      capabilities: {
+        files: supportsFiles(params.inspector),
+        ports: supportsPorts(params.inspector),
+        processes: supportsProcesses(params.inspector),
+        views: views.size > 0,
+      },
+    },
+  };
+
+  if (params.dispose !== undefined) {
+    entry.dispose = params.dispose;
+  }
+
+  return entry;
+}
+
+function discoverAgentSandboxes(
+  agents: readonly StudioAgent[],
+  knownAgentIds: ReadonlySet<string>,
+): Map<string, DiscoveredSandbox> {
+  const discovered = new Map<string, DiscoveredSandbox>();
+
+  for (const studioAgent of agents) {
+    const tools = studioAgent.agent?.tools;
+
+    if (!Array.isArray(tools)) continue;
+
+    for (const tool of tools) {
+      const candidate = (tool as unknown as Record<PropertyKey, unknown>)[
+        studioSandboxMetadataSymbol
+      ];
+
+      if (!isSandboxToolMetadata(candidate)) continue;
+
+      const registration = candidate.getStudioSandbox();
+
+      if (!isRecord(registration) || !isInspector(registration.inspector)) continue;
+
+      const ref = sandboxRef(registration.inspector.provider, registration.inspector.id);
+      let entry = discovered.get(ref);
+
+      if (entry === undefined) {
+        entry = {
+          inspector: registration.inspector,
+          agentIds: new Set<string>(),
+          toolNames: new Set<string>(),
+          views: new Map<string, StudioSandboxViewRegistration>(),
+        };
+        discovered.set(ref, entry);
+      } else {
+        entry.inspector = mergeInspectors(entry.inspector, registration.inspector);
+      }
+
+      entry.agentIds.add(studioAgent.id);
+
+      if (typeof tool.name === "string" && tool.name.length > 0) {
+        entry.toolNames.add(tool.name);
+      }
+
+      if (Array.isArray(registration.agentIds)) {
+        for (const id of registration.agentIds) {
+          if (typeof id === "string" && knownAgentIds.has(id)) {
+            entry.agentIds.add(id);
+          }
+        }
+      }
+
+      if (Array.isArray(registration.toolNames)) {
+        for (const name of registration.toolNames) {
+          if (typeof name === "string" && name.length > 0) {
+            entry.toolNames.add(name);
+          }
+        }
+      }
+
+      if (Array.isArray(registration.views)) {
+        for (const view of registration.views) {
+          if (isRecord(view) && typeof view.id === "string" && !entry.views.has(view.id)) {
+            entry.views.set(view.id, view as StudioSandboxViewRegistration);
+          }
+        }
+      }
+
+      if (entry.dispose === undefined && typeof registration.dispose === "function") {
+        entry.dispose = registration.dispose;
+      }
+    }
+  }
+
+  return discovered;
+}
+
+function isSandboxToolMetadata(value: unknown): value is StudioSandboxToolMetadataLike {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { getStudioSandbox?: unknown }).getStudioSandbox === "function"
+  );
+}
+
+function mergeInspectors(
+  base: StudioSandboxInspector,
+  incoming: StudioSandboxInspector,
+): StudioSandboxInspector {
+  const baseHasCaps = supportsFiles(base) || supportsPorts(base) || supportsProcesses(base);
+  const incomingHasCaps =
+    supportsFiles(incoming) || supportsPorts(incoming) || supportsProcesses(incoming);
+  const merged: {
+    -readonly [K in keyof StudioSandboxInspector]: StudioSandboxInspector[K];
+  } = {
+    id: base.id,
+    provider: base.provider,
+    workdir: !baseHasCaps && incomingHasCaps ? incoming.workdir : base.workdir,
+  };
+
+  if (supportsFiles(base) && base.listFiles !== undefined && base.readFile !== undefined) {
+    merged.listFiles = base.listFiles;
+    merged.readFile = base.readFile;
+  } else if (
+    supportsFiles(incoming) &&
+    incoming.listFiles !== undefined &&
+    incoming.readFile !== undefined
+  ) {
+    merged.listFiles = incoming.listFiles;
+    merged.readFile = incoming.readFile;
+  }
+
+  if (supportsPorts(base) && base.publishedPorts !== undefined) {
+    merged.publishedPorts = base.publishedPorts;
+  } else if (supportsPorts(incoming) && incoming.publishedPorts !== undefined) {
+    merged.publishedPorts = incoming.publishedPorts;
+  }
+
+  if (
+    supportsProcesses(base) &&
+    base.listProcesses !== undefined &&
+    base.readProcessLogs !== undefined
+  ) {
+    merged.listProcesses = base.listProcesses;
+    merged.readProcessLogs = base.readProcessLogs;
+  } else if (
+    supportsProcesses(incoming) &&
+    incoming.listProcesses !== undefined &&
+    incoming.readProcessLogs !== undefined
+  ) {
+    merged.listProcesses = incoming.listProcesses;
+    merged.readProcessLogs = incoming.readProcessLogs;
+  }
+
+  return merged;
 }
 
 export function registerSandboxRoutes(app: Hono, registry: StudioSandboxRegistry): void {
@@ -299,7 +596,9 @@ function validateRegistration(
     throw new TypeError(`sandboxes[${index}] must register both process inspector methods.`);
   }
 
-  if (!files && !supportsPorts(inspector) && !processes) {
+  const hasViews = Array.isArray(registration.views) && registration.views.length > 0;
+
+  if (!files && !supportsPorts(inspector) && !processes && !hasViews) {
     throw new TypeError(`sandboxes[${index}] inspector exposes no capabilities.`);
   }
 
@@ -308,6 +607,11 @@ function validateRegistration(
       throw new TypeError(`sandboxes[${index}] references an unknown agent: ${agentId}`);
     }
   }
+
+  if (registration.dispose !== undefined && typeof registration.dispose !== "function") {
+    throw new TypeError(`sandboxes[${index}].dispose must be a function.`);
+  }
+
   sortedUnique(registration.toolNames ?? []);
   validateViews(registration.views, inspector, index);
 }

@@ -110,6 +110,9 @@ behavior belongs in `packages/tool-studio`.
   message state for Anvia.
 - `packages/durable`: experimental durable agent execution, SQLite checkpoints,
   recovery policies, persisted interactions, and reconnectable progress events.
+- `packages/extensions` (published as `@anvia/extensions`): batteries-included
+  standard toolkits (`web-search`, `web-fetch`, `fs`, `http`, `todo`), tool caching,
+  guardrails, middlewares, and lifecycle hooks.
 - `packages/mcp`: MCP clients, transports, tool discovery, result mapping, and URL safety.
 - `packages/provider-openai`, `packages/provider-azure`, `packages/provider-anthropic`,
   `packages/provider-gemini`, `packages/provider-grok`,

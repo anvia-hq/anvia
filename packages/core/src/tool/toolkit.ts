@@ -6,6 +6,8 @@ import { hasQuestionToolMarker, markQuestionTool } from "./question-tool-marker"
 import { isSkillTool, markSkillTool } from "./skill-tool-marker";
 import type { AnyTool, ToolCallContext, ToolRequiresApproval } from "./tool";
 
+const STUDIO_SANDBOX_SYMBOL = Symbol.for("anvia.studio.sandbox");
+
 export interface Toolkit {
   readonly kind: "toolkit";
   readonly name: string;
@@ -259,6 +261,12 @@ function wrapToolkitTool(
 
   if (hasQuestionToolMarker(tool)) {
     markQuestionTool(wrapped);
+  }
+
+  const studioSandboxDescriptor = Object.getOwnPropertyDescriptor(tool, STUDIO_SANDBOX_SYMBOL);
+
+  if (studioSandboxDescriptor !== undefined) {
+    Object.defineProperty(wrapped, STUDIO_SANDBOX_SYMBOL, studioSandboxDescriptor);
   }
 
   return Object.freeze(wrapped);

@@ -70,6 +70,22 @@ export type AgentLifecycle<Output = string, RawResponse = unknown> = {
   onError?(event: AgentErrorEvent): MaybePromise<void>;
 };
 
+export type AgentLifecycleInput<Output = string, RawResponse = unknown> =
+  | AgentLifecycle<Output, RawResponse>
+  | readonly AgentLifecycle<Output, RawResponse>[];
+
+export function normalizeAgentLifecycle<Output = string, RawResponse = unknown>(
+  input: AgentLifecycleInput<Output, RawResponse> | undefined,
+): AgentLifecycle<Output, RawResponse> | undefined {
+  if (input === undefined) return undefined;
+
+  if (!Array.isArray(input)) {
+    return input as AgentLifecycle<Output, RawResponse>;
+  }
+
+  return composeLifecycleList(input);
+}
+
 export function composeAgentLifecycle<Output = string, RawResponse = unknown>(
   first: AgentLifecycle<Output, RawResponse> | undefined,
   second: AgentLifecycle<Output, RawResponse> | undefined,
@@ -78,32 +94,89 @@ export function composeAgentLifecycle<Output = string, RawResponse = unknown>(
 
   if (second === undefined) return first;
 
-  return {
-    async onStart(event) {
-      await first.onStart?.(lifecycleSnapshot(event));
-      await second.onStart?.(lifecycleSnapshot(event));
-    },
-    async onStepFinish(event) {
-      await first.onStepFinish?.(lifecycleSnapshot(event));
-      await second.onStepFinish?.(lifecycleSnapshot(event));
-    },
-    async onToolStart(event) {
-      await first.onToolStart?.(lifecycleSnapshot(event));
-      await second.onToolStart?.(lifecycleSnapshot(event));
-    },
-    async onToolFinish(event) {
-      await first.onToolFinish?.(lifecycleSnapshot(event));
-      await second.onToolFinish?.(lifecycleSnapshot(event));
-    },
-    async onFinish(event) {
-      await first.onFinish?.(lifecycleSnapshot(event));
-      await second.onFinish?.(lifecycleSnapshot(event));
-    },
-    async onError(event) {
-      await first.onError?.(lifecycleSnapshot(event));
-      await second.onError?.(lifecycleSnapshot(event));
-    },
-  };
+  return composeLifecycleList([first, second]);
+}
+
+function composeLifecycleList<Output, RawResponse>(
+  lifecycles: readonly (AgentLifecycle<Output, RawResponse> | undefined)[],
+): AgentLifecycle<Output, RawResponse> | undefined {
+  const defined = lifecycles.filter(
+    (entry): entry is AgentLifecycle<Output, RawResponse> => entry !== undefined,
+  );
+
+  if (defined.length === 0) return undefined;
+
+  if (defined.length === 1) return defined[0];
+
+  const onStarts = defined.flatMap((l) => (l.onStart ? [l.onStart.bind(l)] : []));
+  const onStepFinishes = defined.flatMap((l) => (l.onStepFinish ? [l.onStepFinish.bind(l)] : []));
+  const onToolStarts = defined.flatMap((l) => (l.onToolStart ? [l.onToolStart.bind(l)] : []));
+  const onToolFinishes = defined.flatMap((l) => (l.onToolFinish ? [l.onToolFinish.bind(l)] : []));
+  const onFinishes = defined.flatMap((l) => (l.onFinish ? [l.onFinish.bind(l)] : []));
+  const onErrors = defined.flatMap((l) => (l.onError ? [l.onError.bind(l)] : []));
+
+  if (
+    onStarts.length === 0 &&
+    onStepFinishes.length === 0 &&
+    onToolStarts.length === 0 &&
+    onToolFinishes.length === 0 &&
+    onFinishes.length === 0 &&
+    onErrors.length === 0
+  ) {
+    return undefined;
+  }
+
+  const composed: AgentLifecycle<Output, RawResponse> = {};
+
+  if (onStarts.length > 0) {
+    composed.onStart = async (event) => {
+      for (const handler of onStarts) {
+        await handler(lifecycleSnapshot(event));
+      }
+    };
+  }
+
+  if (onStepFinishes.length > 0) {
+    composed.onStepFinish = async (event) => {
+      for (const handler of onStepFinishes) {
+        await handler(lifecycleSnapshot(event));
+      }
+    };
+  }
+
+  if (onToolStarts.length > 0) {
+    composed.onToolStart = async (event) => {
+      for (const handler of onToolStarts) {
+        await handler(lifecycleSnapshot(event));
+      }
+    };
+  }
+
+  if (onToolFinishes.length > 0) {
+    composed.onToolFinish = async (event) => {
+      for (const handler of onToolFinishes) {
+        await handler(lifecycleSnapshot(event));
+      }
+    };
+  }
+
+  if (onFinishes.length > 0) {
+    composed.onFinish = async (event) => {
+      for (const handler of onFinishes) {
+        await handler(lifecycleSnapshot(event));
+      }
+    };
+  }
+
+  if (onErrors.length > 0) {
+    composed.onError = async (event) => {
+      for (const handler of onErrors) {
+        await handler(lifecycleSnapshot(event));
+      }
+    };
+  }
+
+  return composed;
 }
 
 export function lifecycleSnapshot<T>(value: T): T {

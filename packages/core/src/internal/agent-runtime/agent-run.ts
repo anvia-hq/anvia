@@ -10,6 +10,7 @@ import {
   type AgentFinishEvent,
   type AgentLifecycle,
   composeAgentLifecycle,
+  normalizeAgentLifecycle,
   lifecycleSnapshot,
 } from "../../agent/lifecycle";
 import { getAgentProviderOutputSchema } from "../../agent/output-schema";
@@ -222,7 +223,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     this.activeLifecycle =
       internalOptions?.lifecycle !== undefined
         ? (internalOptions.lifecycle as AgentLifecycle<Output, unknown>)
-        : (composeAgentLifecycle(agent.lifecycle, options.lifecycle) as
+        : (composeAgentLifecycle(agent.lifecycle, normalizeAgentLifecycle(options.lifecycle)) as
             | AgentLifecycle<Output, unknown>
             | undefined);
 

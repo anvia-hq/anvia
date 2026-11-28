@@ -33,7 +33,7 @@ import type {
   AgentInteractionRequest,
   AgentInteractionResponse,
 } from "./interactions";
-import type { AgentLifecycle } from "./lifecycle";
+import type { AgentLifecycleInput } from "./lifecycle";
 
 /** A run prompt: plain text or a full user message. */
 export type AgentPrompt = string | UserMessage;
@@ -86,7 +86,7 @@ export type AgentRunSettings<
   maxTurns?: number | undefined;
   retries?: RetrySetting | undefined;
   abortSignal?: AbortSignal | undefined;
-  lifecycle?: AgentLifecycle<Output, RawResponse> | undefined;
+  lifecycle?: AgentLifecycleInput<Output, RawResponse> | undefined;
   guardrails?: GuardrailPolicyInput | undefined;
   toolConcurrency?: number | undefined;
   middlewares?: readonly AgentMiddleware[] | undefined;

@@ -13,11 +13,13 @@ export type {
   AgentErrorEvent,
   AgentFinishEvent,
   AgentLifecycle,
+  AgentLifecycleInput,
   AgentStartEvent,
   AgentStepFinishEvent,
   AgentToolFinishEvent,
   AgentToolStartEvent,
 } from "./agent/lifecycle";
+export { composeAgentLifecycle, normalizeAgentLifecycle } from "./agent/lifecycle";
 export type {
   AgentBlockedOutcome,
   AgentChildStreamEvent,
@@ -232,14 +234,19 @@ export type {
   ToolApprovalRequirement,
   ToolCallContext,
   ToolCallStreamEvent,
+  Toolkit,
+  ToolkitDefinition,
+  ToolkitOptions,
   ToolRequiresApproval,
 } from "./tool/index";
 export {
   createQuestionTool,
   createThinkTool,
   createTool,
+  createToolkit,
   DEFAULT_QUESTION_TOOL_NAME,
   DEFAULT_QUESTION_TOOL_DESCRIPTION,
+  isToolkit,
 } from "./tool/index";
 export type {
   AgentMiddleware,

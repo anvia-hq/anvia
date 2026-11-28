@@ -7,6 +7,7 @@ const DEFAULT_REPLACEMENT = "<redacted>";
 const DATA_URL_PATTERN = /^data:[^;,]+;base64,/i;
 const ENCODED_VALUE_TYPES: Record<string, true> = {
   base64: true,
+  data: true,
   encrypted: true,
   image: true,
   redacted: true,

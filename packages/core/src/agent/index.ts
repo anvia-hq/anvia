@@ -15,11 +15,13 @@ export type {
   AgentErrorEvent,
   AgentFinishEvent,
   AgentLifecycle,
+  AgentLifecycleInput,
   AgentStartEvent,
   AgentStepFinishEvent,
   AgentToolFinishEvent,
   AgentToolStartEvent,
 } from "./lifecycle";
+export { composeAgentLifecycle, normalizeAgentLifecycle } from "./lifecycle";
 export type {
   AgentBlockedOutcome,
   AgentChildStreamEvent,

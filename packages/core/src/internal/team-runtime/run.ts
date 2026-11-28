@@ -3,7 +3,11 @@ import {
   assertAgentInteractionResponse,
   parseAgentInteractionResponse,
 } from "../../agent/interactions";
-import { composeAgentLifecycle, lifecycleSnapshot } from "../../agent/lifecycle";
+import {
+  composeAgentLifecycle,
+  lifecycleSnapshot,
+  normalizeAgentLifecycle,
+} from "../../agent/lifecycle";
 import { createResolvedAgent, getResolvedAgentOptions } from "../../agent/resolved-agent";
 import type {
   AgentInput,
@@ -484,7 +488,7 @@ export class TeamRun<Output = unknown> {
             ...nextInput,
             abortSignal: signal,
             toolConcurrency: 1,
-            lifecycle: composeAgentLifecycle(baseSettings.lifecycle, {
+            lifecycle: composeAgentLifecycle(normalizeAgentLifecycle(baseSettings.lifecycle), {
               onStepFinish: (event) => {
                 if (!streaming)
                   this.agentEvent(member, {

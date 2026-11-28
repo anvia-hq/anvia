@@ -12,6 +12,7 @@ import {
   type VectorSearchResult,
 } from "../vector-store";
 import type { AnyTool } from "./tool";
+import { isToolkit, type Toolkit } from "./toolkit";
 
 export type ToolEmbeddingText = "default" | "compact";
 
@@ -24,7 +25,7 @@ export type ToolSearchDocument<Metadata extends VectorMetadata = VectorMetadata>
 
 export type EmbedToolsOptions<Metadata extends VectorMetadata = VectorMetadata> = {
   model: EmbeddingModel;
-  tools: readonly AnyTool[];
+  tools: readonly (AnyTool | Toolkit)[];
   content?: ((tool: AnyTool, definition: ToolDefinition) => string | string[]) | undefined;
   embeddingText?: ToolEmbeddingText | undefined;
   metadata?: ((tool: AnyTool, definition: ToolDefinition) => Metadata | undefined) | undefined;
@@ -189,9 +190,17 @@ class ToolSearchIndex<Metadata extends VectorMetadata> implements ToolIndex<Meta
   }
 }
 
-function dedupeTools(tools: readonly AnyTool[]): AnyTool[] {
+function dedupeTools(tools: readonly (AnyTool | Toolkit)[]): AnyTool[] {
   const byName = new Map<string, AnyTool>();
-  for (const tool of tools) byName.set(tool.name, tool);
+  for (const entry of tools) {
+    if (isToolkit(entry)) {
+      for (const tool of entry.tools) byName.set(tool.name, tool);
+    } else if ((entry as { kind?: unknown }).kind === "toolkit") {
+      throw new TypeError("Invalid toolkit: non-empty name and tools array are required.");
+    } else {
+      byName.set(entry.name, entry);
+    }
+  }
   return [...byName.values()];
 }
 

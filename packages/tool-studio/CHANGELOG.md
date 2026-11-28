@@ -1,5 +1,17 @@
 # @anvia/studio
 
+## 1.6.0
+
+### Minor Changes
+
+- 27cb7ae: Add `sandboxToolkit` and `desktopToolkit` (`Toolkit` factories with full `ToolkitOptions` support and Studio discovery metadata), add `pull?: "never" | "if-missing" | "always"` to `DockerSandboxClient.createSandbox`, make `studioSandbox(...)` support local `DockerSandbox`/`SandboxRuntime` handles in addition to `RemoteSandboxHub`, preserve Studio sandbox metadata through `@anvia/core`'s `createToolkit`, and add automatic sandbox discovery plus opt-in shutdown disposal in `@anvia/studio`.
+
+### Patch Changes
+
+- @anvia/client@1.10.0
+- @anvia/graph@1.3.0
+- @anvia/react@1.4.0
+
 ## 1.5.3
 
 ### Patch Changes

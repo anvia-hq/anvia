@@ -1,9 +1,16 @@
-import { type AnyTool, createTool } from "@anvia/core/tool";
+import {
+  type AnyTool,
+  createTool,
+  createToolkit,
+  type Toolkit,
+  type ToolkitOptions,
+} from "@anvia/core/tool";
 import { z } from "zod";
 import { decodeUtf8 } from "./docker-cli";
 import { DockerSandboxError } from "./errors";
 import { normalizeSandboxPath } from "./path";
 import { sandboxShell } from "./shell";
+import { attachSandboxStudioMetadata } from "./studio-metadata";
 import type {
   CreateDockerSandboxToolsOptions,
   CreateSandboxToolsOptions,
@@ -16,6 +23,7 @@ import type {
   DockerSandboxToolName,
   SandboxRuntime,
   SandboxToolName,
+  SandboxToolkitOptions,
 } from "./types";
 import { Writable } from "./internal/type-utils";
 import { shellInterpreters } from "./types";
@@ -216,6 +224,60 @@ export function createDockerSandboxTools(
   return createSandboxTools(options);
 }
 
+const defaultSandboxInstructions =
+  "Use the sandbox tools to inspect files, run commands, and manage background processes inside the isolated workspace.";
+
+/**
+ * Creates an `@anvia/core` `Toolkit` backed by a local `DockerSandbox` or remote `SandboxRuntime`.
+ * Supports standard `ToolkitOptions` (`include`, `exclude`, `prefix`, `requiresApproval`,
+ * `timeoutMs`, `instructions`) and attaches Studio discovery metadata automatically.
+ */
+export function sandboxToolkit(options: SandboxToolkitOptions): Toolkit {
+  if (typeof options !== "object" || options === null || Array.isArray(options)) {
+    throw new TypeError("sandboxToolkit options must be an object.");
+  }
+
+  const toolOptions: Writable<CreateSandboxToolsOptions> = {
+    sandbox: options.sandbox,
+  };
+
+  if (options.exec !== undefined) toolOptions.exec = options.exec;
+
+  if (options.readFile !== undefined) toolOptions.readFile = options.readFile;
+
+  if (options.writeFile !== undefined) toolOptions.writeFile = options.writeFile;
+
+  if (options.process !== undefined) toolOptions.process = options.process;
+
+  if (options.studio !== undefined) toolOptions.studio = options.studio;
+
+  const tools = createSandboxTools(toolOptions);
+  const toolkitOptions: ToolkitOptions<SandboxToolName> = {};
+
+  if (options.include !== undefined) toolkitOptions.include = options.include;
+
+  if (options.exclude !== undefined) toolkitOptions.exclude = options.exclude;
+
+  if (options.prefix !== undefined) toolkitOptions.prefix = options.prefix;
+
+  if (options.requiresApproval !== undefined) {
+    toolkitOptions.requiresApproval = options.requiresApproval;
+  }
+
+  if (options.timeoutMs !== undefined) toolkitOptions.timeoutMs = options.timeoutMs;
+
+  if (options.instructions !== undefined) toolkitOptions.instructions = options.instructions;
+
+  return createToolkit(
+    {
+      name: "sandbox",
+      tools,
+      instructions: defaultSandboxInstructions,
+    },
+    toolkitOptions,
+  );
+}
+
 export function createSandboxTools(options: CreateSandboxToolsOptions): readonly AnyTool[] {
   const runtime = validateFactoryOptions(options);
   const resolved = snapshotFactoryOptions(options, runtime);
@@ -238,6 +300,8 @@ export function createSandboxTools(options: CreateSandboxToolsOptions): readonly
   if (tools.length !== selected.size) {
     throw toolPolicyError("Sandbox tool selection contains an unsupported tool name.");
   }
+
+  attachSandboxStudioMetadata(tools, options.sandbox, options.studio);
 
   return Object.freeze(tools);
 }

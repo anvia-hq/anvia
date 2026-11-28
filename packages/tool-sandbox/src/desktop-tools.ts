@@ -1,7 +1,17 @@
-import { type AnyTool, createTool, ToolOutput, type ToolCallContext } from "@anvia/core/tool";
+import {
+  type AnyTool,
+  createTool,
+  createToolkit,
+  type ToolCallContext,
+  type Toolkit,
+  type ToolkitOptions,
+  ToolOutput,
+} from "@anvia/core/tool";
 import { z } from "zod";
-import { type DesktopAction, desktopKeyPattern } from "./remote/protocol";
 import type { SandboxDesktop } from "./remote/desktop";
+import { type DesktopAction, desktopKeyPattern } from "./remote/protocol";
+import { studioDesktopView } from "./remote/studio";
+import { attachDesktopStudioMetadata } from "./studio-metadata";
 
 const allDesktopToolNames = [
   "desktop_screenshot",
@@ -42,6 +52,13 @@ export interface DesktopScreenshotPolicy {
   maxPixels?: number;
 }
 
+export interface DesktopStudioDiscoveryOptions {
+  /** Stable view id in Studio. Default `"desktop"`. */
+  id?: string;
+  /** Label shown in Studio UI. Default `"Desktop"`. */
+  label?: string;
+}
+
 export interface CreateDesktopToolsOptions {
   sandbox: SandboxDesktop;
   /**
@@ -54,7 +71,17 @@ export interface CreateDesktopToolsOptions {
   /** The tools to expose. Default: all of them. Pass the read-only ones to let an agent only look. */
   tools?: readonly DesktopToolName[];
   screenshot?: DesktopScreenshotPolicy;
+  /** Configure or disable (`false`) automatic Studio desktop view discovery metadata. */
+  studio?: false | DesktopStudioDiscoveryOptions;
 }
+
+export type DesktopToolkitOptions = ToolkitOptions<DesktopToolName> & {
+  sandbox: SandboxDesktop;
+  settleMs?: number | undefined;
+  screenshot?: DesktopScreenshotPolicy | undefined;
+  /** Configure or disable (`false`) automatic Studio desktop view discovery metadata. */
+  studio?: false | DesktopStudioDiscoveryOptions | undefined;
+};
 
 const defaultSettleMs = 300;
 const defaultMaxEdge = 1568;
@@ -124,6 +151,10 @@ interface View {
  * desktop, the input tools fail with the `desktop_locked` error code and say who holds it.
  */
 export function createDesktopTools(options: CreateDesktopToolsOptions): readonly AnyTool[] {
+  if (typeof options !== "object" || options === null || Array.isArray(options)) {
+    throw new TypeError("createDesktopTools options must be an object.");
+  }
+
   const { sandbox } = options;
   const policy = {
     maxEdge: options.screenshot?.maxEdge ?? defaultMaxEdge,
@@ -311,7 +342,59 @@ export function createDesktopTools(options: CreateDesktopToolsOptions): readonly
       }),
   };
 
-  return allDesktopToolNames.filter((name) => wanted.has(name)).map((name) => tools[name]());
+  const built = allDesktopToolNames.filter((name) => wanted.has(name)).map((name) => tools[name]());
+  attachDesktopStudioMetadata(built, sandbox, studioDesktopView, options.studio);
+  return built;
+}
+
+const defaultDesktopInstructions =
+  "Take a screenshot before interacting with the desktop, and take another screenshot after actions to verify the result. If an input tool fails because a human has taken control, pause instead of retrying.";
+
+/**
+ * Creates an `@anvia/core` `Toolkit` for seeing and driving a sandbox virtual desktop.
+ * Supports `ToolkitOptions` (`include`, `exclude`, `prefix`, `requiresApproval`, `timeoutMs`,
+ * `instructions`) and attaches Studio live-desktop discovery metadata automatically.
+ */
+export function desktopToolkit(options: DesktopToolkitOptions): Toolkit {
+  if (typeof options !== "object" || options === null || Array.isArray(options)) {
+    throw new TypeError("desktopToolkit options must be an object.");
+  }
+
+  const toolOptions: CreateDesktopToolsOptions = {
+    sandbox: options.sandbox,
+  };
+
+  if (options.settleMs !== undefined) toolOptions.settleMs = options.settleMs;
+
+  if (options.screenshot !== undefined) toolOptions.screenshot = options.screenshot;
+
+  if (options.studio !== undefined) toolOptions.studio = options.studio;
+
+  const tools = createDesktopTools(toolOptions);
+  const toolkitOptions: ToolkitOptions<DesktopToolName> = {};
+
+  if (options.include !== undefined) toolkitOptions.include = options.include;
+
+  if (options.exclude !== undefined) toolkitOptions.exclude = options.exclude;
+
+  if (options.prefix !== undefined) toolkitOptions.prefix = options.prefix;
+
+  if (options.requiresApproval !== undefined) {
+    toolkitOptions.requiresApproval = options.requiresApproval;
+  }
+
+  if (options.timeoutMs !== undefined) toolkitOptions.timeoutMs = options.timeoutMs;
+
+  if (options.instructions !== undefined) toolkitOptions.instructions = options.instructions;
+
+  return createToolkit(
+    {
+      name: "desktop",
+      tools,
+      instructions: defaultDesktopInstructions,
+    },
+    toolkitOptions,
+  );
 }
 
 /** The size of the screenshots the model sees for a display this big. */

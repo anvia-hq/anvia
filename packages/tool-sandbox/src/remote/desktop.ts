@@ -32,6 +32,9 @@ export interface DesktopScreenshot {
 
 /** A virtual display in a sandbox: something to look at, drive, and hand to a person. */
 export interface SandboxDesktop {
+  readonly id?: string;
+  readonly provider?: string;
+  readonly workdir?: string;
   /** Where the desktop is, without starting it. */
   status(options?: DesktopCallOptions): Promise<DesktopStatus>;
   /** Start it if it is not running (it starts on first use anyway) and wait until it is up. */
@@ -66,7 +69,16 @@ export interface RemoteSandboxDesktopOptions {
 }
 
 export class RemoteSandboxDesktop implements SandboxDesktop {
-  constructor(private readonly options: RemoteSandboxDesktopOptions) {}
+  readonly id: string;
+  readonly provider = "remote";
+
+  constructor(private readonly options: RemoteSandboxDesktopOptions) {
+    this.id = options.id;
+  }
+
+  get workdir(): string {
+    return this.options.source.workdir();
+  }
 
   status(options: DesktopCallOptions = {}): Promise<DesktopStatus> {
     return this.call("desktopStatus", {}, { signal: options.abortSignal });

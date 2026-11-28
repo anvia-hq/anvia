@@ -63,6 +63,7 @@ export { type DesktopAuthorization, desktopSubprotocol } from "./desktop-relay";
 export {
   studioDesktopView,
   studioSandbox,
+  type LocalStudioSandboxOptions,
   type StudioDesktopView,
   type StudioSandbox,
   type StudioSandboxOptions,

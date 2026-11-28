@@ -13,28 +13,37 @@ pnpm add @anvia/sandbox @anvia/core
 Requires Node.js 20.12 or later and an accessible Docker daemon.
 
 ```ts
-import { createSandboxTools, DockerSandboxClient } from "@anvia/sandbox";
+import { Agent } from "@anvia/core/agent";
+import { DockerSandboxClient, sandboxToolkit } from "@anvia/sandbox";
 
 const client = new DockerSandboxClient();
-await client.ensureImage({ image: "node:22-bookworm" });
 
 await using sandbox = await client.createSandbox({
   image: "node:22-bookworm",
+  pull: "if-missing",
   workspace: { type: "ephemeral" },
   network: { mode: "none" },
 });
 
-const tools = createSandboxTools({
-  sandbox,
-  tools: ["exec_command", "read_file", "write_file", "list_files"],
+const agent = new Agent({
+  id: "sandbox-coder",
+  model,
+  tools: [
+    sandboxToolkit({
+      sandbox,
+      include: ["exec_command", "read_file", "write_file", "list_files"],
+      requiresApproval: { exec_command: true },
+    }),
+  ],
 });
-// Pass tools to new Agent({ id, model, tools }).
 ```
+
+With `@anvia/studio`, sandboxes attached via `sandboxToolkit(...)` or `desktopToolkit(...)` are discovered automatically (`new Studio([agent])`) — or pass explicit `studioSandbox(sandbox)` / `studioSandbox(hub, sandboxId)` registrations when customizing capabilities.
 
 ## What you get
 
-- **Docker sandboxes (`@anvia/sandbox`)**: `DockerSandboxClient` (`hasImage`, `ensureImage`, `pullImage`, `createSandbox`, `resumeSandbox`, `listSandboxes`, `destroySandbox`), ephemeral workspaces or caller-owned Docker volumes, explicit networking, resource limits, command policies, stop/resume lifecycle, and `await using` disposal.
-- **Agent tools (`@anvia/sandbox`)**: `createSandboxTools` (with `sandboxToolRecovery` for `@anvia/durable`), `createDesktopTools` (with `desktopToolRecovery`), plus `SandboxError` and `isSandboxError` helpers.
+- **Docker sandboxes (`@anvia/sandbox`)**: `DockerSandboxClient` (`hasImage`, `ensureImage`, `pullImage`, `createSandbox` with `pull: "never" | "if-missing" | "always"`, `resumeSandbox`, `listSandboxes`, `destroySandbox`), ephemeral workspaces or caller-owned Docker volumes, explicit networking, resource limits, command policies, stop/resume lifecycle, and `await using` disposal.
+- **Agent toolkits & tools (`@anvia/sandbox`)**: `sandboxToolkit` and `desktopToolkit` (full `@anvia/core` `ToolkitOptions` support + Studio auto-discovery), lower-level `createSandboxTools` (with `sandboxToolRecovery` for `@anvia/durable`) and `createDesktopTools` (with `desktopToolRecovery`), polymorphic `studioSandbox`, plus `SandboxError` and `isSandboxError` helpers.
 - **Remote sandboxes (`@anvia/sandbox/remote`, `@anvia/sandbox/daemon`)**: `RemoteSandboxHub` (with `onConnect`/`onDisconnect`/`onError`, `waitForConnection`, `capabilities`, `attach`, and `createRelayTicketStore`), `SandboxDaemon`, interactive terminals, TCP tunnels, virtual desktops, and Studio integration via `studioSandbox`.
 - **CLIs**: `anvia-sandbox create-image` (including `--from <dir|manifest>`) for generating Dockerfiles, and `anvia-sandbox-daemon` (`--check`, `--require`, `--version`) for remote sandbox containers.
 

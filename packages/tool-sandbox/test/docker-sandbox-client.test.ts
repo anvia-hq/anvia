@@ -48,6 +48,71 @@ describe("DockerSandboxClient ownership", () => {
     expect(sandbox.state).toBe("destroyed");
   });
 
+  it('supports pull: "if-missing" and pull: "always" on createSandbox', async () => {
+    docker.run.mockImplementation(async (args) => {
+      if (args[0] === "container" && args[1] === "inspect") {
+        return dockerResult({ stderr: new TextEncoder().encode("No such container"), exitCode: 1 });
+      }
+
+      if (args[0] === "image" && args[1] === "inspect") {
+        return dockerResult({ stderr: new TextEncoder().encode("No such image"), exitCode: 1 });
+      }
+
+      return dockerResult();
+    });
+
+    const client = new DockerSandboxClient();
+    const pulledIfMissing = await client.createSandbox({
+      id: "pull-missing",
+      image: "remote:latest",
+      pull: "if-missing",
+      workspace: { type: "ephemeral" },
+      network: { mode: "none" },
+    });
+    expect(docker.assert.mock.calls.map(([args]) => args[0])).toEqual(["pull", "volume", "run"]);
+    await pulledIfMissing.destroy();
+
+    docker.assert.mockClear();
+    docker.run.mockImplementation(async (args) => {
+      if (args[0] === "container" && args[1] === "inspect") {
+        return dockerResult({ stderr: new TextEncoder().encode("No such container"), exitCode: 1 });
+      }
+
+      return dockerResult();
+    });
+
+    const skippedPull = await client.createSandbox({
+      id: "pull-present",
+      image: "remote:latest",
+      pull: "if-missing",
+      workspace: { type: "ephemeral" },
+      network: { mode: "none" },
+    });
+    expect(docker.assert.mock.calls.map(([args]) => args[0])).toEqual(["volume", "run"]);
+    await skippedPull.destroy();
+
+    docker.assert.mockClear();
+    const alwaysPull = await client.createSandbox({
+      id: "pull-always",
+      image: "remote:latest",
+      pull: "always",
+      workspace: { type: "ephemeral" },
+      network: { mode: "none" },
+    });
+    expect(docker.assert.mock.calls.map(([args]) => args[0])).toEqual(["pull", "volume", "run"]);
+    await alwaysPull.destroy();
+
+    await expect(
+      client.createSandbox({
+        id: "pull-bad",
+        image: "remote:latest",
+        pull: "bogus" as never,
+        workspace: { type: "ephemeral" },
+        network: { mode: "none" },
+      }),
+    ).rejects.toThrow(/pull must be/);
+  });
+
   it("does not delete a caller-owned Docker volume", async () => {
     const client = new DockerSandboxClient();
     const sandbox = await client.createSandbox({

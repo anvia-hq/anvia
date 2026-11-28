@@ -43,6 +43,26 @@
       "types": "./dist/tools/fs/index.d.ts",
       "import": "./dist/tools/fs/index.js"
     },
+    "./tools/shell": {
+      "types": "./dist/tools/shell/index.d.ts",
+      "import": "./dist/tools/shell/index.js"
+    },
+    "./tools/git": {
+      "types": "./dist/tools/git/index.d.ts",
+      "import": "./dist/tools/git/index.js"
+    },
+    "./tools/datetime": {
+      "types": "./dist/tools/datetime/index.d.ts",
+      "import": "./dist/tools/datetime/index.js"
+    },
+    "./tools/scratchpad": {
+      "types": "./dist/tools/scratchpad/index.d.ts",
+      "import": "./dist/tools/scratchpad/index.js"
+    },
+    "./tools/math": {
+      "types": "./dist/tools/math/index.d.ts",
+      "import": "./dist/tools/math/index.js"
+    },
     "./tools/http": {
       "types": "./dist/tools/http/index.d.ts",
       "import": "./dist/tools/http/index.js"

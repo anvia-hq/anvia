@@ -496,6 +496,8 @@ export type StudioSandboxRegistration = Readonly<{
   agentIds?: readonly string[];
   toolNames?: readonly string[];
   views?: readonly StudioSandboxViewRegistration[];
+  /** Optional async cleanup invoked during `studio.shutdown()`. */
+  dispose?: () => Promise<void> | void;
 }>;
 
 export type StudioSandboxViewSummary = {
@@ -1113,6 +1115,8 @@ export type StudioOptions = {
   ui?: boolean | StudioUiOptions;
   models?: StudioModelConfig;
   sandboxes?: readonly StudioSandboxRegistration[];
+  /** Automatically discover sandboxes attached to registered agents' tools. Default true. */
+  autoDiscoverSandboxes?: boolean;
   graphs?: readonly StudioGraphRegistration[];
   /**
    * Largest JSON request body Studio accepts, in bytes. Defaults to 10 MiB,

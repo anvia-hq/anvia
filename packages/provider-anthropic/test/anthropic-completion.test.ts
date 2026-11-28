@@ -1,6 +1,4 @@
 import { Agent } from "@anvia/core/agent";
-import { extract } from "@anvia/core/extractor";
-import { z } from "zod";
 import {
   CompletionCapabilityError,
   type CompletionModelStreamEvent,
@@ -164,7 +162,7 @@ describe("Anthropic Messages mapping", () => {
     ).not.toHaveProperty("temperature");
   });
 
-  it("marks Claude 5.5 models as disallowing forced tool choice and works with extract()", async () => {
+  it("marks Claude 5.5 models as disallowing forced tool choice and accepts auto/none", async () => {
     const calls: Array<Record<string, unknown>> = [];
     const model = new AnthropicCompletionModel(
       {
@@ -202,12 +200,14 @@ describe("Anthropic Messages mapping", () => {
       new AnthropicCompletionModel({} as never, "claude-sonnet-4-6").capabilities.forcedToolChoice,
     ).toBeUndefined();
 
+    const submitTools = [{ name: "submit", description: "Submit", parameters: { type: "object" } }];
+
     for (const toolChoice of ["required", { type: "function", name: "submit" }] as const) {
       await expect(
         model.completion({
           chatHistory: [Message.user("grade this")],
           documents: [],
-          tools: [{ name: "submit", description: "Submit", parameters: { type: "object" } }],
+          tools: submitTools,
           toolChoice,
         }),
       ).rejects.toMatchObject({
@@ -217,13 +217,22 @@ describe("Anthropic Messages mapping", () => {
     }
     expect(calls).toHaveLength(0);
 
-    const extracted = await extract({
-      model,
-      text: "Grade this output",
-      outputSchema: z.object({ score: z.number(), reason: z.string() }),
+    const autoResponse = await model.completion({
+      chatHistory: [Message.user("grade this")],
+      documents: [],
+      tools: submitTools,
+      toolChoice: "auto",
     });
 
-    expect(extracted.output).toEqual({ score: 1, reason: "Accurate" });
+    expect(autoResponse.choice).toEqual([
+      {
+        type: "tool-call",
+        toolCallId: "toolu_1",
+        callId: "toolu_1",
+        toolName: "submit",
+        input: { score: 1, reason: "Accurate" },
+      },
+    ]);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.tool_choice).toEqual({ type: "auto" });
   });

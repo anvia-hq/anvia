@@ -11,9 +11,6 @@ export default defineConfig({
       "@anvia/core/completion": fileURLToPath(
         new URL("../core/src/completion/index.ts", import.meta.url),
       ),
-      "@anvia/core/extractor": fileURLToPath(
-        new URL("../core/src/extractor/index.ts", import.meta.url),
-      ),
       "@anvia/core/internal/provider": fileURLToPath(
         new URL("../core/src/internal/provider.ts", import.meta.url),
       ),
